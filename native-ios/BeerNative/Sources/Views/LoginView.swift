@@ -38,7 +38,7 @@ struct LoginView: View {
                                 .padding(12)
                                 .background(Theme.bg)
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
-                                .onChange(of: serverURL) { _, v in
+                                .onChange(of: serverURL) { v in
                                     app.applyServerURL(v)
                                 }
                             Button {
