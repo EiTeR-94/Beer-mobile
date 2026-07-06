@@ -1,5 +1,4 @@
 # Build IPA Plexi Beer sur Mac gratuit (GitHub Actions) → artifact → AltStore
-# Déclenchement manuel : Actions → Build iOS IPA → Run workflow
 
 name: Build iOS IPA
 
@@ -15,7 +14,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
 
     env:
@@ -29,6 +28,7 @@ jobs:
       KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
       FASTLANE_SKIP_UPDATE_CHECK: "true"
       FASTLANE_DISABLE_ANIMATION: "true"
+      FASTLANE_OPT_OUT_USAGE: "true"
       CI: "true"
 
     steps:
@@ -47,23 +47,22 @@ jobs:
           if [ "$missing" -eq 1 ]; then
             exit 1
           fi
-          if [ -z "$KEYCHAIN_PASSWORD" ]; then
-            echo "KEYCHAIN_PASSWORD absent — valeur par défaut fastlane utilisée"
-          fi
+          echo "UDID longueur: ${#IOS_DEVICE_UDID}"
 
       - name: Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - name: Dépendances npm
+      - name: Dépendances npm + iOS
         run: |
           npm ci 2>/dev/null || npm install
           npx cap add ios
           node scripts/patch-ios-plist.js
           npx cap sync ios
+          cd ios/App && pod install
 
       - name: Ruby + Fastlane
         uses: ruby/setup-ruby@v1
@@ -72,7 +71,7 @@ jobs:
           bundler-cache: true
 
       - name: Build IPA (Fastlane)
-        run: bundle exec fastlane ios build_ipa
+        run: bundle exec fastlane ios build_ipa --verbose
 
       - name: Publier l'artifact IPA
         uses: actions/upload-artifact@v4

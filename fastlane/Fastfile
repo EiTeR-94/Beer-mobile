@@ -6,6 +6,10 @@ def keychain_name
   "plexi_beer_ci.keychain"
 end
 
+def keychain_password
+  ENV.fetch("KEYCHAIN_PASSWORD", "plexi-beer-ci-temp")
+end
+
 def apple_team_id
   explicit = ENV["APPLE_TEAM_ID"].to_s.strip
   return explicit unless explicit.empty?
@@ -24,43 +28,64 @@ def apple_team_id
   team["teamId"]
 end
 
+def device_udid
+  ENV["IOS_DEVICE_UDID"].to_s.strip.gsub(/\s+/, "")
+end
+
 platform :ios do
   desc "Affiche le Team ID (debug)"
   lane :show_team_id do
     UI.success("Team ID = #{apple_team_id}")
   end
+
   desc "Certificats + profil pour l'iPhone du testeur"
   lane :prepare_signing do
     setup_ci(
       force: true,
       keychain_name: keychain_name,
-      keychain_password: ENV.fetch("KEYCHAIN_PASSWORD", "plexi-beer-ci-temp")
+      keychain_password: keychain_password
     )
 
-    if ENV["IOS_DEVICE_UDID"].to_s.strip != ""
-      register_devices(
-        devices: {
-          "Plexi iPhone" => ENV["IOS_DEVICE_UDID"].strip
-        }
+    team = apple_team_id
+    apple_id = ENV.fetch("APPLE_ID")
+
+    begin
+      produce(
+        app_identifier: "fr.eiter.plexibeer",
+        app_name: "Plexi Beer",
+        skip_itc: true,
+        username: apple_id,
+        team_id: team
       )
+    rescue StandardError => e
+      UI.message("produce ignoré (App ID existe peut-être déjà) : #{e.message}")
     end
 
-    team = apple_team_id
+    udid = device_udid
+    UI.user_error!("IOS_DEVICE_UDID vide ou invalide") if udid.length < 20
+
+    register_devices(
+      devices: { "Plexi iPhone" => udid },
+      team_id: team,
+      username: apple_id
+    )
 
     cert(
       development: true,
-      username: ENV.fetch("APPLE_ID"),
+      username: apple_id,
       team_id: team,
+      force: false,
       keychain_name: keychain_name,
-      keychain_password: ENV.fetch("KEYCHAIN_PASSWORD", "plexi-beer-ci-temp")
+      keychain_password: keychain_password
     )
 
     sigh(
       development: true,
       app_identifier: "fr.eiter.plexibeer",
-      username: ENV.fetch("APPLE_ID"),
+      username: apple_id,
       team_id: team,
-      force: true
+      force: true,
+      include_all_certificates: true
     )
 
     update_code_signing_settings(
@@ -69,7 +94,7 @@ platform :ios do
       code_sign_identity: "Apple Development",
       path: "ios/App/App.xcodeproj",
       targets: ["App"],
-      profile_name: ENV["SIGH_NAME"] || lane_context[SharedValues::SIGH_NAME],
+      profile_name: lane_context[SharedValues::SIGH_NAME],
       bundle_identifier: "fr.eiter.plexibeer"
     )
   end
@@ -86,7 +111,8 @@ platform :ios do
       output_directory: "build",
       output_name: "PlexiBeer",
       clean: true,
-      skip_package_ipa: false
+      skip_package_ipa: false,
+      xcargs: "-allowProvisioningUpdates"
     )
   end
 end
