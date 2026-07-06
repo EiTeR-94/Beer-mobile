@@ -20,6 +20,7 @@ jobs:
 
     env:
       APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       IOS_DEVICE_UDID: ${{ secrets.IOS_DEVICE_UDID }}
       FASTLANE_USER: ${{ secrets.APPLE_ID }}
@@ -53,7 +54,7 @@ jobs:
       - name: Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: package-lock.json
 
