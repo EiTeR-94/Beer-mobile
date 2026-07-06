@@ -13,8 +13,9 @@ enum ServerSettings {
         raw.append(contentsOf: BuildConfig.apiFallbacks)
         var seen = Set<String>()
         return raw.compactMap { s -> URL? in
-            guard !seen.contains(s), let u = URL(string: s) else { return nil }
-            seen.insert(s)
+            let n = normalizeInput(s)
+            guard !seen.contains(n), let u = URL(string: n) else { return nil }
+            seen.insert(n)
             return u
         }
     }
@@ -31,10 +32,11 @@ enum ServerSettings {
         UserDefaults.standard.set(normalizeInput(raw), forKey: key)
     }
 
+    /// Base API avec slash final — requis pour `URL(string:relativeTo:)` (sinon `/beer` est remplacé par `api/...`).
     static func normalizeInput(_ raw: String) -> String {
         var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         while s.hasSuffix("/") { s.removeLast() }
         if s.contains(":8443") { s = s.replacingOccurrences(of: ":8443", with: ":8444") }
-        return s
+        return s + "/"
     }
 }

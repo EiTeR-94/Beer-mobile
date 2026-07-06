@@ -28,7 +28,7 @@ final class BeerAPI {
     private(set) var activeEndpoint: String = ""
 
     init(baseURL: URL = ServerSettings.apiBase) {
-        self.baseURL = baseURL
+        self.baseURL = Self.canonicalBase(baseURL)
         let config = URLSessionConfiguration.default
         config.httpCookieStorage = HTTPCookieStorage.shared
         config.httpShouldSetCookies = true
@@ -43,8 +43,8 @@ final class BeerAPI {
     }
 
     func setBaseURL(_ url: URL) {
-        baseURL = url
-        activeEndpoint = url.absoluteString
+        baseURL = Self.canonicalBase(url)
+        activeEndpoint = baseURL.absoluteString
     }
 
     func healthCheck() async throws -> Bool {
@@ -54,7 +54,7 @@ final class BeerAPI {
 
     func discoverWorkingEndpoint() async -> String? {
         for url in ServerSettings.candidateURLs {
-            baseURL = url
+            baseURL = Self.canonicalBase(url)
             do {
                 if try await healthCheck() {
                     activeEndpoint = url.absoluteString
@@ -80,7 +80,10 @@ final class BeerAPI {
             throw BeerAPIError.server("Accès refusé — Wi‑Fi maison ou VPN Plexi requis")
         }
         guard let decoded = try? JSONDecoder().decode(LoginResponse.self, from: data) else {
-            throw BeerAPIError.server("Réponse login invalide (HTTP \(http.statusCode))")
+            let hint = http.statusCode == 404
+                ? " — vérifie que l'URL se termine par /beer/ (ex. https://192.168.1.50:8444/beer/)"
+                : ""
+            throw BeerAPIError.server("Réponse login invalide (HTTP \(http.statusCode))\(hint)")
         }
         if http.statusCode == 401 || decoded.ok == false {
             throw BeerAPIError.server(decoded.error ?? "Identifiants incorrects")
@@ -189,7 +192,7 @@ final class BeerAPI {
     ) async throws -> (Data, HTTPURLResponse, URL) {
         var lastError: Error?
         for candidate in ServerSettings.candidateURLs {
-            baseURL = candidate
+            baseURL = Self.canonicalBase(candidate)
             var req = URLRequest(url: try url(path))
             req.httpMethod = method
             if let contentType { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
@@ -234,6 +237,12 @@ final class BeerAPI {
         } catch {
             throw BeerAPIError.network(error)
         }
+    }
+
+    private static func canonicalBase(_ url: URL) -> URL {
+        var s = url.absoluteString
+        while s.hasSuffix("/") { s.removeLast() }
+        return URL(string: s + "/") ?? url
     }
 
     private func url(_ path: String) throws -> URL {

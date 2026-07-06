@@ -31,7 +31,7 @@ struct LoginView: View {
                             Text("Serveur Beer")
                                 .font(.caption)
                                 .foregroundStyle(Theme.muted)
-                            TextField("https://192.168.1.50:8444/beer", text: $serverURL)
+                            TextField("https://192.168.1.50:8444/beer/", text: $serverURL)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                                 .keyboardType(.URL)

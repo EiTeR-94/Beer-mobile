@@ -17,8 +17,9 @@ if (/:8443(\/|$)/.test(remote)) {
 }
 
 // LAN direct : le DNS freeboxos.fr pointe le WAN — l'iPhone en Wi‑Fi ne peut pas joindre :8444 via le FQDN
-const lan = `https://${lanHost}:${lanPort}/beer`;
-const fallbacks = [...new Set([lan, remote])];
+const lan = `https://${lanHost}:${lanPort}/beer/`;
+const remoteBase = remote ? `${remote.replace(/\/$/, "")}/` : "";
+const fallbacks = [...new Set([lan, remoteBase].filter(Boolean))];
 
 const swift = `// Généré au build CI — NE PAS ÉDITER
 import Foundation
