@@ -1,5 +1,4 @@
 # Build IPA développement — compte Apple ID GRATUIT (AltStore)
-# Pas de portail developer.apple.com (souvent « Access Unavailable » sans les 99 €).
 
 opt_out_usage
 default_platform(:ios)
@@ -9,7 +8,34 @@ def device_udid
 end
 
 def signing_team_id
-  ENV["APPLE_TEAM_ID"].to_s.strip
+  explicit = ENV["APPLE_TEAM_ID"].to_s.strip
+  return explicit unless explicit.empty?
+
+  UI.message("APPLE_TEAM_ID absent — détection automatique sur Mac GitHub…")
+
+  Spaceship::Portal.login(
+    ENV.fetch("APPLE_ID"),
+    ENV.fetch("FASTLANE_PASSWORD")
+  )
+
+  teams = Spaceship::Portal.client.teams
+  UI.user_error!("Aucune équipe Apple — vérifie APPLE_ID + mot de passe pour app") if teams.nil? || teams.empty?
+
+  personal = teams.find { |t| t["type"].to_s == "Individual" }
+  team = personal || teams.first
+  tid = team["teamId"]
+
+  UI.success("Team ID auto-détecté : #{tid} (#{team['name']})")
+  UI.important("Tu peux ajouter ce Team ID en secret GitHub APPLE_TEAM_ID pour accélérer les prochains builds.")
+
+  tid
+rescue StandardError => e
+  UI.user_error!(
+    "Impossible de détecter le Team ID : #{e.message}\n\n" \
+    "Plan B : installe 3uTools (3u.com), branche l'iPhone,\n" \
+    "onglet Provisioning Profiles → copie le Team ID (10 caractères)\n" \
+    "→ secret GitHub APPLE_TEAM_ID"
+  )
 end
 
 platform :ios do
@@ -21,27 +47,16 @@ platform :ios do
     setup_ci(force: true)
 
     team = signing_team_id
-    UI.user_error!(
-      "Secret GitHub APPLE_TEAM_ID manquant.\n" \
-      "Windows : powershell -File scripts/extract-team-id.ps1\n" \
-      "Puis ajoute le secret APPLE_TEAM_ID (10 caractères) sur GitHub."
-    ) if team.empty?
+    UI.message("Team ID utilisé : #{team}")
 
-    UI.message("Team ID : #{team}")
-
-    signing = {
+    update_code_signing_settings(
       use_automatic_signing: true,
       path: "ios/App/App.xcodeproj",
       targets: ["App"],
       bundle_identifier: "fr.eiter.plexibeer",
-      code_sign_identity: "Apple Development"
-    }
-    signing[:team_id] = team unless team.empty?
-
-    update_code_signing_settings(signing)
-
-    xcargs = "-allowProvisioningUpdates"
-    xcargs += " DEVELOPMENT_TEAM=#{team}" unless team.empty?
+      code_sign_identity: "Apple Development",
+      team_id: team
+    )
 
     build_app(
       workspace: "ios/App/App.xcworkspace",
@@ -52,7 +67,7 @@ platform :ios do
       output_name: "PlexiBeer",
       clean: true,
       skip_package_ipa: false,
-      xcargs: xcargs,
+      xcargs: "-allowProvisioningUpdates DEVELOPMENT_TEAM=#{team}",
       export_xcargs: "-allowProvisioningUpdates"
     )
   end
