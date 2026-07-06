@@ -1,0 +1,82 @@
+# Build IPA Plexi Beer sur Mac gratuit (GitHub Actions) → artifact → AltStore
+# Déclenchement manuel : Actions → Build iOS IPA → Run workflow
+
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    env:
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      IOS_DEVICE_UDID: ${{ secrets.IOS_DEVICE_UDID }}
+      FASTLANE_USER: ${{ secrets.APPLE_ID }}
+      FASTLANE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      FASTLANE_SKIP_UPDATE_CHECK: "true"
+      FASTLANE_DISABLE_ANIMATION: "true"
+      CI: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Vérifier les secrets
+        run: |
+          missing=0
+          for s in APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD IOS_DEVICE_UDID; do
+            if [ -z "${!s}" ]; then
+              echo "::error::Secret manquant : $s"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then
+            exit 1
+          fi
+          if [ -z "$KEYCHAIN_PASSWORD" ]; then
+            echo "KEYCHAIN_PASSWORD absent — valeur par défaut fastlane utilisée"
+          fi
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Dépendances npm
+        run: |
+          npm ci 2>/dev/null || npm install
+          npx cap add ios
+          node scripts/patch-ios-plist.js
+          npx cap sync ios
+
+      - name: Ruby + Fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+
+      - name: Build IPA (Fastlane)
+        run: bundle exec fastlane ios build_ipa
+
+      - name: Publier l'artifact IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlexiBeer-ipa
+          path: build/*.ipa
+          retention-days: 30
+          if-no-files-found: error

@@ -1,0 +1,32 @@
+{
+  "appId": "fr.eiter.plexibeer",
+  "appName": "Plexi Beer",
+  "webDir": "www",
+  "server": {
+    "url": "https://eiter.freeboxos.fr:8443/beer/",
+    "cleartext": false,
+    "allowNavigation": [
+      "eiter.freeboxos.fr",
+      "192.168.1.50",
+      "192.168.1.44"
+    ]
+  },
+  "ios": {
+    "contentInset": "automatic",
+    "backgroundColor": "#0f1419",
+    "allowsLinkPreview": false,
+    "scrollEnabled": true
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "launchShowDuration": 1500,
+      "backgroundColor": "#0f1419",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0f1419"
+    }
+  }
+}

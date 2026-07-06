@@ -1,0 +1,68 @@
+# Build IPA développement (compte Apple ID gratuit → AltStore)
+
+default_platform(:ios)
+
+def keychain_name
+  "plexi_beer_ci.keychain"
+end
+
+platform :ios do
+  desc "Certificats + profil pour l'iPhone du testeur"
+  lane :prepare_signing do
+    setup_ci(
+      force: true,
+      keychain_name: keychain_name,
+      keychain_password: ENV.fetch("KEYCHAIN_PASSWORD", "plexi-beer-ci-temp")
+    )
+
+    if ENV["IOS_DEVICE_UDID"].to_s.strip != ""
+      register_devices(
+        devices: {
+          "Plexi iPhone" => ENV["IOS_DEVICE_UDID"].strip
+        }
+      )
+    end
+
+    cert(
+      development: true,
+      username: ENV.fetch("APPLE_ID"),
+      team_id: ENV.fetch("APPLE_TEAM_ID"),
+      keychain_name: keychain_name,
+      keychain_password: ENV.fetch("KEYCHAIN_PASSWORD", "plexi-beer-ci-temp")
+    )
+
+    sigh(
+      development: true,
+      app_identifier: "fr.eiter.plexibeer",
+      username: ENV.fetch("APPLE_ID"),
+      team_id: ENV.fetch("APPLE_TEAM_ID"),
+      force: true
+    )
+
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      team_id: ENV.fetch("APPLE_TEAM_ID"),
+      code_sign_identity: "Apple Development",
+      path: "ios/App/App.xcodeproj",
+      targets: ["App"],
+      profile_name: ENV["SIGH_NAME"] || lane_context[SharedValues::SIGH_NAME],
+      bundle_identifier: "fr.eiter.plexibeer"
+    )
+  end
+
+  desc "Archive + export IPA pour AltStore"
+  lane :build_ipa do
+    prepare_signing
+
+    build_app(
+      workspace: "ios/App/App.xcworkspace",
+      scheme: "App",
+      configuration: "Release",
+      export_method: "development",
+      output_directory: "build",
+      output_name: "PlexiBeer",
+      clean: true,
+      skip_package_ipa: false
+    )
+  end
+end

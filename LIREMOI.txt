@@ -1,0 +1,11 @@
+Plexi Beer — app iOS phase 1 (perso, AltStore)
+
+BUILD GRATUIT (recommandé) : GUIDE-GITHUB.md
+  → GitHub Actions compile l'IPA (0 €, pas de MacinCloud)
+
+AltStore : déjà OK chez toi → installer le .ipa (Artifacts GitHub)
+
+MacinCloud : GUIDE-PHASE1.md (option payante ~35$ minimum)
+
+Archive : /home/eiter/beer-mobile-phase1.tar.gz
+URL Beer : https://eiter.freeboxos.fr:8443/beer/
