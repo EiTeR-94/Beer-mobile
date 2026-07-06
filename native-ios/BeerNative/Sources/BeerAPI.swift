@@ -389,6 +389,142 @@ final class BeerAPI {
         return decoded
     }
 
+    func saveProduct(barcode: String, beerName: String, brewery: String, style: String) async throws -> LookupResponse {
+        let payload: [String: Any] = [
+            "barcode": barcode,
+            "beer_name": beerName,
+            "brewery": brewery,
+            "style": style,
+        ]
+        let json = try JSONSerialization.data(withJSONObject: payload)
+        let (data, http, _) = try await request(path: "/api/products/save", method: "POST", body: json, contentType: "application/json")
+        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        guard let decoded = try? JSONDecoder().decode(LookupResponse.self, from: data) else {
+            throw BeerAPIError.decode
+        }
+        if http.statusCode >= 400 || decoded.ok == false {
+            throw BeerAPIError.server(decoded.error ?? "Sauvegarde impossible")
+        }
+        return decoded
+    }
+
+    func linkProduct(bid: Int, barcode: String, beerName: String, brewery: String) async throws -> LookupResponse {
+        let payload: [String: Any] = [
+            "untappd_bid": bid,
+            "barcode": barcode,
+            "beer_name": beerName,
+            "brewery": brewery,
+        ]
+        let json = try JSONSerialization.data(withJSONObject: payload)
+        let (data, http, _) = try await request(path: "/api/products/link", method: "POST", body: json, contentType: "application/json")
+        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        guard let decoded = try? JSONDecoder().decode(LookupResponse.self, from: data) else {
+            throw BeerAPIError.decode
+        }
+        if http.statusCode >= 400 || decoded.ok == false {
+            throw BeerAPIError.server(decoded.error ?? "Liaison impossible")
+        }
+        return decoded
+    }
+
+    func decodeBarcode(jpeg: Data) async throws -> DecodeBarcodeResponse {
+        let boundary = "BeerScan-\(UUID().uuidString)"
+        var req = URLRequest(url: try url("/api/decode-barcode"))
+        req.httpMethod = "POST"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        req.httpBody = makeMultipart(
+            boundary: boundary,
+            fields: [:],
+            file: ("image", "scan.jpg", "image/jpeg", jpeg)
+        )
+        let (data, http, _) = try await perform(req)
+        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        guard let decoded = try? JSONDecoder().decode(DecodeBarcodeResponse.self, from: data) else {
+            throw BeerAPIError.decode
+        }
+        return decoded
+    }
+
+    func scanPhoto(jpeg: Data) async throws -> LookupResponse {
+        let boundary = "BeerScan-\(UUID().uuidString)"
+        var req = URLRequest(url: try url("/api/scan-photo"))
+        req.httpMethod = "POST"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        req.httpBody = makeMultipart(
+            boundary: boundary,
+            fields: [:],
+            file: ("image", "scan.jpg", "image/jpeg", jpeg)
+        )
+        let (data, http, _) = try await perform(req)
+        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        guard let decoded = try? JSONDecoder().decode(LookupResponse.self, from: data) else {
+            throw BeerAPIError.decode
+        }
+        return decoded
+    }
+
+    func addHop(_ name: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["name": name])
+        let (_, http, _) = try await request(path: "/api/hops", method: "POST", body: body, contentType: "application/json")
+        if http.statusCode >= 400 { throw BeerAPIError.server("Houblon non ajouté") }
+    }
+
+    func adminReferentials() async throws -> ReferentialsResponse {
+        let (data, http, _) = try await request(path: "/api/admin/referentials", method: "GET", body: nil)
+        if http.statusCode == 401 || http.statusCode == 403 { throw BeerAPIError.unauthorized }
+        guard let decoded = try? JSONDecoder().decode(ReferentialsResponse.self, from: data) else {
+            throw BeerAPIError.decode
+        }
+        return decoded
+    }
+
+    func adminAddStyle(_ name: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["name": name])
+        let (_, http, _) = try await request(path: "/api/styles", method: "POST", body: body, contentType: "application/json")
+        if http.statusCode >= 400 { throw BeerAPIError.server("Style non ajouté") }
+    }
+
+    func adminDeleteStyle(_ name: String) async throws {
+        let enc = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name
+        let (_, http, _) = try await request(path: "/api/styles/\(enc)", method: "DELETE", body: nil)
+        if http.statusCode >= 400 { throw BeerAPIError.server("Suppression impossible") }
+    }
+
+    func adminAddHop(_ name: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["name": name])
+        let (_, http, _) = try await request(path: "/api/hops", method: "POST", body: body, contentType: "application/json")
+        if http.statusCode >= 400 { throw BeerAPIError.server("Houblon non ajouté") }
+    }
+
+    func adminDeleteHop(_ name: String) async throws {
+        let enc = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name
+        let (_, http, _) = try await request(path: "/api/hops/\(enc)", method: "DELETE", body: nil)
+        if http.statusCode >= 400 { throw BeerAPIError.server("Suppression impossible") }
+    }
+
+    func adminAddFlavor(_ name: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["name": name])
+        let (_, http, _) = try await request(path: "/api/flavors/custom", method: "POST", body: body, contentType: "application/json")
+        if http.statusCode >= 400 { throw BeerAPIError.server("Saveur non ajoutée") }
+    }
+
+    func adminDeleteFlavor(_ name: String) async throws {
+        let enc = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name
+        let (_, http, _) = try await request(path: "/api/flavors/custom/\(enc)", method: "DELETE", body: nil)
+        if http.statusCode >= 400 { throw BeerAPIError.server("Suppression impossible") }
+    }
+
+    func adminSetPassword(_ username: String, password: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["password": password])
+        let (_, http, _) = try await request(
+            path: "/api/admin/users/\(username)",
+            method: "PATCH",
+            body: body,
+            contentType: "application/json"
+        )
+        if http.statusCode >= 400 { throw BeerAPIError.server("Mot de passe non mis à jour") }
+    }
+
     func untappdFetch(bid: Int, barcode: String = "", beerName: String = "", brewery: String = "") async throws -> LookupResponse {
         let payload: [String: Any] = [
             "untappd_bid": bid,

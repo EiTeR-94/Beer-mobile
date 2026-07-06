@@ -253,6 +253,7 @@ struct InviteItem: Identifiable, Decodable {
     let checkins: Int?
     let redeemIp: String?
     let lastUsedIp: String?
+    let ipLog: [InviteIpEntry]?
 
     enum CodingKeys: String, CodingKey {
         case id, label, username, url, active, permanent, checkins
@@ -265,6 +266,7 @@ struct InviteItem: Identifiable, Decodable {
         case validityLabel = "validity_label"
         case redeemIp = "redeem_ip"
         case lastUsedIp = "last_used_ip"
+        case ipLog = "ip_log"
     }
 
     var statusText: String {
@@ -297,9 +299,24 @@ struct PendingCheckin: Identifiable, Codable {
     var abv: String
     var summary: String
     var rating: Double
+    var flavors: [String]
+    var hops: [String]
     var comment: String
     var untappdBid: String
     var force: Bool
+    var photoJPEGBase64: String?
+}
+
+struct PreviousCheckin: Decodable {
+    let beerName: String?
+    let rating: Double?
+    let createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case rating
+        case beerName = "beer_name"
+        case createdAt = "created_at"
+    }
 }
 
 struct CreateCheckinResult: Decodable {
@@ -307,6 +324,43 @@ struct CreateCheckinResult: Decodable {
     let id: Int?
     let duplicate: Bool?
     let error: String?
+    let previousCheckin: PreviousCheckin?
+
+    enum CodingKeys: String, CodingKey {
+        case ok, id, duplicate, error
+        case previousCheckin = "previous_checkin"
+    }
+}
+
+struct DecodeBarcodeResponse: Decodable {
+    let ok: Bool
+    let barcode: String?
+    let error: String?
+}
+
+struct ReferentialEntry: Decodable, Identifiable {
+    let name: String
+    let preset: Bool?
+    let deletable: Bool?
+    var id: String { name }
+}
+
+struct ReferentialsResponse: Decodable {
+    let styles: [ReferentialEntry]?
+    let hops: [ReferentialEntry]?
+    let flavors: [ReferentialEntry]?
+}
+
+struct InviteIpEntry: Decodable {
+    let ip: String?
+    let firstSeen: String?
+    let lastSeen: String?
+
+    enum CodingKeys: String, CodingKey {
+        case ip
+        case firstSeen = "first_seen"
+        case lastSeen = "last_seen"
+    }
 }
 
 struct UntappdSearchResponse: Decodable {

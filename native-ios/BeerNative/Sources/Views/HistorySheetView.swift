@@ -4,6 +4,7 @@ struct HistorySheetView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
     var initialSearch: String = ""
+    var onOpenGallery: (() -> Void)?
 
     @State private var items: [CheckinItem] = []
     @State private var stats: HistoryStats?
@@ -31,6 +32,11 @@ struct HistorySheetView: View {
                     LazyVStack(spacing: 10) {
                         ForEach(items) { item in
                             historyCard(item)
+                                .onAppear {
+                                    if item.id == items.last?.id, hasMore, !loading {
+                                        Task { await load(append: true) }
+                                    }
+                                }
                         }
                     }
                     if hasMore && !items.isEmpty {
@@ -48,8 +54,10 @@ struct HistorySheetView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Fermer") { dismiss() } }
                 ToolbarItem(placement: .primaryAction) {
-                    Button("Galerie") { /* opened from MainView */ }
-                        .hidden()
+                    Button("📷 Galerie") {
+                        dismiss()
+                        onOpenGallery?()
+                    }
                 }
             }
             .searchable(text: $search, prompt: "nom, brasserie, style…")
@@ -169,8 +177,10 @@ struct HistorySheetView: View {
                 }
             }
             HStack(spacing: 6) {
-                Button("Noter à nouveau") { dismiss(); app.startRetaste(item) }
+                Button("Noter à nouveau") { dismiss(); app.startRetaste(item, step: 2) }
                     .buttonStyle(.borderedProminent).tint(Theme.accent).controlSize(.small)
+                Button("Rapide") { dismiss(); app.startQuickRate(item) }
+                    .buttonStyle(.bordered).controlSize(.small)
                 Button("Modifier") { editing = item }.buttonStyle(.bordered).controlSize(.small)
                 Button("Supprimer", role: .destructive) { Task { await delete(item) } }
                     .buttonStyle(.bordered).controlSize(.small)

@@ -327,10 +327,72 @@ struct UntappdRatingSlider: View {
                 )
             }
             .frame(height: 28)
-            Text(String(format: "%.2f", rating))
+            Text("\(BeerFormatters.ratingLabel(rating))/5")
                 .font(.system(size: 15, weight: .medium, design: .monospaced))
                 .foregroundStyle(Theme.star)
-                .frame(width: 36, alignment: .trailing)
+                .frame(width: 52, alignment: .trailing)
+        }
+    }
+}
+
+// MARK: - Custom tags
+
+struct CustomTagInput: View {
+    let placeholder: String
+    @Binding var input: String
+    @Binding var selected: Set<String>
+    let maxCount: Int
+    var registerOnServer: ((String) async throws -> Void)?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            TextField(placeholder, text: $input)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .padding(10)
+                .background(Theme.card)
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .foregroundStyle(Theme.text)
+                .onSubmit { Task { await add() } }
+            Button("+") { Task { await add() } }
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.accent)
+                .disabled(input.trimmingCharacters(in: .whitespaces).count < 2)
+        }
+    }
+
+    private func add() async {
+        let tag = input.trimmingCharacters(in: .whitespaces)
+        guard tag.count >= 2, selected.count < maxCount, !selected.contains(tag) else { return }
+        if let registerOnServer {
+            try? await registerOnServer(tag)
+        }
+        selected.insert(tag)
+        input = ""
+    }
+}
+
+struct CustomTagChips: View {
+    @Binding var selected: Set<String>
+    let customOnly: Set<String>
+
+    var body: some View {
+        FlowLayout(spacing: 6) {
+            ForEach(Array(customOnly).sorted(), id: \.self) { tag in
+                Button {
+                    selected.remove(tag)
+                } label: {
+                    Text("\(tag) ×")
+                        .font(.system(size: 13))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Theme.accent.opacity(0.2))
+                        .foregroundStyle(Theme.accent)
+                        .overlay(Capsule().stroke(Theme.accent))
+                        .clipShape(Capsule())
+                }
+            }
         }
     }
 }

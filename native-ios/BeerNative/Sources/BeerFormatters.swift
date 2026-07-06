@@ -11,6 +11,11 @@ enum BeerFormatters {
         CGFloat(min(5, max(0, rating)) / 5.0) * totalWidth
     }
 
+    static func normalizeSearch(_ text: String) -> String {
+        text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "fr_FR"))
+            .lowercased()
+    }
+
     static func formatDate(_ raw: String?) -> String {
         guard let raw, !raw.isEmpty else { return "—" }
         let iso = ISO8601DateFormatter()

@@ -14,6 +14,8 @@ struct CheckinEditView: View {
     @State private var hops = Set<String>()
     @State private var flavorTags: [String] = []
     @State private var hopTags: [String] = []
+    @State private var customFlavorInput = ""
+    @State private var customHopInput = ""
     @State private var hidden = false
     @State private var photoItem: PhotosPickerItem?
     @State private var newPhoto: Data?
@@ -36,10 +38,12 @@ struct CheckinEditView: View {
             ScrollView {
                 VStack(spacing: 14) {
                     Text(item.beerName).font(.headline)
+                    Text("\(item.brewery ?? "—") · \(item.style ?? "?") · \(BeerFormatters.formatDate(item.createdAt))")
+                        .font(.caption).foregroundStyle(Theme.muted)
                     BeerImage(path: item.photoURL)
                         .frame(height: 160)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
-                    PhotosPicker("Changer la photo", selection: $photoItem, matching: .images)
+                    PhotosPicker("📷 Prendre ou choisir une photo", selection: $photoItem, matching: .images)
                         .foregroundStyle(Theme.accent)
                     if item.photoURL != nil {
                         Button("Retirer la photo", role: .destructive) { removePhoto = true; newPhoto = nil }
@@ -49,12 +53,22 @@ struct CheckinEditView: View {
                     if !flavorTags.isEmpty {
                         FlavorTagGrid(title: "Goûts", tags: flavorTags, selected: $flavors, maxCount: 8)
                     }
+                    CustomTagInput(placeholder: "Goût perso", input: $customFlavorInput, selected: $flavors, maxCount: 8)
+                    CustomTagChips(selected: $flavors, customOnly: flavors.subtracting(Set(flavorTags)))
                     if !hopTags.isEmpty {
                         FlavorTagGrid(title: "Houblons", tags: hopTags, selected: $hops, maxCount: 6)
                     }
-                    BeerField(label: "Commentaire", text: $comment)
+                    CustomTagInput(
+                        placeholder: "Houblon perso",
+                        input: $customHopInput,
+                        selected: $hops,
+                        maxCount: 6,
+                        registerOnServer: { try await app.api.addHop($0) }
+                    )
+                    CustomTagChips(selected: $hops, customOnly: hops.subtracting(Set(hopTags)))
+                    BeerField(label: "Commentaire (120 car.)", text: $comment)
                     if app.isAdmin {
-                        Toggle("Masquer pour les autres", isOn: $hidden).tint(Theme.accent)
+                        Toggle("Masquer cette dégustation pour les autres", isOn: $hidden).tint(Theme.accent)
                     }
                     if let message { Text(message).font(.footnote).foregroundStyle(Theme.error) }
                     BeerPrimaryButton(title: busy ? "Enregistrement…" : "Enregistrer", busy: busy) {
@@ -64,16 +78,25 @@ struct CheckinEditView: View {
                 .padding(16)
             }
             .background(Theme.bg)
-            .navigationTitle("Modifier")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Annuler") { dismiss() } } }
+            .navigationTitle("Modifier la dégustation")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Annuler") { dismiss() } }
+            }
             .task { await loadTags() }
-            .onChange(of: photoItem) { p in Task { newPhoto = try? await p?.loadTransferable(type: Data.self); removePhoto = false } }
+            .onChange(of: photoItem) { p in
+                Task {
+                    if let raw = try? await p?.loadTransferable(type: Data.self) {
+                        newPhoto = BeerImageUtils.compressJPEG(raw)
+                        removePhoto = false
+                    }
+                }
+            }
         }
         .preferredColorScheme(.dark)
     }
 
     private func loadTags() async {
-        if let n = try? await app.api.flavors(style: item.style ?? "Unknown") {
+        if let n = try? await app.api.flavors(style: item.style ?? "Unknown", description: "") {
             flavorTags = n.flavors ?? []
             hopTags = n.hops ?? []
         }
@@ -95,8 +118,8 @@ struct CheckinEditView: View {
             else if let newPhoto { try await app.api.replaceCheckinPhoto(id: item.id, jpeg: newPhoto) }
             onSaved()
             dismiss()
-        } catch {
-            message = error.localizedDescription
+        } catch let err {
+            message = err.localizedDescription
         }
     }
 }

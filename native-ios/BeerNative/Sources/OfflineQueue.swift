@@ -15,7 +15,45 @@ final class OfflineQueue: ObservableObject {
 
     func load() {
         guard let data = try? Data(contentsOf: fileURL) else { return }
-        items = (try? JSONDecoder().decode([PendingCheckin].self, from: data)) ?? []
+        if let decoded = try? JSONDecoder().decode([PendingCheckin].self, from: data) {
+            items = decoded
+            return
+        }
+        struct Legacy: Decodable {
+            let id: UUID
+            let createdAt: Date
+            var barcode: String
+            var beerName: String
+            var brewery: String
+            var style: String
+            var abv: String
+            var summary: String
+            var rating: Double
+            var comment: String
+            var untappdBid: String
+            var force: Bool
+        }
+        if let legacy = try? JSONDecoder().decode([Legacy].self, from: data) {
+            items = legacy.map {
+                PendingCheckin(
+                    id: $0.id,
+                    createdAt: $0.createdAt,
+                    barcode: $0.barcode,
+                    beerName: $0.beerName,
+                    brewery: $0.brewery,
+                    style: $0.style,
+                    abv: $0.abv,
+                    summary: $0.summary,
+                    rating: $0.rating,
+                    flavors: [],
+                    hops: [],
+                    comment: $0.comment,
+                    untappdBid: $0.untappdBid,
+                    force: $0.force,
+                    photoJPEGBase64: nil
+                )
+            }
+        }
     }
 
     private func persist() {
@@ -37,6 +75,7 @@ final class OfflineQueue: ObservableObject {
         var synced = 0
         for item in items {
             do {
+                let photo = item.photoJPEGBase64.flatMap { Data(base64Encoded: $0) }
                 let result = try await api.createCheckin(
                     barcode: item.barcode,
                     beerName: item.beerName,
@@ -45,11 +84,12 @@ final class OfflineQueue: ObservableObject {
                     abv: item.abv,
                     summary: item.summary,
                     rating: item.rating,
-                    flavors: [],
-                    hops: [],
+                    flavors: item.flavors,
+                    hops: item.hops,
                     comment: item.comment,
                     untappdBid: item.untappdBid,
-                    force: item.force
+                    force: item.force,
+                    photoJPEG: photo
                 )
                 if result.ok == true || result.id != nil {
                     remove(id: item.id)

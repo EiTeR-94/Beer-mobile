@@ -95,9 +95,14 @@ final class AppModel: ObservableObject {
         banner = nil
     }
 
-    func startRetaste(_ item: CheckinItem, step: Int = 3) {
+    func startRetaste(_ item: CheckinItem, step: Int = 2) {
         wizardProduct = BeerProduct.from(checkin: item)
         wizardStep = step
+    }
+
+    func startQuickRate(_ item: CheckinItem) {
+        wizardProduct = BeerProduct.from(checkin: item)
+        wizardStep = 3
     }
 
     func startWishlistTaste(_ item: WishlistItem) {
@@ -142,9 +147,12 @@ final class AppModel: ObservableObject {
             abv: product.abv.map { String($0) } ?? "",
             summary: product.summary,
             rating: rating,
+            flavors: flavors,
+            hops: hops,
             comment: comment,
             untappdBid: product.untappdBid.map(String.init) ?? "",
-            force: force
+            force: force,
+            photoJPEGBase64: photoJPEG?.base64EncodedString()
         )
 
         if !isOnline {
@@ -169,7 +177,8 @@ final class AppModel: ObservableObject {
                 photoJPEG: photoJPEG
             )
             if result.duplicate == true {
-                return "duplicate"
+                let pc = result.previousCheckin
+                return "duplicate|\(pc?.beerName ?? product.beerName)|\(pc?.rating ?? 0)|\(pc?.createdAt ?? "")"
             }
             if result.ok == true || result.id != nil {
                 return "Enregistré ✓"

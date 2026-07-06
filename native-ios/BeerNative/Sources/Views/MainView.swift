@@ -30,7 +30,9 @@ struct MainView: View {
         .background(Theme.bg)
         .sheet(item: $sheet) { s in
             switch s {
-            case .history: HistorySheetView(initialSearch: historySearchSeed)
+            case .history: HistorySheetView(initialSearch: historySearchSeed, onOpenGallery: {
+                sheet = .gallery
+            })
             case .gallery: GallerySheetView()
             case .wishlist: WishlistSheetView()
             case .gifts: GiftsSheetView()
