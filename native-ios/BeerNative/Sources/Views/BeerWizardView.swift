@@ -410,9 +410,9 @@ struct BeerWizardView: View {
                 style: product.style,
                 barcode: product.barcode
             )
-            status = "Ajouté à « À boire » ✓"
+            scanStatus = "Ajouté à « À boire » ✓"
         } catch {
-            status = error.localizedDescription
+            scanStatus = error.localizedDescription
         }
     }
 

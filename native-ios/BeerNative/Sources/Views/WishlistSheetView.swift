@@ -66,7 +66,7 @@ struct WishlistSheetView: View {
             try await app.api.addWishlist(beerName: name, brewery: brewery)
             name = ""; brewery = ""
             await load()
-        } catch { error = error.localizedDescription }
+        } catch let err { self.error = err.localizedDescription }
     }
 
     private func remove(_ item: WishlistItem) async {
