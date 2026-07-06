@@ -83,14 +83,14 @@ struct CheckinEditView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Annuler") { dismiss() } }
             }
             .task { await loadTags() }
-            .onChange(of: photoItem) { p in
+            .onChange(of: photoItem, perform: { p in
                 Task {
                     if let raw = try? await p?.loadTransferable(type: Data.self) {
                         newPhoto = BeerImageUtils.compressJPEG(raw)
                         removePhoto = false
                     }
                 }
-            }
+            })
         }
         .preferredColorScheme(.dark)
     }

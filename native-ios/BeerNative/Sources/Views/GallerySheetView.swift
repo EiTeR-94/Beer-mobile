@@ -62,9 +62,9 @@ struct GallerySheetView: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fermer") { dismiss() } } }
             .task { await bootstrap() }
             .refreshable { await reload() }
-            .onChange(of: filterStyle) { _ in Task { await reload() } }
-            .onChange(of: filterRating) { _ in Task { await reload() } }
-            .onChange(of: filterPeriod) { _ in Task { await reload() } }
+            .onChange(of: filterStyle, perform: { _ in Task { await reload() } })
+            .onChange(of: filterRating, perform: { _ in Task { await reload() } })
+            .onChange(of: filterPeriod, perform: { _ in Task { await reload() } })
             .sheet(item: $selected) { item in
                 CheckinDetailView(
                     item: item,

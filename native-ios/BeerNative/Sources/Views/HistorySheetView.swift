@@ -61,10 +61,10 @@ struct HistorySheetView: View {
                 }
             }
             .searchable(text: $search, prompt: "nom, brasserie, style…")
-            .onChange(of: search) { _ in Task { await reload() } }
-            .onChange(of: filterStyle) { _ in Task { await reload() } }
-            .onChange(of: filterRating) { _ in Task { await reload() } }
-            .onChange(of: filterPeriod) { _ in Task { await reload() } }
+            .onChange(of: search, perform: { _ in Task { await reload() } })
+            .onChange(of: filterStyle, perform: { _ in Task { await reload() } })
+            .onChange(of: filterRating, perform: { _ in Task { await reload() } })
+            .onChange(of: filterPeriod, perform: { _ in Task { await reload() } })
             .task {
                 if !initialSearch.isEmpty && search.isEmpty {
                     search = initialSearch

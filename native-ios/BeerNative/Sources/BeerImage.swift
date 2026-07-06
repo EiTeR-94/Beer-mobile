@@ -48,7 +48,7 @@ struct BeerImage: View {
             }
         }
         .onAppear { loader.load(path: path, api: app.api) }
-        .onChange(of: path) { loader.load(path: $0, api: app.api) }
+        .onChange(of: path, perform: { loader.load(path: $0, api: app.api) })
     }
 
     private var placeholder: some View {

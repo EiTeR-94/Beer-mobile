@@ -48,7 +48,7 @@ struct LoginView: View {
                                 placeholder: "https://192.168.1.50:8444/beer/",
                                 keyboard: .URL
                             )
-                            .onChange(of: serverURL) { app.applyServerURL($0) }
+                            .onChange(of: serverURL, perform: { app.applyServerURL($0) })
                             Button("Tester le serveur") {
                                 Task {
                                     app.applyServerURL(serverURL)

@@ -57,18 +57,18 @@ struct BeerWizardView: View {
             .padding(.bottom, 24)
         }
         .background(Theme.bg)
-        .onChange(of: photoItem) { item in Task { await loadPhoto(item, tasting: true) } }
-        .onChange(of: scanPhotoItem) { item in Task { await decodeScanPhoto(item) } }
+        .onChange(of: photoItem, perform: { item in Task { await loadPhoto(item, tasting: true) } })
+        .onChange(of: scanPhotoItem, perform: { item in Task { await decodeScanPhoto(item) } })
         .onAppear {
             applyPrefillIfNeeded()
             Task { styleOptions = (try? await app.api.styles()) ?? [] }
         }
-        .onChange(of: app.wizardStep) { applyPrefillIfNeeded() }
-        .onChange(of: app.wizardProduct) { _ in applyPrefillIfNeeded() }
-        .onChange(of: step) { newStep in
+        .onChange(of: app.wizardStep, perform: { _ in applyPrefillIfNeeded() })
+        .onChange(of: app.wizardProduct, perform: { _ in applyPrefillIfNeeded() })
+        .onChange(of: step, perform: { newStep in
             app.wizardStep = newStep
             if newStep == 3 { Task { await loadNotation() } }
-        }
+        })
         .alert("Déjà dégustée", isPresented: $showDuplicate) {
             Button("Annuler", role: .cancel) {}
             Button("Noter à nouveau") { Task { await save(force: true) } }
@@ -296,9 +296,9 @@ struct BeerWizardView: View {
                     .foregroundStyle(Theme.muted)
                 TextField("Terrasse, avec elle, à refaire…", text: $comment, axis: .vertical)
                     .lineLimit(2...4)
-                    .onChange(of: comment) { v in
+                    .onChange(of: comment, perform: { v in
                         if v.count > 120 { comment = String(v.prefix(120)) }
-                    }
+                    })
                     .padding(12)
                     .background(Theme.card)
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
