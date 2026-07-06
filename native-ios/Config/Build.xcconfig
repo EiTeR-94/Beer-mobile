@@ -1,0 +1,2 @@
+// Injecté au build CI depuis BEER_SERVER_URL
+BEER_API_BASE = https://CHANGE_ME/beer

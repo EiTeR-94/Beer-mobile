@@ -1,8 +1,12 @@
-# Plexi Beer iOS — vraie app embarquée
+# Plexi Beer iOS — app NATIVE SwiftUI
 
-L’IPA contient **le front Beer** (HTML/JS/CSS). Seules les **données** passent par l’API sur ton serveur.
+**Ce n'est plus Capacitor.** L'IPA contient du code Swift/SwiftUI compilé :
+- Scanner EAN natif (AVFoundation)
+- UI 100 % native (pas de WebView, pas de HTML)
+- File d'attente offline sur l'iPhone
+- API Beer distante pour login, lookup, sync
 
-**Coût : 0 €** (repo public = Mac GitHub gratuit)
+**Coût : 0 €** — build sur Mac GitHub gratuit, install via AltStore.
 
 ---
 
@@ -12,47 +16,44 @@ L’IPA contient **le front Beer** (HTML/JS/CSS). Seules les **données** passen
 |--------|---------|
 | `BEER_SERVER_URL` | `https://ton-serveur.example/beer` |
 
-Pas d’URL dans le code public — injectée au build dans `www/mobile-env.js`.
+Injecté dans `native-ios/Config/Build.xcconfig` au build.
 
 ---
 
-## Mettre à jour le front Beer
+## Build
 
-Sur le serveur Plexi (quand Beer change) :
-
-```bash
-cd /home/eiter/beer-mobile
-BEER_SERVER_URL="https://ton-serveur/beer" npm run sync:www
-git add www/
-git commit -m "sync: front Beer"
-git push
-```
-
-Puis **Actions** → **Run workflow**.
+1. **Actions** → **Build iOS IPA** → **Run workflow**
+2. **Artifacts** → `PlexiBeer.ipa`
+3. **AltStore** → installer
 
 ---
 
-## Côté serveur Beer (une fois)
-
-Le conteneur Beer doit avoir `BEER_MOBILE_CORS=1` (déjà dans docker-compose) pour que l’app iOS puisse se connecter.
+## Côté serveur Beer
 
 ```bash
 cd /home/eiter/beer && docker compose up -d
 ```
 
----
-
-## Installer l’IPA
-
-1. **Artifacts** → `PlexiBeer.ipa`
-2. **AltStore** → **+** → installe
-3. Wi‑Fi maison ou VPN Plexi pour l’API
-4. **Réglages iPhone** → Plexi Beer → autoriser **Caméra**
+`BEER_MOBILE_CORS=1` requis (déjà dans docker-compose).
 
 ---
 
 ## Offline
 
-- UI Beer **dans l’IPA** → ouvre sans charger le site
-- Enregistrement bière **sans réseau** → file d’attente → sync auto
-- Lookup EAN catalogue → **réseau requis**
+| Action | Hors ligne |
+|--------|------------|
+| Ouvrir l'app | Oui |
+| Scanner EAN (caméra native) | Oui |
+| Identifier bière (catalogue) | Non — réseau requis |
+| Saisie manuelle + noter | Oui → file locale |
+| Sync | Auto au retour Wi‑Fi/VPN |
+
+---
+
+## Structure
+
+```
+native-ios/
+  BeerNative/Sources/   ← SwiftUI + API + offline
+  project.yml           ← XcodeGen
+```

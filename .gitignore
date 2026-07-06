@@ -11,3 +11,4 @@ capacitor.config.local.json
 team-id-resultat.txt
 dist/
 www/mobile-env.js
+native-ios/BeerNative.xcodeproj/

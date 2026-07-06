@@ -1,4 +1,4 @@
-# Build IPA Plexi Beer — app EMBARQUÉE (fichiers dans l'IPA) + API distante
+# Build IPA Plexi Beer — app NATIVE SwiftUI (pas Capacitor / pas WebView)
 
 name: Build iOS IPA
 
@@ -34,27 +34,16 @@ jobs:
             echo "::error::Secret BEER_SERVER_URL manquant (ex. https://ton-serveur/beer)"
             exit 1
           fi
-          test -f www/index.html || (echo "::error::www/ absent — lance npm run sync:www sur le serveur puis push" && exit 1)
+          test -f native-ios/project.yml || (echo "::error::native-ios/ absent" && exit 1)
 
-      - name: Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: package-lock.json
+      - name: Config API Beer (Build.xcconfig)
+        run: node scripts/write-native-config.js
 
-      - name: Config API Beer (mobile-env.js)
-        run: node scripts/write-mobile-env.js
-
-      - name: Dépendances npm + iOS
+      - name: XcodeGen
         run: |
-          npm ci 2>/dev/null || npm install
-          npx cap add ios
-          node scripts/patch-ios-plist.js
-          node scripts/patch-ios-nosign.js
-          npx cap sync ios
-          node scripts/patch-ios-nosign.js
-          cd ios/App && pod install
+          brew install xcodegen
+          cd native-ios && xcodegen generate
+          test -f BeerNative.xcodeproj/project.pbxproj
 
       - name: Ruby + Fastlane
         uses: ruby/setup-ruby@v1
@@ -62,17 +51,17 @@ jobs:
           ruby-version: "3.3"
           bundler-cache: true
 
-      - name: Build IPA non signée
+      - name: Build IPA native non signée
         run: |
           echo "Commit: $GITHUB_SHA"
-          echo "App embarquée — API: (secret BEER_SERVER_URL)"
+          echo "App SwiftUI native — API via secret BEER_SERVER_URL"
           bundle exec fastlane ios build_ipa --verbose || true
           if [ ! -f build/PlexiBeer.ipa ]; then
-            ARCHIVE=$(find ~/Library/Developer/Xcode/Archives -name "*.xcarchive" -mmin -60 | head -1)
-            if [ -n "$ARCHIVE" ] && [ -d "$ARCHIVE/Products/Applications" ]; then
+            ARCHIVE=$(find ~/Library/Developer/Xcode/DerivedData -name "Plexi Beer.app" -mmin -60 | head -1)
+            if [ -n "$ARCHIVE" ]; then
               rm -rf build/Payload
               mkdir -p build/Payload
-              cp -r "$ARCHIVE/Products/Applications/"*.app build/Payload/
+              cp -r "$ARCHIVE" build/Payload/
               (cd build && zip -qr PlexiBeer.ipa Payload)
             fi
           fi
