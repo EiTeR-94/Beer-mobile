@@ -1,164 +1,46 @@
-# Plexi Beer iOS — build gratuit avec GitHub Actions
+# Plexi Beer iOS — build GitHub + AltStore
 
-Pas de MacinCloud : GitHub compile l’app sur un **Mac gratuit** et tu récupères le **`.ipa`** pour AltStore.
+GitHub compile une **IPA non signée** (Mac gratuit, repo public). **AltStore** la re-signe sur ton PC à l’installation.
 
-**Coût : 0 €** (repo **public** recommandé = minutes macOS illimitées).
-
----
-
-## Avant de commencer (15 min)
-
-### 1. Compte GitHub
-
-Crée un compte sur https://github.com si besoin.
-
-### 2. Session Apple sur Windows (obligatoire — contourne le blocage GitHub)
-
-> Apple refuse souvent le login « mot de passe pour app » **depuis les serveurs GitHub**, même si le mot de passe est bon. Ce n’est pas une erreur de copie.
-
-Sur ton **PC Windows** (PowerShell) — **ne pas utiliser `fastlane spaceauth`** (cassé sur Windows).
-
-```powershell
-chcp 65001
-$env:LC_ALL = "en_US.UTF-8"
-$env:LANG = "en_US.UTF-8"
-$env:APPLE_ID = "eiter_94@hotmail.com"
-$env:FASTLANE_PASSWORD = "xxxx-xxxx-xxxx-xxxx"   # mot de passe POUR APP, pas Hotmail
-
-gem install fastlane
-cd C:\chemin\vers\beer-mobile
-ruby scripts/export-apple-session.rb
-```
-
-- Remplace le mot de passe par le tien (mot de passe **pour app** Apple)
-- Le script affiche un bloc + ton **Team ID**
-- Copie **tout le bloc** → secret GitHub `FASTLANE_SESSION`
-
-Valide ~1 mois ; regénère avec le même script si besoin.
-
-### 3. Mot de passe spécifique Apple (pour spaceauth ci-dessus)
-
-1. https://appleid.apple.com → **Connexion et sécurité**
-2. **Mots de passe pour app** → **Générer** → nom `GitHub Plexi Beer`
-3. Format `xxxx-xxxx-xxxx-xxxx`
-
-### 4. Team ID Apple (optionnel)
-
-1. https://developer.apple.com/account (connecte-toi avec le **même Apple ID** qu’AltStore)
-2. Accepte les conditions si demandé (compte développeur **gratuit**)
-3. Note le **Team ID** (ex. `AB12C3D4EF`) — section adhésion / Membership
-
-### 5. UDID de ton iPhone
-
-Sur **Windows** (iTunes ou 3uTools) :
-
-- Branche l’iPhone → clique sur le **numéro de série** → copie l’**UDID**
-
-(C’est le même iPhone que pour AltStore.)
+**Coût : 0 €**
 
 ---
 
-## Étape 1 — Créer le dépôt GitHub
+## Secret GitHub (un seul obligatoire)
 
-1. GitHub → **New repository**
-2. Nom : `plexi-beer-mobile` (ou autre)
-3. **Public** (important pour macOS gratuit illimité)
-4. Ne coche pas « Add README » (on pousse le dossier déjà prêt)
+**Settings** → **Secrets and variables** → **Actions** → **New repository secret**
 
----
+| Secret | Exemple | Rôle |
+|--------|---------|------|
+| `BEER_SERVER_URL` | `https://ton-serveur.example/beer/` | URL Beer (jamais dans le code public) |
+| `BEER_ALLOW_NAVIGATION` | *(optionnel)* `10.0.0.1,10.0.0.2` | IPs LAN autorisées en plus du hostname |
 
-## Étape 2 — Envoyer le projet depuis le serveur (ou ton PC)
-
-### Depuis le serveur Plexi
-
-```bash
-cd /home/eiter/beer-mobile
-git init
-git add .
-git commit -m "Plexi Beer iOS — Capacitor + GitHub Actions"
-git branch -M main
-git remote add origin https://github.com/TON_COMPTE/plexi-beer-mobile.git
-git push -u origin main
-```
-
-(Remplace `TON_COMPTE` ; GitHub demandera login — **Personal Access Token** si mot de passe refusé.)
-
-### Depuis Windows
-
-1. Copie le dossier `beer-mobile` ou l’archive `beer-mobile-phase1.tar.gz`
-2. GitHub Desktop ou :
-
-```bash
-git init
-git add .
-git commit -m "initial"
-git remote add origin https://github.com/TON_COMPTE/plexi-beer-mobile.git
-git push -u origin main
-```
+Aucun secret Apple requis pour le build.
 
 ---
 
-## Étape 3 — Secrets GitHub
+## Lancer le build
 
-Dépôt → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
-
-| Nom du secret | Valeur |
-|---------------|--------|
-| `APPLE_ID` | `eiter_94@hotmail.com` (ton mail exact) |
-| `FASTLANE_SESSION` | Bloc copié après `fastlane spaceauth` sur Windows |
-| `APPLE_APP_SPECIFIC_PASSWORD` | Mot de passe pour app (secours) |
-| `IOS_DEVICE_UDID` | UDID iPhone |
-| `APPLE_TEAM_ID` | Optionnel — détecté auto si absent |
-| `KEYCHAIN_PASSWORD` | *(optionnel)* un mot de passe quelconque, ex. `PlexiBeer2026` |
+1. **Actions** → **Build iOS IPA** → **Run workflow**
+2. Attends 10–25 min
+3. **Artifacts** → **PlexiBeer-ipa** → `PlexiBeer.ipa`
 
 ---
 
-## Étape 4 — Lancer le build
+## Installer (AltStore)
 
-1. Onglet **Actions** du dépôt
-2. **Build iOS IPA** (barre gauche)
-3. **Run workflow** → **Run workflow**
-4. Attends **10–25 min** (première fois plus long)
-
-### Si ça échoue
-
-- **register_devices** : connecte-toi une fois sur developer.apple.com et accepte les accords
-- **2FA** : utilise bien le **mot de passe spécifique**, pas ton mot de passe iCloud
-- **Team ID** incorrect : revérifie sur developer.apple.com
-- Copie le **log rouge** de l’étape Fastlane pour debug
+1. **AltServer** actif sur le PC
+2. Copie `PlexiBeer.ipa` sur l’iPhone
+3. **AltStore** → **My Apps** → **+** → choisis l’IPA
+4. AltStore re-signe avec ton Apple ID
 
 ---
 
-## Étape 5 — Télécharger le .ipa
+## Repo public — sécurité
 
-1. Workflow terminé en **vert**
-2. Tout en bas : **Artifacts** → **PlexiBeer-ipa**
-3. Télécharge le zip → dedans : **`PlexiBeer.ipa`**
-
----
-
-## Étape 6 — Installer avec AltStore (déjà fait chez toi)
-
-1. Mets `PlexiBeer.ipa` sur l’iPhone (Fichiers, iCloud, mail…)
-2. **AltStore** → **My Apps** → **+**
-3. Choisis le `.ipa`
-4. Ouvre **Plexi Beer** (Wi‑Fi maison ou VPN Plexi)
-
----
-
-## Rebuild plus tard
-
-Changement d’URL Beer ou de version → modifie le code → `git push` → **Run workflow** à nouveau → nouveau `.ipa` dans Artifacts.
-
-Pas besoin de MacinCloud.
-
----
-
-## Sécurité
-
-- Les secrets restent **chiffrés** côté GitHub (Actions uniquement)
-- Repo **public** : le **code** est visible, **pas** les secrets
-- Ne commite **jamais** mots de passe dans le dépôt
+- Le **code** est visible, **pas** les secrets GitHub
+- Ne commite jamais d’URL perso, mail, UDID ou mot de passe dans le dépôt
+- `capacitor.config.json` contient des placeholders ; l’URL réelle vient du secret
 
 ---
 
@@ -167,5 +49,5 @@ Pas besoin de MacinCloud.
 | Fichier | Rôle |
 |---------|------|
 | `.github/workflows/ios-ipa.yml` | Pipeline Mac GitHub |
-| `fastlane/Fastfile` | Signature + export IPA |
-| `capacitor.config.json` | URL Beer distante |
+| `fastlane/Fastfile` | Build IPA non signée |
+| `scripts/patch-capacitor-url.js` | Injecte l’URL Beer depuis le secret |

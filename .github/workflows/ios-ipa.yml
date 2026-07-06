@@ -18,6 +18,8 @@ jobs:
     timeout-minutes: 45
 
     env:
+      BEER_SERVER_URL: ${{ secrets.BEER_SERVER_URL }}
+      BEER_ALLOW_NAVIGATION: ${{ secrets.BEER_ALLOW_NAVIGATION }}
       FASTLANE_SKIP_UPDATE_CHECK: "true"
       FASTLANE_DISABLE_ANIMATION: "true"
       FASTLANE_OPT_OUT_USAGE: "true"
@@ -26,6 +28,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Vérifier secret URL Beer
+        run: |
+          if [ -z "$BEER_SERVER_URL" ]; then
+            echo "::error::Secret manquant : BEER_SERVER_URL (ex. https://ton-serveur/beer/)"
+            exit 1
+          fi
 
       - name: Node.js
         uses: actions/setup-node@v4
@@ -37,6 +46,7 @@ jobs:
       - name: Dépendances npm + iOS
         run: |
           npm ci 2>/dev/null || npm install
+          node scripts/patch-capacitor-url.js
           npx cap add ios
           node scripts/patch-ios-plist.js
           node scripts/patch-ios-nosign.js

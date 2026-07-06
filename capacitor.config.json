@@ -3,12 +3,10 @@
   "appName": "Plexi Beer",
   "webDir": "www",
   "server": {
-    "url": "https://eiter.freeboxos.fr:8443/beer/",
+    "url": "https://YOUR_SERVER/beer/",
     "cleartext": false,
     "allowNavigation": [
-      "eiter.freeboxos.fr",
-      "192.168.1.50",
-      "192.168.1.44"
+      "YOUR_SERVER"
     ]
   },
   "ios": {

@@ -56,12 +56,11 @@ foreach ($root in $roots) {
 }
 Add ""
 
-# 3. .mobileprovision et .ipa sur Bureau / Downloads / Desktop debien
+# 3. .mobileprovision et .ipa sur Bureau / Downloads
 Add "--- IPA / mobileprovision ---"
 $search = @(
   "$env:USERPROFILE\Desktop",
-  "$env:USERPROFILE\Downloads",
-  "C:\Users\BunnY\Desktop"
+  "$env:USERPROFILE\Downloads"
 )
 foreach ($dir in $search) {
   if (-not (Test-Path $dir)) { continue }

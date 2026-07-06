@@ -6,4 +6,7 @@ ios/DerivedData/
 *.ipa
 *.xcarchive
 .env
+.env.local
+capacitor.config.local.json
+team-id-resultat.txt
 dist/
