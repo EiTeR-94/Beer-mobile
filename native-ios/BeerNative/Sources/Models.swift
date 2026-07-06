@@ -128,3 +128,43 @@ struct CreateCheckinResult: Decodable {
     let duplicate: Bool?
     let error: String?
 }
+
+struct UntappdSearchResponse: Decodable {
+    let ok: Bool
+    let error: String?
+    let results: [UntappdHit]?
+}
+
+struct UntappdHit: Decodable, Identifiable {
+    let bid: Int
+    let beerName: String
+    let brewery: String?
+    let styleFr: String?
+    let photoURL: String?
+
+    var id: Int { bid }
+
+    enum CodingKeys: String, CodingKey {
+        case bid, brewery
+        case beerName = "beer_name"
+        case styleFr = "style_fr"
+        case photoURL = "photo_url"
+    }
+}
+
+struct FlavorsResponse: Decodable {
+    let flavors: [String]?
+    let suggestedFlavors: [String]?
+    let hops: [String]?
+    let suggestedHops: [String]?
+    let showFlavorsBlock: Bool?
+    let showHopsBlock: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case flavors, hops
+        case suggestedFlavors = "suggested_flavors"
+        case suggestedHops = "suggested_hops"
+        case showFlavorsBlock = "show_flavors_block"
+        case showHopsBlock = "show_hops_block"
+    }
+}

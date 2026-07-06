@@ -64,7 +64,7 @@ final class AppModel: ObservableObject {
         if let ok = await api.discoverWorkingEndpoint() {
             return "Serveur OK · \(ok)"
         }
-        return "Échec — autorise « Réseau local » pour Plexi Beer dans Réglages iPhone, puis réessaie."
+        return "Échec — autorise « Réseau local » pour Beer Log dans Réglages iPhone, puis réessaie."
     }
 
     func login(username: String, password: String) async throws {
@@ -92,7 +92,15 @@ final class AppModel: ObservableObject {
         if n > 0 { banner = "\(n) dégustation(s) synchronisée(s)" }
     }
 
-    func saveCheckin(product: BeerProduct, rating: Double, comment: String, force: Bool) async throws -> String {
+    func saveCheckin(
+        product: BeerProduct,
+        rating: Double,
+        flavors: [String],
+        hops: [String],
+        comment: String,
+        photoJPEG: Data?,
+        force: Bool
+    ) async throws -> String {
         let pending = PendingCheckin(
             id: UUID(),
             createdAt: Date(),
@@ -122,9 +130,12 @@ final class AppModel: ObservableObject {
                 abv: pending.abv,
                 summary: pending.summary,
                 rating: pending.rating,
+                flavors: flavors,
+                hops: hops,
                 comment: pending.comment,
                 untappdBid: pending.untappdBid,
-                force: pending.force
+                force: pending.force,
+                photoJPEG: photoJPEG
             )
             if result.duplicate == true {
                 return "duplicate"

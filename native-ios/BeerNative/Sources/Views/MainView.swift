@@ -2,49 +2,42 @@ import SwiftUI
 
 struct MainView: View {
     @EnvironmentObject private var app: AppModel
+    @State private var step = 1
+    @State private var showHistory = false
 
     var body: some View {
-        TabView {
-            ScanTabView()
-                .tabItem { Label("Scanner", systemImage: "barcode.viewfinder") }
+        VStack(spacing: 0) {
+            BeerHeader(
+                username: app.user,
+                onHistory: { showHistory = true },
+                onLogout: { Task { await app.logout() } }
+            )
 
-            HistoryView()
-                .tabItem { Label("Historique", systemImage: "clock") }
+            if let banner = app.banner {
+                Text(banner)
+                    .font(.caption)
+                    .foregroundStyle(Theme.accent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 6)
+            }
 
-            ProfileView()
-                .tabItem { Label("Compte", systemImage: "person.circle") }
+            if !app.offline.items.isEmpty {
+                Text("\(app.offline.items.count) dégustation(s) en attente de sync")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 6)
+            }
+
+            BeerStepNav(step: $step)
+            BeerWizardView(step: $step)
         }
         .background(Theme.bg)
-        .overlay(alignment: .top) {
-            VStack(spacing: 6) {
-                if let user = app.user {
-                    HStack {
-                        Circle().fill(app.isOnline ? .green : .orange).frame(width: 8, height: 8)
-                        Text("Connecté · \(user)\(app.isAdmin ? " · admin" : "")")
-                            .font(.caption.weight(.medium))
-                        Spacer()
-                        if !app.offline.items.isEmpty {
-                            Text("\(app.offline.items.count) en attente")
-                                .font(.caption2)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Theme.accent.opacity(0.2))
-                                .clipShape(Capsule())
-                        }
-                    }
-                    .foregroundStyle(Theme.text)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Theme.card)
-                }
-                if let banner = app.banner {
-                    Text(banner)
-                        .font(.caption)
-                        .foregroundStyle(Theme.accent)
-                        .padding(.horizontal, 16)
-                }
-            }
-            .padding(.top, 4)
+        .sheet(isPresented: $showHistory) {
+            HistorySheetView()
+                .environmentObject(app)
         }
     }
 }

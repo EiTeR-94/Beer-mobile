@@ -137,6 +137,57 @@ final class BeerAPI {
         return decoded
     }
 
+    func untappdSearch(query: String) async throws -> UntappdSearchResponse {
+        var components = URLComponents(url: try url("/api/untappd/search"), resolvingAgainstBaseURL: true)!
+        components.queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "limit", value: "5"),
+        ]
+        var req = URLRequest(url: components.url!)
+        let (data, http, _) = try await perform(req)
+        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        guard let decoded = try? JSONDecoder().decode(UntappdSearchResponse.self, from: data) else {
+            throw BeerAPIError.decode
+        }
+        return decoded
+    }
+
+    func untappdFetch(bid: Int, barcode: String = "", beerName: String = "", brewery: String = "") async throws -> LookupResponse {
+        let payload: [String: Any] = [
+            "untappd_bid": bid,
+            "barcode": barcode,
+            "beer_name": beerName,
+            "brewery": brewery,
+        ]
+        let json = try JSONSerialization.data(withJSONObject: payload)
+        let (data, http, _) = try await request(
+            path: "/api/untappd/fetch",
+            method: "POST",
+            body: json,
+            contentType: "application/json"
+        )
+        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        guard let decoded = try? JSONDecoder().decode(LookupResponse.self, from: data) else {
+            throw BeerAPIError.decode
+        }
+        return decoded
+    }
+
+    func flavors(style: String, description: String = "") async throws -> FlavorsResponse {
+        var components = URLComponents(url: try url("/api/flavors"), resolvingAgainstBaseURL: true)!
+        components.queryItems = [
+            URLQueryItem(name: "style", value: style),
+            URLQueryItem(name: "description", value: description),
+        ]
+        var req = URLRequest(url: components.url!)
+        let (data, http, _) = try await perform(req)
+        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        guard let decoded = try? JSONDecoder().decode(FlavorsResponse.self, from: data) else {
+            throw BeerAPIError.decode
+        }
+        return decoded
+    }
+
     func createCheckin(
         barcode: String,
         beerName: String,
@@ -145,14 +196,19 @@ final class BeerAPI {
         abv: String,
         summary: String,
         rating: Double,
+        flavors: [String],
+        hops: [String],
         comment: String,
         untappdBid: String,
-        force: Bool
+        force: Bool,
+        photoJPEG: Data? = nil
     ) async throws -> CreateCheckinResult {
         let boundary = "BeerBoundary-\(UUID().uuidString)"
         var req = URLRequest(url: try url("/api/checkins"))
         req.httpMethod = "POST"
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        let flavorJSON = (try? String(data: JSONEncoder().encode(flavors), encoding: .utf8)) ?? "[]"
+        let hopsJSON = (try? String(data: JSONEncoder().encode(hops), encoding: .utf8)) ?? "[]"
         req.httpBody = makeMultipart(
             boundary: boundary,
             fields: [
@@ -163,12 +219,13 @@ final class BeerAPI {
                 "abv": abv,
                 "summary": summary,
                 "rating": String(rating),
-                "flavors": "[]",
-                "hops": "[]",
+                "flavors": flavorJSON,
+                "hops": hopsJSON,
                 "comment": comment,
                 "untappd_bid": untappdBid,
                 "force": force ? "true" : "false",
-            ]
+            ],
+            file: photoJPEG.map { ("photo", "photo.jpg", "image/jpeg", $0) }
         )
         let (data, http, _) = try await perform(req)
         if http.statusCode == 401 { throw BeerAPIError.unauthorized }
@@ -208,7 +265,7 @@ final class BeerAPI {
         let tried = ServerSettings.candidateURLs.map(\.absoluteString).joined(separator: ", ")
         if let lastError { throw lastError }
         throw BeerAPIError.allEndpointsFailed(
-            "Aucun serveur joignable (\(tried)). Active « Réseau local » pour Plexi Beer dans Réglages iPhone."
+            "Aucun serveur joignable (\(tried)). Active « Réseau local » pour Beer Log dans Réglages iPhone."
         )
     }
 
@@ -253,13 +310,27 @@ final class BeerAPI {
         return url
     }
 
-    private func makeMultipart(boundary: String, fields: [String: String]) -> Data {
+    private func makeMultipart(
+        boundary: String,
+        fields: [String: String],
+        file: (name: String, filename: String, mime: String, data: Data)? = nil
+    ) -> Data {
         var body = Data()
         let nl = "\r\n"
         for (key, value) in fields {
             body.append("--\(boundary)\(nl)".data(using: .utf8)!)
             body.append("Content-Disposition: form-data; name=\"\(key)\"\(nl)\(nl)".data(using: .utf8)!)
             body.append("\(value)\(nl)".data(using: .utf8)!)
+        }
+        if let file {
+            body.append("--\(boundary)\(nl)".data(using: .utf8)!)
+            body.append(
+                "Content-Disposition: form-data; name=\"\(file.name)\"; filename=\"\(file.filename)\"\(nl)"
+                    .data(using: .utf8)!
+            )
+            body.append("Content-Type: \(file.mime)\(nl)\(nl)".data(using: .utf8)!)
+            body.append(file.data)
+            body.append(nl.data(using: .utf8)!)
         }
         body.append("--\(boundary)--\(nl)".data(using: .utf8)!)
         return body

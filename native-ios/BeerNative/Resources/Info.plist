@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>fr</string>
 	<key>CFBundleDisplayName</key>
-	<string>Plexi Beer</string>
+	<string>Beer Log</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -26,8 +26,10 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Scanner les codes-barres EAN des bouteilles de bière.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Joindre une photo à ta dégustation Beer Log.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Connexion au serveur Beer sur ton réseau local Plexi (192.168.1.50).</string>
+	<string>Connexion au serveur Beer Log sur ton réseau local Plexi (192.168.1.50).</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

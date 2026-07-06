@@ -28,6 +28,22 @@ enum ServerSettings {
         apiBase.absoluteString
     }
 
+    static func serverOrigin(from base: URL = apiBase) -> String {
+        var c = URLComponents(url: base, resolvingAgainstBaseURL: false) ?? URLComponents()
+        c.path = ""
+        c.query = nil
+        c.fragment = nil
+        return c.string ?? base.absoluteString
+    }
+
+    static func resolveAssetURL(_ path: String?, base: URL = apiBase) -> URL? {
+        guard let path, !path.isEmpty else { return nil }
+        if path.hasPrefix("http") { return URL(string: path) }
+        let origin = serverOrigin(from: base)
+        let p = path.hasPrefix("/") ? path : "/\(path)"
+        return URL(string: origin + p)
+    }
+
     static func save(_ raw: String) {
         UserDefaults.standard.set(normalizeInput(raw), forKey: key)
     }

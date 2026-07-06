@@ -45,6 +45,8 @@ final class OfflineQueue: ObservableObject {
                     abv: item.abv,
                     summary: item.summary,
                     rating: item.rating,
+                    flavors: [],
+                    hops: [],
                     comment: item.comment,
                     untappdBid: item.untappdBid,
                     force: item.force

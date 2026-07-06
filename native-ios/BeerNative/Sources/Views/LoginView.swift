@@ -6,97 +6,71 @@ struct LoginView: View {
     @State private var password = ""
     @State private var serverURL = ServerSettings.apiBaseString
     @State private var error: String?
-    @State private var serverStatus: String?
     @State private var busy = false
-    @State private var testing = false
+    @State private var showAdvanced = false
 
     var body: some View {
         ZStack {
             Theme.bg.ignoresSafeArea()
             ScrollView {
-                VStack(spacing: 24) {
-                    VStack(spacing: 8) {
+                VStack(spacing: 0) {
+                    VStack(spacing: 6) {
                         Text("🍺")
-                            .font(.system(size: 56))
-                        Text("Plexi Beer")
-                            .font(.title.bold())
-                            .foregroundStyle(Theme.accent)
-                        Text("App native iOS")
-                            .font(.subheadline)
+                            .font(.system(size: 40))
+                        Text("Beer Log")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(Theme.text)
+                        Text("Journal de dégustation privé")
+                            .font(.system(size: 13))
                             .foregroundStyle(Theme.muted)
                     }
+                    .padding(.bottom, 20)
 
                     VStack(spacing: 14) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Serveur Beer")
-                                .font(.caption)
-                                .foregroundStyle(Theme.muted)
-                            TextField("https://192.168.1.50:8444/beer/", text: $serverURL)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .keyboardType(.URL)
-                                .padding(12)
-                                .background(Theme.bg)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                                .onChange(of: serverURL) { v in
-                                    app.applyServerURL(v)
-                                }
-                            Button {
-                                Task { await testServer() }
-                            } label: {
-                                Text(testing ? "Test…" : "Tester le serveur")
-                                    .font(.caption.weight(.medium))
-                            }
-                            .disabled(testing)
-                            if let serverStatus {
-                                Text(serverStatus)
-                                    .font(.caption2)
-                                    .foregroundStyle(serverStatus.hasPrefix("Serveur OK") ? .green : .red)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-
-                        TextField("Identifiant", text: $username)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .padding()
-                            .background(Theme.bg)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                        SecureField("Mot de passe", text: $password)
-                            .padding()
-                            .background(Theme.bg)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                        BeerField(label: "Identifiant", text: $username, placeholder: "")
+                        BeerField(label: "Mot de passe", text: $password, secure: true)
 
                         if let error {
                             Text(error)
-                                .font(.footnote)
-                                .foregroundStyle(.red)
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.error)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
 
-                        Button {
+                        BeerPrimaryButton(title: busy ? "Connexion…" : "Se connecter", disabled: username.isEmpty || password.isEmpty, busy: busy) {
                             Task { await submit() }
-                        } label: {
-                            HStack {
-                                if busy { ProgressView().tint(.black) }
-                                Text(busy ? "Connexion…" : "Se connecter")
-                                    .fontWeight(.semibold)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Theme.accent)
-                            .foregroundStyle(.black)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
                         }
-                        .disabled(busy || username.isEmpty || password.isEmpty)
-                    }
-                    .beerCard()
 
-                    Text("Wi‑Fi maison ou VPN Plexi · port 8444 (pas 8443).")
-                        .font(.caption)
+                        DisclosureGroup("Réglages serveur", isExpanded: $showAdvanced) {
+                            BeerField(
+                                label: "URL Beer (LAN/VPN)",
+                                text: $serverURL,
+                                placeholder: "https://192.168.1.50:8444/beer/",
+                                keyboard: .URL
+                            )
+                            .onChange(of: serverURL) { app.applyServerURL($0) }
+                            Button("Tester le serveur") {
+                                Task {
+                                    app.applyServerURL(serverURL)
+                                    _ = await app.testServer()
+                                }
+                            }
+                            .font(.caption)
+                            .foregroundStyle(Theme.accent)
+                        }
+                        .font(.system(size: 13))
                         .foregroundStyle(Theme.muted)
-                        .multilineTextAlignment(.center)
+                        .tint(Theme.accent)
+                    }
+                    .padding(20)
+                    .background(Theme.card)
+                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.border))
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+
+                    Text("Scan · photo · note · historique")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.muted)
+                        .padding(.top, 20)
                 }
                 .padding(24)
             }
@@ -107,13 +81,6 @@ struct LoginView: View {
         }
     }
 
-    private func testServer() async {
-        testing = true
-        defer { testing = false }
-        app.applyServerURL(serverURL)
-        serverStatus = await app.testServer()
-    }
-
     private func submit() async {
         busy = true
         error = nil
@@ -122,8 +89,8 @@ struct LoginView: View {
         do {
             try await app.login(username: username.trimmingCharacters(in: .whitespaces),
                                 password: password)
-        } catch let err {
-            self.error = err.localizedDescription
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 }
