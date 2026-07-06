@@ -60,10 +60,15 @@ struct LoginView: View {
                 }
                 .beerCard()
 
-                Text("Wi‑Fi maison ou VPN Plexi requis pour la première connexion.")
-                    .font(.caption)
-                    .foregroundStyle(Theme.muted)
-                    .multilineTextAlignment(.center)
+                VStack(spacing: 4) {
+                    Text("Wi‑Fi maison ou VPN Plexi requis.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.muted)
+                    Text(BuildConfig.apiBaseString)
+                        .font(.caption2)
+                        .foregroundStyle(Theme.muted.opacity(0.7))
+                        .multilineTextAlignment(.center)
+                }
             }
             .padding(24)
         }

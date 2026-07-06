@@ -12,3 +12,4 @@ team-id-resultat.txt
 dist/
 www/mobile-env.js
 native-ios/BeerNative.xcodeproj/
+native-ios/Config/Build.xcconfig

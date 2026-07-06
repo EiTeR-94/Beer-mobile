@@ -14,7 +14,9 @@
 
 | Secret | Exemple |
 |--------|---------|
-| `BEER_SERVER_URL` | `https://ton-serveur.example/beer` |
+| `BEER_SERVER_URL` | `https://ton-serveur.example:8444/beer` |
+
+**Important : port `8444`** (TLS direct LAN/VPN). Le port `8443` utilise PROXY/sslh — incompatible avec l'app native.
 
 Injecté dans `native-ios/Config/Build.xcconfig` au build.
 

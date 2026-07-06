@@ -49,6 +49,21 @@ final class BeerAPI {
             return (data, http)
         } catch let err as BeerAPIError {
             throw err
+        } catch let err as URLError {
+            switch err.code {
+            case .cannotConnectToHost, .networkConnectionLost:
+                throw BeerAPIError.server(
+                    "Serveur injoignable — Wi‑Fi maison ou VPN Plexi requis (port 8444, pas 8443)"
+                )
+            case .secureConnectionFailed, .serverCertificateUntrusted:
+                throw BeerAPIError.server("Certificat SSL refusé — vérifie l'URL du serveur")
+            case .timedOut:
+                throw BeerAPIError.server("Délai dépassé — réseau lent ou serveur éteint")
+            case .notConnectedToInternet:
+                throw BeerAPIError.server("Pas de connexion Internet")
+            default:
+                throw BeerAPIError.network(err)
+            }
         } catch {
             throw BeerAPIError.network(error)
         }
@@ -60,7 +75,14 @@ final class BeerAPI {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONEncoder().encode(["username": username, "password": password])
         let (data, http) = try await data(for: req)
-        let decoded = try JSONDecoder().decode(LoginResponse.self, from: data)
+        if http.statusCode == 403 {
+            throw BeerAPIError.server(
+                "Accès refusé (403) — connecte-toi en Wi‑Fi maison ou VPN Plexi (port 8444)"
+            )
+        }
+        guard let decoded = try? JSONDecoder().decode(LoginResponse.self, from: data) else {
+            throw BeerAPIError.server("Réponse login invalide (HTTP \(http.statusCode))")
+        }
         if http.statusCode == 401 || decoded.ok == false {
             throw BeerAPIError.server(decoded.error ?? "Identifiants incorrects")
         }
@@ -174,14 +196,4 @@ final class BeerAPI {
     }
 }
 
-enum BuildConfig {
-    static var apiBase: URL {
-        guard
-            let raw = Bundle.main.object(forInfoDictionaryKey: "BEER_API_BASE") as? String,
-            let url = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines))
-        else {
-            return URL(string: "https://localhost/beer")!
-        }
-        return url
-    }
-}
+// BuildConfig → BuildConfig.generated.swift (injecté au build CI)
