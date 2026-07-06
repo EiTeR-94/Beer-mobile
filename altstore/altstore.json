@@ -1,0 +1,42 @@
+{
+  "name": "Plexi Homelab",
+  "subtitle": "Beer Log iOS — MAJ auto LAN/VPN",
+  "description": "Source privée Plexi. Ajoute cette URL une seule fois dans AltStore → Sources. Les nouvelles versions apparaissent après sync GitHub → serveur (.50).",
+  "website": "https://192.168.1.50:8444/beer/",
+  "tintColor": "#f59e0b",
+  "featuredApps": [
+    "fr.eiter.plexibeer"
+  ],
+  "apps": [
+    {
+      "name": "Beer Log",
+      "bundleIdentifier": "fr.eiter.plexibeer",
+      "developerName": "eiter",
+      "subtitle": "Journal de dégustation privé",
+      "localizedDescription": "App native Beer Log : scan EAN, Untappd, photo, note, historique. Wi‑Fi maison ou VPN Plexi.",
+      "iconURL": "https://raw.githubusercontent.com/EiTeR-94/Beer-mobile/main/altstore/icon-180.png",
+      "tintColor": "#f59e0b",
+      "category": "lifestyle",
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {
+          "NSCameraUsageDescription": "Scanner les codes-barres EAN des bouteilles de bière.",
+          "NSLocalNetworkUsageDescription": "Connexion au serveur Beer Log sur ton réseau local Plexi (192.168.1.50).",
+          "NSPhotoLibraryUsageDescription": "Joindre une photo à ta dégustation Beer Log."
+        }
+      },
+      "versions": [
+        {
+          "version": "2.0.0",
+          "buildVersion": "22",
+          "date": "2026-07-06",
+          "localizedDescription": "Build 22 — sync automatique homelab",
+          "downloadURL": "https://github.com/EiTeR-94/Beer-mobile/releases/latest/download/PlexiBeer.ipa",
+          "size": 361036,
+          "minOSVersion": "16.0"
+        }
+      ]
+    }
+  ],
+  "news": []
+}
