@@ -624,10 +624,9 @@ struct InviteHelpBar: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            (Text("Conseil").fontWeight(.semibold).foregroundStyle(Theme.text)
-                + Text(" — garde Beer Log installé et évite de vider ses données dans les réglages iPhone : c'est ce qui maintient ta connexion.")
-                .foregroundStyle(Theme.muted))
+            Text("**Conseil** — garde Beer Log installé et évite de vider ses données dans les réglages iPhone : c'est ce qui maintient ta connexion.")
                 .font(.system(size: 12))
+                .foregroundStyle(Theme.muted)
             Button(action: onDismiss) {
                 Text("×")
                     .font(.system(size: 18, weight: .medium))
