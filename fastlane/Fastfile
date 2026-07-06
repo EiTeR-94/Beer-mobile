@@ -1,5 +1,6 @@
 # Build IPA développement (compte Apple ID gratuit → AltStore)
 
+opt_out_usage
 default_platform(:ios)
 
 def keychain_name
@@ -40,10 +41,11 @@ platform :ios do
 
   desc "Certificats + profil pour l'iPhone du testeur"
   lane :prepare_signing do
+    ENV["MATCH_KEYCHAIN_NAME"] = keychain_name
+    ENV["MATCH_KEYCHAIN_PASSWORD"] = keychain_password
     setup_ci(
       force: true,
-      keychain_name: keychain_name,
-      keychain_password: keychain_password
+      keychain_name: keychain_name
     )
 
     team = apple_team_id
