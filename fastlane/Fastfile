@@ -21,11 +21,13 @@ platform :ios do
     setup_ci(force: true)
 
     team = signing_team_id
-    if team.empty?
-      UI.important("APPLE_TEAM_ID absent — Xcode utilisera la Personal Team de #{ENV.fetch('APPLE_ID', 'ton Apple ID')}")
-    else
-      UI.message("Team ID : #{team}")
-    end
+    UI.user_error!(
+      "Secret GitHub APPLE_TEAM_ID manquant.\n" \
+      "Windows : powershell -File scripts/extract-team-id.ps1\n" \
+      "Puis ajoute le secret APPLE_TEAM_ID (10 caractères) sur GitHub."
+    ) if team.empty?
+
+    UI.message("Team ID : #{team}")
 
     signing = {
       use_automatic_signing: true,
