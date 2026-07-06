@@ -40,14 +40,16 @@ jobs:
           chmod +x scripts/build-native-ipa.sh
           scripts/build-native-ipa.sh
 
-      - name: Vérifier binaire Mach-O arm64
+      - name: Vérifier IPA AltStore
         run: |
-          BIN="build/Payload/Plexi Beer.app/Plexi Beer"
-          test -f "$BIN"
-          file "$BIN" | grep -E "Mach-O.*arm64"
-          # Pas de WebView Capacitor dans l'IPA
-          ! find "build/Payload" -name "capacitor.config.json" | grep -q .
-          ! find "build/Payload" -name "index.html" | grep -q .
+          APP="$(find build/Payload -maxdepth 1 -name '*.app' -type d | head -1)"
+          test -n "$APP"
+          BIN="$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$APP/Info.plist")"
+          test -f "$APP/$BIN"
+          file "$APP/$BIN" | grep -E "Mach-O.*arm64"
+          codesign -dv "$APP" 2>&1 | head -3
+          ! find build/Payload -name "capacitor.config.json" | grep -q .
+          ! find build/Payload -name "index.html" | grep -q .
 
       - name: Publier artifact
         uses: actions/upload-artifact@v4

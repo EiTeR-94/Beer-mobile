@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build IPA native — même logique que Xcode Archive, sans signature (AltStore re-signe)
+# Build IPA native — format AltStore (Payload/PlexiBeer.app, binaire signé ad-hoc)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,7 +20,7 @@ fi
 (cd native-ios && xcodegen generate)
 
 DERIVED="$ROOT/build/DerivedData"
-rm -rf "$ROOT/build/Payload" "$DERIVED"
+rm -rf "$ROOT/build/Payload" "$DERIVED" "$ROOT/build/PlexiBeer.ipa"
 mkdir -p "$ROOT/build"
 
 echo "==> xcodebuild (Release iphoneos)"
@@ -31,24 +31,54 @@ xcodebuild \
   -destination "generic/platform=iOS" \
   -derivedDataPath "$DERIVED" \
   build \
-  CODE_SIGNING_ALLOWED=NO \
-  CODE_SIGN_IDENTITY="" \
-  CODE_SIGNING_REQUIRED=NO \
-  DEVELOPMENT_TEAM=""
+  CODE_SIGNING_ALLOWED=YES \
+  CODE_SIGN_IDENTITY="-" \
+  CODE_SIGNING_REQUIRED=YES \
+  DEVELOPMENT_TEAM="" \
+  AD_HOC_CODE_SIGNING_ALLOWED=YES
 
-APP="$(find "$DERIVED/Build/Products" -name "Plexi Beer.app" -type d | head -1)"
+APP="$(find "$DERIVED/Build/Products/Release-iphoneos" -maxdepth 1 -name "*.app" -type d | head -1)"
 if [[ -z "$APP" || ! -d "$APP" ]]; then
-  echo "Plexi Beer.app introuvable après build" >&2
+  APP="$(find "$DERIVED/Build/Products" -name "*.app" -type d | head -1)"
+fi
+if [[ -z "$APP" || ! -d "$APP" ]]; then
+  echo "::error::Aucun .app après build" >&2
   find "$DERIVED" -name "*.app" >&2 || true
   exit 1
 fi
 
+APP_NAME="$(basename "$APP")"
+PLIST="$APP/Info.plist"
+BIN_NAME="$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$PLIST" 2>/dev/null || true)"
+
+echo "==> Vérification bundle ($APP_NAME)"
+if [[ -z "$BIN_NAME" || ! -f "$APP/$BIN_NAME" ]]; then
+  echo "::error::Binaire manquant dans $APP" >&2
+  ls -la "$APP" >&2
+  exit 1
+fi
+
+if /usr/libexec/PlistBuddy -c Print "$PLIST" | grep -q '\$(' ; then
+  echo "::error::Info.plist contient des variables non résolues" >&2
+  /usr/libexec/PlistBuddy -c Print "$PLIST" >&2
+  exit 1
+fi
+
+file "$APP/$BIN_NAME" | grep -q "Mach-O" || {
+  echo "::error::Binaire Mach-O invalide" >&2
+  file "$APP/$BIN_NAME" >&2
+  exit 1
+}
+
+echo "==> Signature ad-hoc (AltStore re-signera)"
+codesign --force --sign - --timestamp=none --deep "$APP" 2>/dev/null || \
+  codesign --force --sign - --timestamp=none "$APP"
+
 echo "==> IPA"
 rm -rf "$ROOT/build/Payload"
 mkdir -p "$ROOT/build/Payload"
-cp -R "$APP" "$ROOT/build/Payload/"
-rm -f "$ROOT/build/PlexiBeer.ipa"
+ditto "$APP" "$ROOT/build/Payload/$APP_NAME"
 (cd "$ROOT/build" && zip -qr PlexiBeer.ipa Payload)
 
-echo "OK: $ROOT/build/PlexiBeer.ipa"
-file "$ROOT/build/Payload/Plexi Beer.app/Plexi Beer" || ls -la "$ROOT/build/Payload/Plexi Beer.app/"
+echo "OK: $ROOT/build/PlexiBeer.ipa ($APP_NAME, exe=$BIN_NAME)"
+unzip -l "$ROOT/build/PlexiBeer.ipa" | head -15

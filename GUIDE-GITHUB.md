@@ -26,7 +26,16 @@ Injecté dans `native-ios/Config/Build.xcconfig` au build.
 
 1. **Actions** → **Build iOS IPA** → **Run workflow**
 2. **Artifacts** → `PlexiBeer.ipa`
-3. **AltStore** → installer
+3. **AltStore** → **Mes apps** → **+** → choisir `PlexiBeer.ipa` (pas via URL)
+
+### Erreur AltServer 2005 / « not valid JSON »
+
+1. **Mettre à jour** AltServer + AltStore (dernière version)
+2. **Windows** : iTunes + iCloud depuis [apple.com](https://www.apple.com/itunes/) (pas Microsoft Store)
+3. Supprimer `%ProgramData%\\Apple Computer\\iTunes\\ADI\\` → relancer iTunes → réessayer
+4. iPhone **déverrouillé**, câble USB, AltServer **en administrateur**
+5. Date/heure PC et iPhone correctes
+6. Télécharger une **IPA fraîche** (artifact du dernier build vert)
 
 ---
 
