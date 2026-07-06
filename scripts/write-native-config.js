@@ -2,39 +2,42 @@
 const fs = require("fs");
 const path = require("path");
 
-let base = (process.env.BEER_SERVER_URL || "").trim().replace(/\/$/, "");
-if (!base) {
+let remote = (process.env.BEER_SERVER_URL || "").trim().replace(/\/$/, "");
+const lanHost = (process.env.PLEXI_HOST || "192.168.1.50").trim();
+const lanPort = (process.env.PLEXI_NGINX_HUB_PORT || "8444").trim();
+
+if (!remote) {
   console.error("BEER_SERVER_URL manquant");
   process.exit(1);
 }
 
-// 8443 = sslh + PROXY protocol → incompatible apps natives (URLSession)
-if (/:8443(\/|$)/.test(base)) {
-  console.warn("WARN: :8443 utilise PROXY protocol — bascule automatique vers :8444");
-  base = base.replace(":8443", ":8444");
+if (/:8443(\/|$)/.test(remote)) {
+  console.warn("WARN: :8443 → :8444");
+  remote = remote.replace(":8443", ":8444");
 }
+
+// LAN direct : le DNS freeboxos.fr pointe le WAN — l'iPhone en Wi‑Fi ne peut pas joindre :8444 via le FQDN
+const lan = `https://${lanHost}:${lanPort}/beer`;
+const fallbacks = [...new Set([lan, remote])];
 
 const swift = `// Généré au build CI — NE PAS ÉDITER
 import Foundation
 
 enum BuildConfig {
-    static let apiBaseString = ${JSON.stringify(base)}
-    static var apiBase: URL {
-        URL(string: apiBaseString)!
-    }
+    /// URL LAN directe (prioritaire — évite hairpin NAT Freebox)
+    static let apiBaseString = ${JSON.stringify(lan)}
+    static let apiFallbacks: [String] = ${JSON.stringify(fallbacks)}
+    static var apiBase: URL { URL(string: apiBaseString)! }
 }
-`;
-
-const xcconfig = `// Généré au build CI
-BEER_API_BASE = ${base}
 `;
 
 fs.writeFileSync(
   path.join(__dirname, "..", "native-ios", "Config", "Build.xcconfig"),
-  xcconfig,
+  `BEER_API_BASE = ${lan}\n`,
 );
 fs.writeFileSync(
   path.join(__dirname, "..", "native-ios", "BeerNative", "Sources", "BuildConfig.generated.swift"),
   swift,
 );
-console.log(`Config API : ${base}`);
+console.log(`API LAN : ${lan}`);
+console.log(`Fallbacks : ${fallbacks.join(", ")}`);

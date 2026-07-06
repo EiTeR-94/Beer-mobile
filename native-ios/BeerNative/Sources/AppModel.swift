@@ -32,6 +32,7 @@ final class AppModel: ObservableObject {
     func bootstrap() async {
         isLoading = true
         defer { isLoading = false }
+        _ = await api.discoverWorkingEndpoint()
         do {
             let me = try await api.me()
             if me.auth && me.user == nil {
@@ -60,14 +61,10 @@ final class AppModel: ObservableObject {
     }
 
     func testServer() async -> String {
-        do {
-            if try await api.healthCheck() {
-                return "Serveur OK · \(ServerSettings.apiBaseString)"
-            }
-            return "Réponse inattendue"
-        } catch {
-            return error.localizedDescription
+        if let ok = await api.discoverWorkingEndpoint() {
+            return "Serveur OK · \(ok)"
         }
+        return "Échec — autorise « Réseau local » pour Plexi Beer dans Réglages iPhone, puis réessaie."
     }
 
     func login(username: String, password: String) async throws {

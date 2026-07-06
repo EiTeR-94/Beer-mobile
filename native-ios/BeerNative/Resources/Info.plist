@@ -26,6 +26,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Scanner les codes-barres EAN des bouteilles de bière.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Connexion au serveur Beer sur ton réseau local Plexi (192.168.1.50).</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

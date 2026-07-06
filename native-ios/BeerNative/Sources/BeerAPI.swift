@@ -6,6 +6,7 @@ enum BeerAPIError: LocalizedError {
     case server(String)
     case network(Error)
     case decode
+    case allEndpointsFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -14,6 +15,7 @@ enum BeerAPIError: LocalizedError {
         case .server(let msg): return msg
         case .network(let err): return err.localizedDescription
         case .decode: return "Réponse serveur illisible"
+        case .allEndpointsFailed(let detail): return detail
         }
     }
 }
@@ -23,6 +25,7 @@ final class BeerAPI {
 
     private let session: URLSession
     private(set) var baseURL: URL
+    private(set) var activeEndpoint: String = ""
 
     init(baseURL: URL = ServerSettings.apiBase) {
         self.baseURL = baseURL
@@ -30,66 +33,51 @@ final class BeerAPI {
         config.httpCookieStorage = HTTPCookieStorage.shared
         config.httpShouldSetCookies = true
         config.httpCookieAcceptPolicy = .always
-        config.timeoutIntervalForRequest = 30
-        self.session = URLSession(configuration: config)
+        config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = 30
+        self.session = URLSession(
+            configuration: config,
+            delegate: HomelabTLSDelegate.shared,
+            delegateQueue: nil
+        )
     }
 
     func setBaseURL(_ url: URL) {
         baseURL = url
+        activeEndpoint = url.absoluteString
     }
 
     func healthCheck() async throws -> Bool {
-        var req = URLRequest(url: try url("/api/health"))
-        req.httpMethod = "GET"
-        let (_, http) = try await data(for: req)
+        let (_, http, _) = try await request(path: "/api/health", method: "GET", body: nil)
         return http.statusCode == 200
     }
 
-    private func url(_ path: String) throws -> URL {
-        let clean = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        guard let url = URL(string: clean, relativeTo: baseURL) else {
-            throw BeerAPIError.invalidURL
-        }
-        return url
-    }
-
-    private func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        do {
-            let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse else { throw BeerAPIError.decode }
-            return (data, http)
-        } catch let err as BeerAPIError {
-            throw err
-        } catch let err as URLError {
-            switch err.code {
-            case .cannotConnectToHost, .networkConnectionLost:
-                throw BeerAPIError.server(
-                    "Serveur injoignable — Wi‑Fi maison ou VPN Plexi requis (port 8444, pas 8443)"
-                )
-            case .secureConnectionFailed, .serverCertificateUntrusted:
-                throw BeerAPIError.server("Certificat SSL refusé — vérifie l'URL du serveur")
-            case .timedOut:
-                throw BeerAPIError.server("Délai dépassé — réseau lent ou serveur éteint")
-            case .notConnectedToInternet:
-                throw BeerAPIError.server("Pas de connexion Internet")
-            default:
-                throw BeerAPIError.network(err)
+    func discoverWorkingEndpoint() async -> String? {
+        for url in ServerSettings.candidateURLs {
+            baseURL = url
+            do {
+                if try await healthCheck() {
+                    activeEndpoint = url.absoluteString
+                    ServerSettings.save(url.absoluteString)
+                    return url.absoluteString
+                }
+            } catch {
+                continue
             }
-        } catch {
-            throw BeerAPIError.network(error)
         }
+        return nil
     }
 
     func login(username: String, password: String) async throws -> LoginResponse {
-        var req = URLRequest(url: try url("/api/login"))
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(["username": username, "password": password])
-        let (data, http) = try await data(for: req)
+        let body = try JSONEncoder().encode(["username": username, "password": password])
+        let (data, http, _) = try await request(
+            path: "/api/login",
+            method: "POST",
+            body: body,
+            contentType: "application/json"
+        )
         if http.statusCode == 403 {
-            throw BeerAPIError.server(
-                "Accès refusé (403) — connecte-toi en Wi‑Fi maison ou VPN Plexi (port 8444)"
-            )
+            throw BeerAPIError.server("Accès refusé — Wi‑Fi maison ou VPN Plexi requis")
         }
         guard let decoded = try? JSONDecoder().decode(LoginResponse.self, from: data) else {
             throw BeerAPIError.server("Réponse login invalide (HTTP \(http.statusCode))")
@@ -101,8 +89,7 @@ final class BeerAPI {
     }
 
     func me() async throws -> MeResponse {
-        var req = URLRequest(url: try url("/api/me"))
-        let (data, http) = try await data(for: req)
+        let (data, http, _) = try await request(path: "/api/me", method: "GET", body: nil)
         if http.statusCode == 401 { throw BeerAPIError.unauthorized }
         guard let decoded = try? JSONDecoder().decode(MeResponse.self, from: data) else {
             throw BeerAPIError.decode
@@ -111,20 +98,20 @@ final class BeerAPI {
     }
 
     func logout() async {
-        var req = URLRequest(url: (try? url("/api/logout")) ?? baseURL)
-        req.httpMethod = "POST"
-        _ = try? await session.data(for: req)
+        _ = try? await request(path: "/api/logout", method: "POST", body: nil)
         if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL) {
             cookies.forEach { HTTPCookieStorage.shared.deleteCookie($0) }
         }
     }
 
     func lookup(barcode: String) async throws -> LookupResponse {
-        var req = URLRequest(url: try url("/api/lookup"))
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(["barcode": barcode])
-        let (data, http) = try await data(for: req)
+        let body = try JSONEncoder().encode(["barcode": barcode])
+        let (data, http, _) = try await request(
+            path: "/api/lookup",
+            method: "POST",
+            body: body,
+            contentType: "application/json"
+        )
         if http.statusCode == 401 { throw BeerAPIError.unauthorized }
         guard let decoded = try? JSONDecoder().decode(LookupResponse.self, from: data) else {
             throw BeerAPIError.decode
@@ -139,7 +126,7 @@ final class BeerAPI {
             URLQueryItem(name: "offset", value: String(offset)),
         ]
         var req = URLRequest(url: components.url!)
-        let (data, http) = try await data(for: req)
+        let (data, http, _) = try await perform(req)
         if http.statusCode == 401 { throw BeerAPIError.unauthorized }
         guard let decoded = try? JSONDecoder().decode([CheckinItem].self, from: data) else {
             throw BeerAPIError.decode
@@ -180,18 +167,81 @@ final class BeerAPI {
                 "force": force ? "true" : "false",
             ]
         )
-        let (data, http) = try await data(for: req)
+        let (data, http, _) = try await perform(req)
         if http.statusCode == 401 { throw BeerAPIError.unauthorized }
         guard let decoded = try? JSONDecoder().decode(CreateCheckinResult.self, from: data) else {
             throw BeerAPIError.decode
         }
-        if http.statusCode == 409 || decoded.duplicate == true {
-            return decoded
-        }
+        if http.statusCode == 409 || decoded.duplicate == true { return decoded }
         if http.statusCode >= 400 {
             throw BeerAPIError.server(decoded.error ?? "Échec enregistrement")
         }
         return decoded
+    }
+
+    // MARK: - HTTP
+
+    private func request(
+        path: String,
+        method: String,
+        body: Data?,
+        contentType: String? = nil
+    ) async throws -> (Data, HTTPURLResponse, URL) {
+        var lastError: Error?
+        for candidate in ServerSettings.candidateURLs {
+            baseURL = candidate
+            var req = URLRequest(url: try url(path))
+            req.httpMethod = method
+            if let contentType { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
+            req.httpBody = body
+            do {
+                let result = try await perform(req)
+                activeEndpoint = candidate.absoluteString
+                return result
+            } catch {
+                lastError = error
+            }
+        }
+        let tried = ServerSettings.candidateURLs.map(\.absoluteString).joined(separator: ", ")
+        if let lastError { throw lastError }
+        throw BeerAPIError.allEndpointsFailed(
+            "Aucun serveur joignable (\(tried)). Active « Réseau local » pour Plexi Beer dans Réglages iPhone."
+        )
+    }
+
+    private func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, let url = response.url else {
+                throw BeerAPIError.decode
+            }
+            return (data, http, url)
+        } catch let err as BeerAPIError {
+            throw err
+        } catch let err as URLError {
+            switch err.code {
+            case .cannotConnectToHost, .networkConnectionLost:
+                throw BeerAPIError.server("Injoignable : \(baseURL.host ?? "?")")
+            case .secureConnectionFailed, .serverCertificateUntrusted:
+                throw BeerAPIError.server("SSL refusé sur \(baseURL.host ?? "?")")
+            case .timedOut:
+                throw BeerAPIError.server("Timeout \(baseURL.host ?? "?")")
+            case .notConnectedToInternet:
+                throw BeerAPIError.server("Pas de réseau")
+            default:
+                throw BeerAPIError.network(err)
+            }
+        } catch {
+            throw BeerAPIError.network(error)
+        }
+    }
+
+    private func url(_ path: String) throws -> URL {
+        let clean = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        guard let url = URL(string: clean, relativeTo: baseURL) else {
+            throw BeerAPIError.invalidURL
+        }
+        return url
     }
 
     private func makeMultipart(boundary: String, fields: [String: String]) -> Data {
@@ -206,5 +256,3 @@ final class BeerAPI {
         return body
     }
 }
-
-// BuildConfig → BuildConfig.generated.swift (injecté au build CI)
