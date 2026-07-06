@@ -2,13 +2,6 @@
   "appId": "fr.eiter.plexibeer",
   "appName": "Plexi Beer",
   "webDir": "www",
-  "server": {
-    "url": "https://YOUR_SERVER/beer/",
-    "cleartext": false,
-    "allowNavigation": [
-      "YOUR_SERVER"
-    ]
-  },
   "ios": {
     "contentInset": "automatic",
     "backgroundColor": "#0f1419",

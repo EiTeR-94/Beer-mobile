@@ -3,32 +3,552 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="color-scheme" content="dark" />
-  <title>Plexi Beer</title>
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1.5rem;
-      font-family: system-ui, -apple-system, sans-serif;
-      background: #0f1419;
-      color: #e2e8f0;
-      text-align: center;
-    }
-    .box { max-width: 20rem; }
-    h1 { font-size: 1.25rem; margin: 0 0 0.5rem; color: #c9a227; }
-    p { margin: 0; font-size: 0.9rem; line-height: 1.5; color: #94a3b8; }
-  </style>
-</head>
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Beer Log" />
+  <meta name="theme-color" content="#c9a227" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0f1419" media="(prefers-color-scheme: dark)" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Beer Log v1.2.20</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./static/icons/icon-180.png" />
+  <link rel="icon" type="image/png" sizes="180x180" href="./static/icons/icon-180.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="./static/icons/icon-192.png" />
+  <link rel="stylesheet" href="./static/style.css?v=1.2.20" />
+  </head>
 <body>
-  <div class="box">
-    <h1>Plexi Beer</h1>
-    <p>Connexion au serveur…</p>
-    <p style="margin-top:1rem;font-size:0.8rem">Wi‑Fi maison ou VPN Plexi requis.</p>
+  <header class="top">
+    <div>
+      <h1>Beer Log</h1>
+      <p class="sub">v1.2.20 · scan · photo · note</p>
+    </div>
+    <div class="top-actions">
+      <span class="user-pill hidden" id="user-pill"></span>
+      <input type="search" id="global-search" class="global-search" placeholder="Rechercher..." autocomplete="off" />
+      <button type="button" class="btn ghost hidden" id="btn-patchnotes">Patch notes</button>
+      <button type="button" class="btn ghost hidden" id="btn-admin">Admin</button>
+      <button type="button" class="btn ghost" id="btn-wishlist">À boire</button>
+      <button type="button" class="btn ghost" id="btn-history">Historique</button>
+      <button type="button" class="btn ghost" id="btn-gifts">Idées cadeaux</button>
+      <button type="button" class="btn ghost hidden" id="btn-logout">Déconnexion</button>
+    </div>
+  </header>
+
+  <div id="invite-help-bar" class="invite-help-bar hidden" role="note">
+    <p class="invite-help-text">
+      <strong>Conseil</strong> — garde Beer Log installé sur ton écran d'accueil et évite de vider ses données
+      dans les réglages du téléphone : c'est ce qui maintient ta connexion.
+    </p>
+    <button type="button" class="invite-help-dismiss" id="btn-dismiss-invite-help" aria-label="Fermer">×</button>
   </div>
+
+  <div id="pwa-hint-bar" class="pwa-hint-bar hidden" role="note">
+    <p class="pwa-hint-text">
+      Astuce : ajoute Beer Log à l'écran d'accueil (Safari → Partager → « Sur l'écran d'accueil ») pour un accès plus fluide.
+    </p>
+    <button type="button" class="pwa-hint-dismiss" id="btn-dismiss-pwa-hint" aria-label="Fermer">×</button>
+  </div>
+
+  <nav class="steps" aria-label="Étapes">
+    <button type="button" class="step active" data-step="1">1 Bière</button>
+    <button type="button" class="step" data-step="2">2 Photo</button>
+    <button type="button" class="step" data-step="3">3 Note</button>
+  </nav>
+
+  <main id="wizard">
+    <section class="panel active" data-panel="1">
+      <p class="lead">Scan EAN optionnel — ou cherche directement sur Untappd.</p>
+
+      <div class="scan-viewfinder" id="scan-viewfinder">
+        <div class="scan-stage" id="scan-stage">
+          <video id="scan-video" class="scan-video" playsinline webkit-playsinline muted autoplay aria-label="Aperçu caméra scan EAN"></video>
+          <canvas id="scan-canvas" class="hidden" aria-hidden="true"></canvas>
+          <div class="scan-overlay" aria-hidden="true">
+            <div class="scan-shade scan-shade-top"></div>
+            <div class="scan-shade scan-shade-bottom"></div>
+            <div class="scan-shade scan-shade-left"></div>
+            <div class="scan-shade scan-shade-right"></div>
+            <div class="scan-frame">
+              <span class="scan-corner tl"></span>
+              <span class="scan-corner tr"></span>
+              <span class="scan-corner bl"></span>
+              <span class="scan-corner br"></span>
+              <span class="scan-line"></span>
+            </div>
+          </div>
+          <button type="button" class="scan-start-btn hidden" id="btn-scan-start" aria-label="Activer la caméra">
+            <span>📷 Activer la caméra</span>
+          </button>
+          <span class="scan-cta hidden" id="scan-placeholder">📷 Prendre photo</span>
+        </div>
+        <input type="file" id="scan-input" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true" />
+        <div class="scan-actions-bar">
+          <button type="button" class="btn primary block scan-capture-btn hidden" id="btn-scan-capture">Capturer</button>
+          <button type="button" class="btn ghost block scan-native-fallback hidden" id="btn-scan-native">Prendre photo</button>
+        </div>
+        <img id="scan-preview" class="hidden" alt="Aperçu code-barres" />
+        <p class="scan-hint" id="scan-hint">Cadre le code-barres dans le rectangle</p>
+      </div>
+
+      <p id="scan-status" class="hint hidden"></p>
+
+      <section id="untappd-panel" class="untappd-panel">
+        <p class="untappd-title">Chercher sur Untappd</p>
+        <p class="hint" id="untappd-hint">Top 5 résultats seulement (limite Untappd dans le HTML). Utilise <strong>Brasserie + Nom</strong> pour faire apparaître ta bière précise dans ces 5.</p>
+        <input type="hidden" id="barcode-input" />
+        <div class="untappd-search-fields">
+          <label class="field">
+            <span>Brasserie (optionnel)</span>
+            <input type="text" id="untappd-brewery" placeholder="ex. Les Intenables" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>Nom de la bière</span>
+            <input type="text" id="untappd-name" placeholder="ex. Mama Whipa" autocomplete="off" />
+          </label>
+        </div>
+        <button type="button" class="btn primary block" id="btn-untappd-search">Chercher sur Untappd</button>
+        <div id="untappd-results" class="untappd-results hidden"></div>
+
+        <details class="manual-fallback inner-fallback">
+          <summary>Saisie manuelle (secours)</summary>
+          <label class="field">
+            <span>Nom de la bière</span>
+            <input type="text" id="local-name" placeholder="ex. Mama Whipa" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>Brasserie</span>
+            <input type="text" id="local-brewery" placeholder="ex. Les Intenables" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>Style</span>
+            <select id="local-style"></select>
+          </label>
+          <div class="custom-flavor-row" style="display:none;">
+            <input type="text" id="custom-style-input" placeholder="Ex: Gose, Table Beer, etc." maxlength="32" autocomplete="off" style="flex:1;" />
+          </div>
+          <button type="button" class="btn block" id="btn-local-save">Continuer</button>
+        </details>
+      </section>
+
+      <details class="manual-fallback">
+        <summary>Code illisible ? Saisie EAN à la main</summary>
+        <label class="field">
+          <span>Code EAN</span>
+          <input type="text" id="ean-manual" inputmode="numeric" placeholder="ex. 5411680001111" autocomplete="off" />
+        </label>
+        <button type="button" class="btn block" id="btn-lookup">Identifier par EAN</button>
+      </details>
+
+      <div id="beer-preview" class="beer-card hidden"></div>
+      <button type="button" class="btn block hidden" id="btn-add-wishlist">+ Ajouter à la liste « À boire »</button>
+      <button type="button" class="btn primary block hidden" id="btn-to-photo">Continuer → photo</button>
+    </section>
+
+    <section class="panel" data-panel="2">
+      <p class="lead">Photo du verre avec la canette à côté (optionnel).</p>
+      <label class="photo-upload">
+        <input type="file" id="photo-input" accept="image/*" capture="environment" />
+        <span id="photo-placeholder">📷 Prendre ou choisir une photo</span>
+        <img id="photo-preview" class="hidden" alt="Aperçu" />
+      </label>
+      <button type="button" class="btn block" id="btn-back-1">← Retour</button>
+      <button type="button" class="btn primary block" id="btn-to-rating">Continuer → note</button>
+    </section>
+
+    <section class="panel" data-panel="3">
+      <p class="lead" id="rating-beer-name">—</p>
+      <p class="hint hidden" id="no-beer-hint">Pas de bière identifiée — retourne à l'étape 1 ou cherche sur Untappd.</p>
+      <div class="note-container">
+        <div class="note-row">
+          <span class="note-label">NOTE</span>
+          <div class="untappd-slider-wrapper" id="rating-slider-wrapper">
+            <div class="untappd-slider-track" id="slider-track">
+              <div class="untappd-slider-fill" id="slider-fill"></div>
+              <div class="untappd-slider-ticks" id="slider-ticks"></div>
+              <div class="untappd-slider-thumb" id="slider-thumb"></div>
+            </div>
+          </div>
+          <span id="note-value" class="note-value">—</span>
+        </div>
+      </div>
+
+      <div class="tags-block">
+        <p class="tags-title"><span id="tags-title-label">Goûts</span> <span id="style-label"></span></p>
+        <div id="flavor-tags" class="tags"></div>
+        <div class="custom-flavors-block">
+          <p class="tags-title">Goûts perso</p>
+          <div class="custom-flavor-row">
+            <input type="text" id="custom-flavor-input" placeholder="ex. pneus, sucrée, vanille fumée…" maxlength="28" autocomplete="off" />
+            <button type="button" class="btn" id="btn-add-custom-flavor" aria-label="Ajouter le goût">+</button>
+          </div>
+          <div id="custom-flavor-tags" class="tags custom-tags"></div>
+          <p class="hint">Libre — 8 goûts max au total</p>
+        </div>
+      </div>
+
+      <div class="hops-block">
+        <p class="tags-title">Houblons</p>
+        <div id="hop-tags" class="tags"></div>
+        <div class="custom-flavors-block">
+          <p class="tags-title">Houblons perso</p>
+          <div class="custom-flavor-row">
+            <input type="text" id="custom-hop-input" placeholder="ex. Citra, Mosaic, Galaxy…" maxlength="24" autocomplete="off" />
+            <button type="button" class="btn" id="btn-add-custom-hop" aria-label="Ajouter un houblon">+</button>
+          </div>
+          <div id="custom-hop-tags" class="tags custom-tags"></div>
+          <p class="hint">Max ~6 houblons</p>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>Commentaire <small>(optionnel, 120 car.)</small></span>
+        <textarea id="comment" maxlength="120" rows="2" placeholder="Terrasse, avec elle, à refaire…"></textarea>
+        <small class="counter"><span id="comment-count">0</span>/120</small>
+      </label>
+
+      <button type="button" class="btn block" id="btn-back-2">← Retour</button>
+      <button type="button" class="btn primary block" id="btn-save" disabled>Enregistrer</button>
+    </section>
+  </main>
+
+  <section id="history" class="history beer-overlay hidden">
+    <div class="history-panel-body">
+    <div class="history-head">
+      <h2>Historique</h2>
+      <div class="history-head-actions">
+        <button type="button" class="btn ghost" id="btn-open-gallery">📷 Galerie</button>
+        <button type="button" class="btn ghost" id="btn-close-history">Fermer</button>
+      </div>
+    </div>
+    <div id="history-stats" class="history-stats"></div>
+    <div class="history-filters">
+      <label class="filter-field">
+        <span>Style</span>
+        <select id="history-filter-style"></select>
+      </label>
+      <label class="filter-field">
+        <span>Note min</span>
+        <select id="history-filter-rating">
+          <option value="0">Toutes</option>
+        </select>
+      </label>
+      <label class="filter-field">
+        <span>Période</span>
+        <select id="history-filter-period">
+          <option value="">Tout</option>
+          <option value="week">7 jours</option>
+          <option value="month">30 jours</option>
+          <option value="year">1 an</option>
+        </select>
+      </label>
+    </div>
+    <label class="field history-search">
+      <span>Rechercher</span>
+      <input type="search" id="history-search" placeholder="nom, brasserie, style…" autocomplete="off" />
+    </label>
+    <div id="history-list" class="history-list"></div>
+    </div>
+  </section>
+
+  <section id="photo-gallery" class="photo-gallery hidden">
+    <div class="photo-gallery-body">
+      <div class="history-head">
+        <h2>Galerie photos</h2>
+        <div class="history-head-actions">
+          <button type="button" class="btn ghost" id="btn-close-gallery">Fermer</button>
+        </div>
+      </div>
+      <div class="history-filters">
+        <label class="filter-field">
+          <span>Style</span>
+          <select id="gallery-filter-style"></select>
+        </label>
+        <label class="filter-field">
+          <span>Note min</span>
+          <select id="gallery-filter-rating">
+            <option value="0">Toutes</option>
+          </select>
+        </label>
+        <label class="filter-field">
+          <span>Période</span>
+          <select id="gallery-filter-period">
+            <option value="">Tout</option>
+            <option value="week">7 jours</option>
+            <option value="month">30 jours</option>
+            <option value="year">1 an</option>
+          </select>
+        </label>
+      </div>
+      <label class="field history-search">
+        <span>Rechercher</span>
+        <input type="search" id="gallery-search" placeholder="nom, brasserie, style…" autocomplete="off" />
+      </label>
+      <div id="gallery-grid" class="gallery-grid"></div>
+    </div>
+  </section>
+
+  <section id="wishlist-panel" class="wishlist-panel beer-overlay hidden">
+    <div class="wishlist-head">
+      <h2>À boire</h2>
+      <button type="button" class="btn ghost" id="btn-close-wishlist">Fermer</button>
+    </div>
+    <p class="hint wishlist-hint">Tes souhaits personnels (bières à goûter).</p>
+    <div class="wishlist-add">
+      <label class="field">
+        <span>Nom</span>
+        <input type="text" id="wish-name" placeholder="ex. Mama Whipa" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Brasserie</span>
+        <input type="text" id="wish-brewery" placeholder="optionnel" autocomplete="off" />
+      </label>
+      <button type="button" class="btn primary block" id="btn-wish-add">Ajouter</button>
+    </div>
+    <div id="wishlist-list" class="wishlist-list"></div>
+  </section>
+
+  <section id="gifts-panel" class="gifts-panel beer-overlay hidden">
+    <div class="history-head">
+      <h2>Idées cadeaux</h2>
+      <div class="history-head-actions">
+        <button type="button" class="btn ghost" id="btn-close-gifts">Fermer</button>
+      </div>
+    </div>
+    <div id="gifts-couple-stats" class="gifts-couple-stats"></div>
+    <div class="gifts-filters history-filters">
+      <label class="filter-field">
+        <span>Recherche</span>
+        <input type="search" id="gifts-search" placeholder="nom, brasserie..." autocomplete="off" />
+      </label>
+      <label class="filter-field">
+        <span>Style</span>
+        <select id="gifts-filter-style"><option value="">Tous styles</option></select>
+      </label>
+      <label class="filter-field">
+        <span>Note min</span>
+        <select id="gifts-filter-rating">
+          <option value="0">Toutes</option>
+          <option value="4">≥4★</option>
+          <option value="4.5">≥4.5★</option>
+          <option value="5">=5★</option>
+        </select>
+      </label>
+    </div>
+    <div id="gifts-list" class="gifts-list"></div>
+  </section>
+
+  <section id="checkin-detail" class="checkin-detail hidden">
+    <div class="detail-head">
+      <button type="button" class="btn ghost" id="btn-close-detail">Fermer</button>
+      <div class="detail-head-actions">
+        <button type="button" class="btn ghost hidden" id="btn-detail-hide" title="Masquer pour les autres comptes">Masquer</button>
+        <button type="button" class="btn primary" id="btn-detail-retaste">Noter à nouveau</button>
+        <button type="button" class="btn" id="btn-detail-edit">Modifier</button>
+      </div>
+    </div>
+    <div class="detail-photo-wrap">
+      <img id="detail-photo" class="detail-photo hidden" alt="Photo dégustation" />
+      <div id="detail-no-photo" class="detail-no-photo hidden">Pas de photo</div>
+    </div>
+    <div class="detail-body">
+      <h2 id="detail-name">—</h2>
+      <p class="meta" id="detail-meta"></p>
+      <div class="stars-sm detail-stars" id="detail-stars"></div>
+      <p class="detail-flavors hidden" id="detail-flavors"></p>
+      <p class="detail-comment hidden" id="detail-comment"></p>
+    </div>
+  </section>
+
+  <dialog id="duplicate-dialog" class="duplicate-dialog">
+    <div class="dialog-inner duplicate-dialog-inner">
+      <div id="duplicate-dialog-content"></div>
+      <div class="duplicate-dialog-actions">
+        <button type="button" class="btn block" id="btn-duplicate-cancel">Annuler</button>
+        <button type="button" class="btn primary block" id="btn-duplicate-confirm">Noter à nouveau</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="edit-dialog">
+    <div class="dialog-inner edit-dialog-inner">
+      <h3 id="edit-title">Modifier la dégustation</h3>
+      <p class="meta" id="edit-meta"></p>
+      <label class="photo-upload edit-photo-upload">
+        <input type="file" id="edit-photo-input" accept="image/*" capture="environment" />
+        <span id="edit-photo-placeholder">📷 Prendre ou choisir une photo</span>
+        <img id="edit-photo-preview" class="hidden" alt="Aperçu photo" />
+      </label>
+      <button type="button" class="btn ghost block hidden" id="btn-edit-remove-photo">Retirer la photo</button>
+      <div class="note-container">
+        <div class="note-row">
+          <span class="note-label">NOTE</span>
+          <div class="untappd-slider-wrapper" id="edit-rating-slider-wrapper">
+            <div class="untappd-slider-track" id="edit-slider-track">
+              <div class="untappd-slider-fill" id="edit-slider-fill"></div>
+              <div class="untappd-slider-ticks" id="edit-slider-ticks"></div>
+              <div class="untappd-slider-thumb" id="edit-slider-thumb"></div>
+            </div>
+          </div>
+          <span id="edit-note-value" class="note-value">—</span>
+        </div>
+      </div>
+      <div class="tags-block">
+        <p class="tags-title" id="edit-tags-title">Goûts</p>
+        <div id="edit-flavor-tags" class="tags"></div>
+        <div class="custom-flavors-block">
+          <p class="tags-title">Goûts perso</p>
+          <div class="custom-flavor-row">
+            <input type="text" id="edit-custom-flavor-input" placeholder="ex. pneus, sucrée…" maxlength="28" autocomplete="off" />
+            <button type="button" class="btn" id="btn-edit-add-custom-flavor" aria-label="Ajouter le goût">+</button>
+          </div>
+          <div id="edit-custom-flavor-tags" class="tags custom-tags"></div>
+        </div>
+      </div>
+
+      <div class="hops-block">
+        <p class="tags-title">Houblons</p>
+        <div id="edit-hop-tags" class="tags"></div>
+        <div class="custom-flavors-block">
+          <p class="tags-title">Houblons perso</p>
+          <div class="custom-flavor-row">
+            <input type="text" id="edit-custom-hop-input" placeholder="ex. Citra, Mosaic…" maxlength="24" autocomplete="off" />
+            <button type="button" class="btn" id="btn-edit-add-custom-hop" aria-label="Ajouter le houblon">+</button>
+          </div>
+          <div id="edit-custom-hop-tags" class="tags custom-tags"></div>
+        </div>
+      </div>
+      <label class="field checkin-hide-field hidden" id="edit-hide-field">
+        <span>Visibilité</span>
+        <label class="check-row">
+          <input type="checkbox" id="edit-hidden-partner" />
+          <span>Masquer cette dégustation pour les autres</span>
+        </label>
+      </label>
+      <label class="field">
+        <span>Commentaire</span>
+        <textarea id="edit-comment" maxlength="120" rows="2"></textarea>
+      </label>
+      <div class="edit-actions">
+        <button type="button" class="btn block" id="btn-edit-cancel">Annuler</button>
+        <button type="button" class="btn primary block" id="btn-edit-save">Enregistrer</button>
+      </div>
+    </div>
+  </dialog>
+
+  <section id="admin-panel" class="admin-panel beer-overlay hidden">
+    <div class="admin-panel-body">
+    <div class="admin-head">
+      <h2>Administration</h2>
+      <div class="history-head-actions">
+        <button type="button" class="btn ghost" id="btn-admin-refresh" aria-label="Actualiser">↻ Actualiser</button>
+        <button type="button" class="btn ghost" id="btn-close-admin">Fermer</button>
+      </div>
+    </div>
+
+    <div class="admin-add">
+      <p class="admin-sub">Nouveau compte</p>
+      <label class="field">
+        <span>Identifiant</span>
+        <input type="text" id="admin-new-user" placeholder="ex. ney" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Mot de passe</span>
+        <input type="password" id="admin-new-pass" autocomplete="new-password" />
+      </label>
+      <label class="admin-check">
+        <input type="checkbox" id="admin-new-is-admin" />
+        <span>Administrateur</span>
+      </label>
+      <button type="button" class="btn primary block" id="btn-admin-create">Créer le compte</button>
+    </div>
+
+    <div class="admin-list-wrap">
+      <p class="admin-sub">Comptes</p>
+      <div id="admin-user-list" class="admin-user-list"></div>
+    </div>
+
+    <div class="admin-list-wrap">
+      <div class="admin-sub-row">
+        <p class="admin-sub">Invitations</p>
+        <button type="button" class="btn ghost invite-ips-shortcut" id="btn-invite-ips-all" title="Historique IP invités">IP</button>
+      </div>
+      <p class="meta admin-hint">Compte + lien en un seul endroit. Lié au 1er appareil (4G OK ensuite). Cache vidé ? « Renvoyer l'accès » (lien 10 min). Révoquer = supprime le compte.</p>
+      <div class="admin-add admin-invite-form">
+        <label class="field">
+          <span>Nom de l'invité</span>
+          <input type="text" id="invite-label" placeholder="ex. Paul" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>Validité</span>
+          <select id="invite-days">
+            <option value="24h">24 heures</option>
+            <option value="48h">48 heures</option>
+            <option value="7d" selected>7 jours</option>
+            <option value="14d">14 jours</option>
+            <option value="30d">30 jours</option>
+            <option value="90d">90 jours</option>
+            <option value="permanent">Permanent</option>
+          </select>
+        </label>
+        <button type="button" class="btn primary block" id="btn-invite-create">Créer le lien</button>
+      </div>
+      <div id="invite-create-result" class="admin-add invite-create-result hidden">
+        <p class="meta">Lien à envoyer en privé (une seule fois) :</p>
+        <input type="text" id="invite-new-url" readonly class="invite-url-input" />
+        <button type="button" class="btn block" id="btn-invite-copy">Copier le lien</button>
+      </div>
+      <div id="admin-invite-list" class="admin-user-list admin-invite-list"></div>
+    </div>
+
+    <div class="admin-list-wrap">
+      <p class="admin-sub">Maintenance</p>
+      <button type="button" class="btn block" id="btn-cleanup-photos">🧹 Nettoyer photos orphelines</button>
+      <div id="cleanup-result" class="meta"></div>
+    </div>
+
+    <div class="admin-list-wrap admin-ref-wrap">
+      <p class="admin-sub">Référentiels</p>
+      <div id="admin-styles-hops" class="admin-styles-hops"></div>
+    </div>
+    </div>
+  </section>
+
+  <div id="invite-ips-scrim" class="invite-ips-scrim hidden" aria-hidden="true"></div>
+  <aside
+    id="invite-ips-panel"
+    class="invite-ips-panel hidden"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="invite-ips-title"
+  >
+    <header class="invite-ips-head">
+      <h3 id="invite-ips-title">IP invités</h3>
+      <button type="button" class="invite-ips-close" id="btn-close-invite-ips" aria-label="Fermer">×</button>
+    </header>
+    <div id="invite-ips-body" class="invite-ips-body"></div>
+    <button type="button" class="btn block" id="btn-close-invite-ips-footer">Fermer</button>
+  </aside>
+
+  <div id="patchnotes-scrim" class="patchnotes-scrim hidden" aria-hidden="true"></div>
+  <aside
+    id="patchnotes-panel"
+    class="patchnotes-panel hidden"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="patchnotes-title"
+  >
+    <header class="patchnotes-head">
+      <h3 id="patchnotes-title">Patch notes <span class="meta" id="patchnotes-version"></span></h3>
+      <button type="button" class="patchnotes-close" id="btn-close-patchnotes" aria-label="Fermer">×</button>
+    </header>
+    <pre id="patch-content" class="patchnotes-content"></pre>
+    <button type="button" class="btn block" id="btn-close-patchnotes-footer">Fermer</button>
+  </aside>
+
+  <div id="toast-scrim" class="toast-scrim hidden" aria-hidden="true"></div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <script src="./mobile-env.js"></script>
+  <script src="./static/ptr.js?v=1.2.20" defer></script>
+  <script src="./static/app.js?v=1.2.20" defer></script>
 </body>
 </html>

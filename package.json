@@ -2,9 +2,10 @@
   "name": "plexi-beer-mobile",
   "version": "1.0.0",
   "private": true,
-  "description": "Coque iOS Plexi Beer — Capacitor + AltStore (phase 1 perso)",
+  "description": "App iOS Plexi Beer embarquée — Capacitor + AltStore",
   "scripts": {
     "postinstall": "node scripts/patch-ios-plist.js 2>/dev/null || true",
+    "sync:www": "node scripts/sync-beer-www.js",
     "icons": "node scripts/copy-icons.js",
     "cap:sync": "npx cap sync ios",
     "cap:open": "npx cap open ios",
@@ -21,6 +22,6 @@
     "@capacitor/cli": "^6.2.0"
   },
   "capacitor": {
-    "comment": "Voir capacitor.config.json — URL Beer distante (pas de copie du front)"
+    "comment": "Voir capacitor.config.json — UI locale www/, API via BEER_SERVER_URL"
   }
 }

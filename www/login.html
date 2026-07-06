@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Beer Log" />
+  <meta name="theme-color" content="#c9a227" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0f1419" media="(prefers-color-scheme: dark)" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Beer Log — connexion</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./static/icons/icon-180.png" />
+  <link rel="icon" type="image/png" sizes="180x180" href="./static/icons/icon-180.png" />
+  <link rel="stylesheet" href="./static/style.css?v=1.2.20" />
+  </head>
+<body class="login-page">
+  <main class="login-card">
+    <div class="login-brand">
+      <span class="login-icon" aria-hidden="true">🍺</span>
+      <h1>Beer Log</h1>
+      <p class="sub">Journal de dégustation privé</p>
+    </div>
+
+    <form id="login-form" class="login-form" autocomplete="on">
+      <label class="field">
+        <span>Identifiant</span>
+        <input type="text" id="login-user" name="username" autocomplete="username" required />
+      </label>
+      <label class="field">
+        <span>Mot de passe</span>
+        <input type="password" id="login-pass" name="password" autocomplete="current-password" required />
+      </label>
+      <p id="login-error" class="login-error hidden"></p>
+      <button type="submit" class="btn primary block" id="btn-login">Se connecter</button>
+    </form>
+
+    <p class="login-foot">Scan · photo · note · historique</p>
+  </main>
+
+  <script src="./mobile-env.js"></script>
+  <script src="./static/ptr.js?v=1.2.20" defer></script>
+  <script src="./static/login.js?v=1.2.20" defer></script>
+</body>
+</html>
