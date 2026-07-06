@@ -1,4 +1,4 @@
-# Build IPA Plexi Beer — app NATIVE SwiftUI (pas Capacitor / pas WebView)
+# IPA native SwiftUI — xcodebuild (comme Xcode), pas Capacitor
 
 name: Build iOS IPA
 
@@ -19,58 +19,40 @@ jobs:
 
     env:
       BEER_SERVER_URL: ${{ secrets.BEER_SERVER_URL }}
-      FASTLANE_SKIP_UPDATE_CHECK: "true"
-      FASTLANE_DISABLE_ANIMATION: "true"
-      FASTLANE_OPT_OUT_USAGE: "true"
       CI: "true"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Vérifier secrets
+      - name: Vérifier secret API
         run: |
           if [ -z "$BEER_SERVER_URL" ]; then
-            echo "::error::Secret BEER_SERVER_URL manquant (ex. https://ton-serveur/beer)"
+            echo "::error::Secret BEER_SERVER_URL manquant"
             exit 1
           fi
-          test -f native-ios/project.yml || (echo "::error::native-ios/ absent" && exit 1)
-
-      - name: Config API Beer (Build.xcconfig)
-        run: node scripts/write-native-config.js
 
       - name: XcodeGen
+        run: brew install xcodegen
+
+      - name: Build IPA (xcodebuild)
         run: |
-          brew install xcodegen
-          cd native-ios && xcodegen generate
-          test -f BeerNative.xcodeproj/project.pbxproj
+          chmod +x scripts/build-native-ipa.sh
+          scripts/build-native-ipa.sh
 
-      - name: Ruby + Fastlane
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.3"
-          bundler-cache: true
-
-      - name: Build IPA native non signée
+      - name: Vérifier binaire Mach-O arm64
         run: |
-          echo "Commit: $GITHUB_SHA"
-          echo "App SwiftUI native — API via secret BEER_SERVER_URL"
-          bundle exec fastlane ios build_ipa --verbose || true
-          if [ ! -f build/PlexiBeer.ipa ]; then
-            ARCHIVE=$(find ~/Library/Developer/Xcode/DerivedData -name "Plexi Beer.app" -mmin -60 | head -1)
-            if [ -n "$ARCHIVE" ]; then
-              rm -rf build/Payload
-              mkdir -p build/Payload
-              cp -r "$ARCHIVE" build/Payload/
-              (cd build && zip -qr PlexiBeer.ipa Payload)
-            fi
-          fi
-          test -f build/PlexiBeer.ipa
+          BIN="build/Payload/Plexi Beer.app/Plexi Beer"
+          test -f "$BIN"
+          file "$BIN" | grep -E "Mach-O.*arm64"
+          # Pas de WebView Capacitor dans l'IPA
+          ! find "build/Payload" -name "capacitor.config.json" | grep -q .
+          ! find "build/Payload" -name "index.html" | grep -q .
 
-      - name: Publier l'artifact IPA
+      - name: Publier artifact
         uses: actions/upload-artifact@v4
         with:
           name: PlexiBeer-ipa
-          path: build/*.ipa
+          path: build/PlexiBeer.ipa
           retention-days: 30
           if-no-files-found: error

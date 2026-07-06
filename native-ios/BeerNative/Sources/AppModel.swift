@@ -118,7 +118,7 @@ final class AppModel: ObservableObject {
             }
             throw BeerAPIError.server(result.error ?? "Échec")
         } catch {
-            if case BeerAPIError.network = error {
+            if case BeerAPIError.network(_) = error {
                 offline.enqueue(pending)
                 return "Enregistré sur l'iPhone — sync au retour réseau"
             }

@@ -76,8 +76,8 @@ struct LoginView: View {
         do {
             try await app.login(username: username.trimmingCharacters(in: .whitespaces),
                                 password: password)
-        } catch {
-            self.error = error.localizedDescription
+        } catch let err {
+            self.error = err.localizedDescription
         }
     }
 }
