@@ -3,14 +3,6 @@
 opt_out_usage
 default_platform(:ios)
 
-def keychain_name
-  "plexi_beer_ci.keychain"
-end
-
-def keychain_password
-  ENV.fetch("KEYCHAIN_PASSWORD", "plexi-beer-ci-temp")
-end
-
 def apple_team_id
   explicit = ENV["APPLE_TEAM_ID"].to_s.strip
   return explicit unless explicit.empty?
@@ -41,12 +33,7 @@ platform :ios do
 
   desc "Certificats + profil pour l'iPhone du testeur"
   lane :prepare_signing do
-    ENV["MATCH_KEYCHAIN_NAME"] = keychain_name
-    ENV["MATCH_KEYCHAIN_PASSWORD"] = keychain_password
-    setup_ci(
-      force: true,
-      keychain_name: keychain_name
-    )
+    setup_ci(force: true)
 
     team = apple_team_id
     apple_id = ENV.fetch("APPLE_ID")
@@ -60,7 +47,7 @@ platform :ios do
         team_id: team
       )
     rescue StandardError => e
-      UI.message("produce ignoré (App ID existe peut-être déjà) : #{e.message}")
+      UI.message("produce ignoré : #{e.message}")
     end
 
     udid = device_udid
@@ -76,9 +63,7 @@ platform :ios do
       development: true,
       username: apple_id,
       team_id: team,
-      force: false,
-      keychain_name: keychain_name,
-      keychain_password: keychain_password
+      force: false
     )
 
     sigh(
