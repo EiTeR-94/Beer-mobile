@@ -12,20 +12,40 @@ Pas de MacinCloud : GitHub compile l’app sur un **Mac gratuit** et tu récupè
 
 Crée un compte sur https://github.com si besoin.
 
-### 2. Mot de passe spécifique Apple (obligatoire)
+### 2. Session Apple sur Windows (obligatoire — contourne le blocage GitHub)
+
+> Apple refuse souvent le login « mot de passe pour app » **depuis les serveurs GitHub**, même si le mot de passe est bon. Ce n’est pas une erreur de copie.
+
+Sur ton **PC Windows** (PowerShell en admin) :
+
+```powershell
+# 1) Ruby : https://rubyinstaller.org/downloads/ → Ruby+Devkit 3.3.x
+# 2) Puis dans un NOUVEAU PowerShell :
+gem install fastlane
+fastlane spaceauth -u eiter_94@hotmail.com
+```
+
+- Mot de passe demandé → colle ton **mot de passe pour app** (pas iCloud)
+- Code 2FA → reçu sur l’iPhone
+- À la fin, fastlane affiche un bloc qui commence par `---` et contient `FASTLANE_SESSION`
+
+**Copie tout le bloc** (plusieurs lignes) → secret GitHub `FASTLANE_SESSION`.
+
+Valide ~1 mois ; à regénérer ensuite (même commande sur Windows).
+
+### 3. Mot de passe spécifique Apple (pour spaceauth ci-dessus)
 
 1. https://appleid.apple.com → **Connexion et sécurité**
-2. **Mots de passe pour app** → **Générer**
-3. Nom : `GitHub Plexi Beer`
-4. **Copie le mot de passe** (format `xxxx-xxxx-xxxx-xxxx`) — il ne s’affiche qu’une fois
+2. **Mots de passe pour app** → **Générer** → nom `GitHub Plexi Beer`
+3. Format `xxxx-xxxx-xxxx-xxxx`
 
-### 3. Team ID Apple (10 caractères)
+### 4. Team ID Apple (optionnel)
 
 1. https://developer.apple.com/account (connecte-toi avec le **même Apple ID** qu’AltStore)
 2. Accepte les conditions si demandé (compte développeur **gratuit**)
 3. Note le **Team ID** (ex. `AB12C3D4EF`) — section adhésion / Membership
 
-### 4. UDID de ton iPhone
+### 5. UDID de ton iPhone
 
 Sur **Windows** (iTunes ou 3uTools) :
 
@@ -81,10 +101,11 @@ Dépôt → **Settings** → **Secrets and variables** → **Actions** → **New
 
 | Nom du secret | Valeur |
 |---------------|--------|
-| `APPLE_ID` | Ton e-mail Apple ID |
-| `APPLE_APP_SPECIFIC_PASSWORD` | Mot de passe spécifique (étape 2) |
-| `APPLE_TEAM_ID` | Team ID 10 caractères |
+| `APPLE_ID` | `eiter_94@hotmail.com` (ton mail exact) |
+| `FASTLANE_SESSION` | Bloc copié après `fastlane spaceauth` sur Windows |
+| `APPLE_APP_SPECIFIC_PASSWORD` | Mot de passe pour app (secours) |
 | `IOS_DEVICE_UDID` | UDID iPhone |
+| `APPLE_TEAM_ID` | Optionnel — détecté auto si absent |
 | `KEYCHAIN_PASSWORD` | *(optionnel)* un mot de passe quelconque, ex. `PlexiBeer2026` |
 
 ---

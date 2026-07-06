@@ -3,15 +3,25 @@
 opt_out_usage
 default_platform(:ios)
 
-def apple_team_id
-  explicit = ENV["APPLE_TEAM_ID"].to_s.strip
-  return explicit unless explicit.empty?
+def portal_login
+  if ENV["FASTLANE_SESSION"].to_s.strip != ""
+    UI.message("Connexion Apple via FASTLANE_SESSION…")
+    Spaceship::Portal.login_via_env
+    return
+  end
 
-  UI.message("APPLE_TEAM_ID absent — détection via ton Apple ID…")
+  UI.message("Connexion Apple via mot de passe pour app (souvent bloqué depuis GitHub)…")
   Spaceship::Portal.login(
     ENV.fetch("APPLE_ID"),
     ENV.fetch("FASTLANE_PASSWORD")
   )
+end
+
+def apple_team_id
+  explicit = ENV["APPLE_TEAM_ID"].to_s.strip
+  return explicit unless explicit.empty?
+
+  portal_login
   teams = Spaceship::Portal.client.teams
   UI.user_error!("Aucune équipe Apple — accepte les conditions sur developer.apple.com") if teams.nil? || teams.empty?
 
