@@ -10,6 +10,9 @@ final class AppModel: ObservableObject {
     @Published var isLoading = true
     @Published var banner: String?
     @Published var isOnline = true
+    @Published var serverVersion: String = ""
+    @Published var wizardStep = 1
+    @Published var wizardProduct: BeerProduct?
 
     let api = BeerAPI.shared
     let offline = OfflineQueue()
@@ -33,6 +36,7 @@ final class AppModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         _ = await api.discoverWorkingEndpoint()
+        serverVersion = (try? await api.version()) ?? ""
         do {
             let me = try await api.me()
             if me.auth && me.user == nil {
@@ -84,6 +88,28 @@ final class AppModel: ObservableObject {
         isLoggedIn = false
         KeychainStore.username = nil
         banner = nil
+    }
+
+    func startRetaste(_ item: CheckinItem, step: Int = 3) {
+        wizardProduct = BeerProduct.from(checkin: item)
+        wizardStep = step
+    }
+
+    func startWishlistTaste(_ item: WishlistItem) {
+        wizardProduct = BeerProduct(
+            barcode: item.barcode ?? "",
+            beerName: item.beerName,
+            brewery: item.brewery ?? "—",
+            style: item.style ?? "Unknown",
+            summary: "\(item.beerName) — depuis À boire",
+            source: "wishlist"
+        )
+        wizardStep = 1
+    }
+
+    func clearWizardPrefill() {
+        wizardProduct = nil
+        wizardStep = 1
     }
 
     func syncPending() async {

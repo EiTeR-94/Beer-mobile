@@ -5,6 +5,8 @@ struct BeerWizardView: View {
     @EnvironmentObject private var app: AppModel
     @Binding var step: Int
 
+    private var prefill: BeerProduct? { app.wizardProduct }
+
     @State private var scannedCode = ""
     @State private var manualEAN = ""
     @State private var product: BeerProduct?
@@ -51,6 +53,8 @@ struct BeerWizardView: View {
         .onChange(of: photoItem) { item in
             Task { await loadPhoto(item) }
         }
+        .onAppear { applyPrefillIfNeeded() }
+        .onChange(of: app.wizardProduct) { _ in applyPrefillIfNeeded() }
         .alert("Déjà dégustée", isPresented: $showDuplicate) {
             Button("Annuler", role: .cancel) {}
             Button("Ajouter quand même") { Task { await save(force: true) } }
@@ -162,6 +166,9 @@ struct BeerWizardView: View {
 
             if let product, !product.beerName.isEmpty {
                 BeerPreviewCard(product: product)
+                BeerSecondaryButton(title: "+ Ajouter à la liste « À boire »") {
+                    Task { await addToWishlist(product) }
+                }
                 BeerPrimaryButton(title: "Continuer → photo") { step = 2 }
             }
         }
@@ -389,7 +396,28 @@ struct BeerWizardView: View {
         }
     }
 
+    private func applyPrefillIfNeeded() {
+        if app.wizardStep != step { step = app.wizardStep }
+        guard let p = prefill, !p.beerName.isEmpty else { return }
+        product = p
+    }
+
+    private func addToWishlist(_ product: BeerProduct) async {
+        do {
+            try await app.api.addWishlist(
+                beerName: product.beerName,
+                brewery: product.brewery,
+                style: product.style,
+                barcode: product.barcode
+            )
+            status = "Ajouté à « À boire » ✓"
+        } catch {
+            status = error.localizedDescription
+        }
+    }
+
     private func resetWizard() {
+        app.clearWizardPrefill()
         step = 1
         product = nil
         scannedCode = ""
