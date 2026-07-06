@@ -342,7 +342,7 @@ struct CustomTagInput: View {
     @Binding var input: String
     @Binding var selected: Set<String>
     let maxCount: Int
-    var registerOnServer: ((String) async throws -> Void)?
+    var onRegister: ((String) -> Void)?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -354,20 +354,18 @@ struct CustomTagInput: View {
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .foregroundStyle(Theme.text)
-                .onSubmit { Task { await add() } }
-            Button("+") { Task { await add() } }
+                .onSubmit { add() }
+            Button("+", action: add)
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.accent)
                 .disabled(input.trimmingCharacters(in: .whitespaces).count < 2)
         }
     }
 
-    private func add() async {
+    private func add() {
         let tag = input.trimmingCharacters(in: .whitespaces)
         guard tag.count >= 2, selected.count < maxCount, !selected.contains(tag) else { return }
-        if let registerOnServer {
-            try? await registerOnServer(tag)
-        }
+        onRegister?(tag)
         selected.insert(tag)
         input = ""
     }

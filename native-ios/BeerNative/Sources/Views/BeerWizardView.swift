@@ -285,7 +285,7 @@ struct BeerWizardView: View {
                     input: $customHopInput,
                     selected: $hops,
                     maxCount: 6,
-                    registerOnServer: { try await app.api.addHop($0) }
+                    onRegister: { name in Task { try? await app.api.addHop(name) } }
                 )
                 CustomTagChips(selected: $hops, customOnly: hops.subtracting(Set(hopTags)))
             }

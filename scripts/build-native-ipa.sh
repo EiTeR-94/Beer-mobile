@@ -42,7 +42,10 @@ XC=${PIPESTATUS[0]}
 set -e
 if [[ "$XC" -ne 0 ]]; then
   echo "::group::Swift compile errors"
-  grep -E "error:|warning:.*BeerNative" "$ROOT/build/xcodebuild.log" | tail -40 || true
+  grep -E "error:" "$ROOT/build/xcodebuild.log" | tail -30 | while IFS= read -r line; do
+    echo "$line"
+    echo "::error::$line"
+  done || true
   echo "::endgroup::"
   exit "$XC"
 fi
