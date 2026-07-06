@@ -8,8 +8,8 @@ const path = require("path");
 
 const teamId = (process.env.APPLE_TEAM_ID || "").trim();
 if (!teamId) {
-  console.log("APPLE_TEAM_ID absent — Fastlane détectera le Team ID sur le Mac GitHub");
-  process.exit(0);
+  console.error("APPLE_TEAM_ID manquant — ajoute le secret GitHub (3uTools → Provisioning Profiles)");
+  process.exit(1);
 }
 
 const pbx = path.join(

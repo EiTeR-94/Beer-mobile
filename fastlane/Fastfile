@@ -1,4 +1,5 @@
-# Build IPA développement — compte Apple ID GRATUIT (AltStore)
+# Build IPA AltStore — compte Apple ID GRATUIT
+# Pas de connexion au portail Apple (2FA + « Unauthorized Access » en CI).
 
 opt_out_usage
 default_platform(:ios)
@@ -8,46 +9,31 @@ def device_udid
 end
 
 def signing_team_id
-  explicit = ENV["APPLE_TEAM_ID"].to_s.strip
-  return explicit unless explicit.empty?
+  tid = ENV["APPLE_TEAM_ID"].to_s.strip
+  return tid unless tid.empty?
 
-  UI.message("APPLE_TEAM_ID absent — détection automatique sur Mac GitHub…")
-
-  Spaceship::Portal.login(
-    ENV.fetch("APPLE_ID"),
-    ENV.fetch("FASTLANE_PASSWORD")
-  )
-
-  teams = Spaceship::Portal.client.teams
-  UI.user_error!("Aucune équipe Apple — vérifie APPLE_ID + mot de passe pour app") if teams.nil? || teams.empty?
-
-  personal = teams.find { |t| t["type"].to_s == "Individual" }
-  team = personal || teams.first
-  tid = team["teamId"]
-
-  UI.success("Team ID auto-détecté : #{tid} (#{team['name']})")
-  UI.important("Tu peux ajouter ce Team ID en secret GitHub APPLE_TEAM_ID pour accélérer les prochains builds.")
-
-  tid
-rescue StandardError => e
   UI.user_error!(
-    "Impossible de détecter le Team ID : #{e.message}\n\n" \
-    "Plan B : installe 3uTools (3u.com), branche l'iPhone,\n" \
-    "onglet Provisioning Profiles → copie le Team ID (10 caractères)\n" \
-    "→ secret GitHub APPLE_TEAM_ID"
+    "Secret GitHub APPLE_TEAM_ID obligatoire.\n\n" \
+    "Impossible de le détecter automatiquement (Apple demande la 2FA sur GitHub).\n\n" \
+    "Comment l'obtenir (5 min) :\n" \
+    "1. Télécharge 3uTools : https://www.3u.com\n" \
+    "2. Branche l'iPhone en USB\n" \
+    "3. Onglet iDevice → Provisioning Profiles (Profils)\n" \
+    "4. Copie le Team ID (10 caractères, ex. AB12CD34EF)\n" \
+    "5. GitHub → Settings → Secrets → APPLE_TEAM_ID"
   )
 end
 
 platform :ios do
-  desc "IPA AltStore — signature automatique Xcode (gratuit)"
+  desc "IPA AltStore — signature automatique Xcode"
   lane :build_ipa do
     udid = device_udid
     UI.user_error!("Secret GitHub IOS_DEVICE_UDID manquant ou invalide") if udid.length < 20
 
-    setup_ci(force: true)
-
     team = signing_team_id
-    UI.message("Team ID utilisé : #{team}")
+    UI.message("Team ID : #{team}")
+
+    setup_ci(force: true)
 
     update_code_signing_settings(
       use_automatic_signing: true,

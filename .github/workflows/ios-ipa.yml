@@ -38,7 +38,7 @@ jobs:
       - name: Vérifier les secrets
         run: |
           missing=0
-          for s in APPLE_ID APPLE_APP_SPECIFIC_PASSWORD IOS_DEVICE_UDID; do
+          for s in APPLE_ID APPLE_APP_SPECIFIC_PASSWORD IOS_DEVICE_UDID APPLE_TEAM_ID; do
             if [ -z "${!s}" ]; then
               echo "::error::Secret manquant : $s"
               missing=1
