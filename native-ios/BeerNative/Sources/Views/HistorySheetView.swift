@@ -3,6 +3,7 @@ import SwiftUI
 struct HistorySheetView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
+    var initialSearch: String = ""
 
     @State private var items: [CheckinItem] = []
     @State private var stats: HistoryStats?
@@ -56,7 +57,12 @@ struct HistorySheetView: View {
             .onChange(of: filterStyle) { _ in Task { await reload() } }
             .onChange(of: filterRating) { _ in Task { await reload() } }
             .onChange(of: filterPeriod) { _ in Task { await reload() } }
-            .task { await bootstrap() }
+            .task {
+                if !initialSearch.isEmpty && search.isEmpty {
+                    search = initialSearch
+                }
+                await bootstrap()
+            }
             .refreshable { await reload() }
             .sheet(item: $selected) { item in
                 CheckinDetailView(item: item, onRetaste: {

@@ -314,13 +314,40 @@ final class BeerAPI {
         return (try? JSONDecoder().decode([InviteItem].self, from: data)) ?? []
     }
 
-    func adminCreateInvite(label: String, validity: String = "7d") async throws {
+    func adminCreateInvite(label: String, validity: String = "7d") async throws -> CreateInviteResponse {
         let body = try JSONSerialization.data(withJSONObject: ["label": label, "validity": validity])
         let (data, http, _) = try await request(path: "/api/invites", method: "POST", body: body, contentType: "application/json")
+        guard let decoded = try? JSONDecoder().decode(CreateInviteResponse.self, from: data) else {
+            throw BeerAPIError.decode
+        }
+        if http.statusCode >= 400 || decoded.ok == false {
+            throw BeerAPIError.server(decoded.error ?? "Invitation impossible")
+        }
+        return decoded
+    }
+
+    func adminExtendInvite(id: Int, validity: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["validity": validity])
+        let (data, http, _) = try await request(
+            path: "/api/invites/\(id)/extend",
+            method: "POST",
+            body: body,
+            contentType: "application/json"
+        )
         if http.statusCode >= 400 {
             let err = (try? JSONDecoder().decode(OKResponse.self, from: data))?.error
-            throw BeerAPIError.server(err ?? "Invitation impossible")
+            throw BeerAPIError.server(err ?? "Prolongation impossible")
         }
+    }
+
+    func adminReissueInvite(id: Int) async throws -> String? {
+        let (data, http, _) = try await request(path: "/api/invites/\(id)/reissue", method: "POST", body: Data(), contentType: "application/json")
+        struct R: Decodable { let ok: Bool?; let url: String?; let error: String? }
+        let decoded = try? JSONDecoder().decode(R.self, from: data)
+        if http.statusCode >= 400 || decoded?.ok == false {
+            throw BeerAPIError.server(decoded?.error ?? "Réémission impossible")
+        }
+        return decoded?.url
     }
 
     func adminRevokeInvite(id: Int) async throws {

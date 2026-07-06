@@ -54,7 +54,12 @@ struct BeerWizardView: View {
             Task { await loadPhoto(item) }
         }
         .onAppear { applyPrefillIfNeeded() }
+        .onChange(of: app.wizardStep) { applyPrefillIfNeeded() }
         .onChange(of: app.wizardProduct) { _ in applyPrefillIfNeeded() }
+        .onChange(of: step) { newStep in
+            app.wizardStep = newStep
+            if newStep == 3 { Task { await loadNotation() } }
+        }
         .alert("Déjà dégustée", isPresented: $showDuplicate) {
             Button("Annuler", role: .cancel) {}
             Button("Ajouter quand même") { Task { await save(force: true) } }
@@ -166,8 +171,10 @@ struct BeerWizardView: View {
 
             if let product, !product.beerName.isEmpty {
                 BeerPreviewCard(product: product)
-                BeerSecondaryButton(title: "+ Ajouter à la liste « À boire »") {
-                    Task { await addToWishlist(product) }
+                if !app.isInvite {
+                    BeerSecondaryButton(title: "+ Ajouter à la liste « À boire »") {
+                        Task { await addToWishlist(product) }
+                    }
                 }
                 BeerPrimaryButton(title: "Continuer → photo") { step = 2 }
             }

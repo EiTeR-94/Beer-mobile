@@ -243,11 +243,43 @@ struct InviteItem: Identifiable, Decodable {
     let url: String?
     let expiresAt: String?
     let active: Bool?
+    let revokedAt: String?
+    let redeemedAt: String?
+    let reactivationPending: Bool?
+    let canExtend: Bool?
+    let canReissue: Bool?
+    let permanent: Bool?
+    let validityLabel: String?
+    let checkins: Int?
+    let redeemIp: String?
+    let lastUsedIp: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, label, username, url, active
+        case id, label, username, url, active, permanent, checkins
         case expiresAt = "expires_at"
+        case revokedAt = "revoked_at"
+        case redeemedAt = "redeemed_at"
+        case reactivationPending = "reactivation_pending"
+        case canExtend = "can_extend"
+        case canReissue = "can_reissue"
+        case validityLabel = "validity_label"
+        case redeemIp = "redeem_ip"
+        case lastUsedIp = "last_used_ip"
     }
+
+    var statusText: String {
+        if revokedAt != nil { return "Révoquée" }
+        if reactivationPending == true { return "Réactivation" }
+        if redeemedAt != nil { return "Utilisée" }
+        if active == false { return "Expirée" }
+        return "En attente"
+    }
+}
+
+struct CreateInviteResponse: Decodable {
+    let ok: Bool?
+    let url: String?
+    let error: String?
 }
 
 struct PatchnotesResponse: Decodable {

@@ -48,8 +48,8 @@ struct BeerStepNav: View {
     var body: some View {
         HStack(spacing: 8) {
             BeerStepButton(title: "1 Bière", index: 1, current: $step)
-            BeerStepButton(title: "2 Photo", index: 2, current: $step, disabled: step < 2)
-            BeerStepButton(title: "3 Note", index: 3, current: $step, disabled: step < 3)
+            BeerStepButton(title: "2 Photo", index: 2, current: $step)
+            BeerStepButton(title: "3 Note", index: 3, current: $step)
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
@@ -64,12 +64,9 @@ struct BeerStepButton: View {
     let title: String
     let index: Int
     @Binding var current: Int
-    var disabled = false
 
     var body: some View {
-        Button {
-            if !disabled && index <= current { current = index }
-        } label: {
+        Button { current = index } label: {
             Text(title)
                 .font(.system(size: 12, weight: index == current ? .semibold : .regular))
                 .frame(maxWidth: .infinity)
@@ -79,8 +76,6 @@ struct BeerStepButton: View {
                 .overlay(Capsule().stroke(index == current ? Color.clear : Theme.border))
                 .clipShape(Capsule())
         }
-        .disabled(disabled && index > current)
-        .opacity(disabled && index > current ? 0.45 : 1)
     }
 }
 

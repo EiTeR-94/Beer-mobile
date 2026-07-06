@@ -6,6 +6,7 @@ import Security
 final class AppModel: ObservableObject {
     @Published var user: String?
     @Published var isAdmin = false
+    @Published var isInvite = false
     @Published var isLoggedIn = false
     @Published var isLoading = true
     @Published var banner: String?
@@ -45,6 +46,7 @@ final class AppModel: ObservableObject {
             }
             user = me.user
             isAdmin = me.isAdmin
+            isInvite = me.isInvite
             isLoggedIn = me.user != nil
             if isLoggedIn { await syncPending() }
         } catch {
@@ -72,10 +74,12 @@ final class AppModel: ObservableObject {
     }
 
     func login(username: String, password: String) async throws {
-        let res = try await api.login(username: username, password: password)
-        user = res.user ?? username
-        isAdmin = res.isAdmin ?? false
-        isLoggedIn = true
+        _ = try await api.login(username: username, password: password)
+        let me = try await api.me()
+        user = me.user ?? username
+        isAdmin = me.isAdmin
+        isInvite = me.isInvite
+        isLoggedIn = me.user != nil
         KeychainStore.username = user
         banner = nil
         await syncPending()
@@ -85,6 +89,7 @@ final class AppModel: ObservableObject {
         await api.logout()
         user = nil
         isAdmin = false
+        isInvite = false
         isLoggedIn = false
         KeychainStore.username = nil
         banner = nil
