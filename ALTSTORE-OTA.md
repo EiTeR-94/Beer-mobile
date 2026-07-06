@@ -1,61 +1,37 @@
-# Beer Log iOS — MAJ automatiques (AltStore)
+# Beer Log sur iPhone — mode d’emploi simple
 
-Compte Apple **gratuit** = pas d’App Store ni TestFlight. Le plus proche d’une « vraie » MAJ auto :
+## Ajouter la source (1 fois)
 
-1. **GitHub Actions** build à chaque push sur `main`
-2. **Serveur .50** récupère l’IPA (~15 min)
-3. **AltStore** sur l’iPhone propose **Mettre à jour** (1 tap si AltServer est sur le Wi‑Fi)
+Sur l’iPhone, dans **AltStore** :
 
-## Configuration unique (iPhone)
+1. Onglet **Sources** (ou Réglages → Sources)
+2. Bouton **+**
+3. Colle **exactement** :
 
-1. AltStore → **Sources** → **+**
-2. URL : `https://192.168.1.50:8444/mobile/beer/altstore.json`
-3. Installer **Beer Log** depuis cette source (une fois)
-
-Ensuite : quand une nouvelle build est publiée sur le serveur, AltStore affiche la MAJ (badge / onglet News). **Mettre à jour** → AltServer re-signe et installe.
-
-## Configuration serveur (.50)
-
-### 1. Token GitHub (lecture Actions)
-
-Créer un fine-grained token (repo `Beer-mobile`) : **Actions: Read**, **Contents: Read**.
-
-```bash
-sudo install -d -m 750 -o root -g eiter /etc/plexi
-echo 'ghp_…' | sudo tee /etc/plexi/beer-mobile-github.token >/dev/null
-sudo chmod 640 /etc/plexi/beer-mobile-github.token
-sudo chown root:eiter /etc/plexi/beer-mobile-github.token
+```
+https://github.com/EiTeR-94/Beer-mobile/releases/latest/download/altstore.json
 ```
 
-### 2. Nginx + répertoire web
+4. Valide. Tu dois voir la source **Plexi Homelab** avec **Beer Log**.
 
-```bash
-sudo mkdir -p /var/www/beer-mobile
-sudo chown www-data:www-data /var/www/beer-mobile
-/home/eiter/scripts/deploy-plexi-network.sh
-sudo nginx -t && sudo systemctl reload nginx
-```
+> **N’utilise pas** `192.168.1.50` — le certificat SSL ne correspond pas → AltStore affiche « inconnu / pas sécurisé ».
 
-### 3. Timer sync (toutes les 15 min)
+## Installer ou mettre à jour
 
-```bash
-sudo cp /home/eiter/scripts/systemd/beer-mobile-sync.* /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now beer-mobile-sync.timer
-```
+1. Wi‑Fi maison + **AltServer** allumé sur ton PC (comme d’habitude)
+2. AltStore → source **Plexi Homelab** → **Beer Log**
+3. **Installer** ou **Mettre à jour** (1 bouton)
 
-Sync manuelle :
+Chaque push sur `main` déclenche un build GitHub (~10 min). Ensuite AltStore propose la MAJ toute seule (parfois après avoir ouvert AltStore une fois).
 
-```bash
-/home/eiter/scripts/beer-mobile-sync-github.sh
-```
+## Ça ne marche pas ?
 
-## Limites (honnêtes)
+| Message AltStore | Cause | Fix |
+|------------------|-------|-----|
+| Inconnu / pas sécurisé | Mauvaise URL ou fichier absent | URL GitHub ci-dessus, pas l’IP |
+| Impossible de télécharger | Pas de release encore | Attendre build vert sur GitHub Actions |
+| Erreur 2005 à l’install | AltServer / iTunes | Voir GUIDE-GITHUB.md |
 
-| App Store / TestFlight | AltStore homelab |
-|------------------------|------------------|
-| MAJ silencieuses push | Notification + 1 tap « Mettre à jour » |
-| Pas de limite 7 jours | Re-signature AltServer tous les 7 j (background refresh) |
-| Partout | LAN/VPN uniquement (sécurité) |
+## Option LAN (plus tard, optionnel)
 
-Pour du **100 % App Store** : compte Apple Developer 99 €/an + TestFlight.
+Miroir sur le serveur `.50` pour télécharger l’IPA en local — pas nécessaire si GitHub fonctionne.

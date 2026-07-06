@@ -11,8 +11,12 @@ const projectYml = path.join(ROOT, "native-ios", "project.yml");
 const ipaPath = process.argv[2] || path.join(ROOT, "build", "PlexiBeer.ipa");
 const buildOverride = process.argv[3];
 
-const baseURL = (process.env.MOBILE_DIST_BASE_URL || "https://192.168.1.50:8444/mobile/beer")
-  .replace(/\/$/, "");
+const distMode = process.env.MOBILE_DIST_MODE || "github"; // github | homelab
+const baseURL = (
+  distMode === "homelab"
+    ? process.env.MOBILE_DIST_BASE_URL || "https://eiter.freeboxos.fr:8444/mobile/beer"
+    : "https://github.com/EiTeR-94/Beer-mobile/releases/latest/download"
+).replace(/\/$/, "");
 
 function ymlVal(key, fallback = "") {
   const raw = fs.readFileSync(projectYml, "utf8");
@@ -50,7 +54,10 @@ const source = {
       subtitle: "Journal de dégustation privé",
       localizedDescription:
         "App native Beer Log : scan EAN, Untappd, photo, note, historique. Wi‑Fi maison ou VPN Plexi.",
-      iconURL: `${baseURL}/icon-180.png`,
+      iconURL:
+        distMode === "homelab"
+          ? `${baseURL}/icon-180.png`
+          : "https://raw.githubusercontent.com/EiTeR-94/Beer-mobile/main/altstore/icon-180.png",
       tintColor: "#f59e0b",
       category: "lifestyle",
       appPermissions: {

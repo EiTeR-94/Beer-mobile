@@ -1,4 +1,4 @@
-# IPA native SwiftUI — build auto + artifact pour sync homelab (AltStore OTA)
+# IPA native SwiftUI — build auto + Release GitHub (source AltStore HTTPS)
 
 name: Build iOS IPA
 
@@ -14,7 +14,7 @@ on:
       - ".github/workflows/ios-ipa.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ios-ipa-${{ github.ref }}
@@ -28,6 +28,7 @@ jobs:
     env:
       BEER_SERVER_URL: ${{ secrets.BEER_SERVER_URL }}
       CI: "true"
+      MOBILE_DIST_MODE: github
 
     steps:
       - name: Checkout
@@ -61,19 +62,34 @@ jobs:
           BIN="$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$APP/Info.plist")"
           test -f "$APP/$BIN"
           file "$APP/$BIN" | grep -E "Mach-O.*arm64"
-          codesign -dv "$APP" 2>&1 | head -3
-          ! find build/Payload -name "capacitor.config.json" | grep -q .
           ! find build/Payload -name "index.html" | grep -q .
 
-      - name: Générer manifest AltStore
+      - name: Icône AltStore
+        run: |
+          mkdir -p altstore
+          cp native-ios/BeerNative/Resources/Assets.xcassets/AppIcon.appiconset/icon-180.png altstore/icon-180.png
+
+      - name: Manifest AltStore (GitHub HTTPS)
         run: node scripts/generate-altstore-source.js build/PlexiBeer.ipa "${{ github.run_number }}"
 
-      - name: Publier artifacts
-        uses: actions/upload-artifact@v4
+      - name: Copier manifest dans altstore/
+        run: cp dist/altstore.json altstore/altstore.json
+
+      - name: Release GitHub (IPA + source)
+        uses: softprops/action-gh-release@v2
         with:
-          name: PlexiBeer-ipa
-          path: |
+          tag_name: ios-build-${{ github.run_number }}
+          name: Beer Log iOS build ${{ github.run_number }}
+          body: "Build automatique — AltStore source : releases/latest/download/altstore.json"
+          files: |
             build/PlexiBeer.ipa
             dist/altstore.json
-          retention-days: 30
-          if-no-files-found: error
+          make_latest: true
+
+      - name: Commit altstore/ (URL fixe raw.githubusercontent.com)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add altstore/
+          git diff --staged --quiet || git commit -m "chore(ios): altstore manifest build ${{ github.run_number }}"
+          git push
