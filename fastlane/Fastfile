@@ -6,7 +6,29 @@ def keychain_name
   "plexi_beer_ci.keychain"
 end
 
+def apple_team_id
+  explicit = ENV["APPLE_TEAM_ID"].to_s.strip
+  return explicit unless explicit.empty?
+
+  UI.message("APPLE_TEAM_ID absent — détection via ton Apple ID…")
+  Spaceship::Portal.login(
+    ENV.fetch("APPLE_ID"),
+    ENV.fetch("FASTLANE_PASSWORD")
+  )
+  teams = Spaceship::Portal.client.teams
+  UI.user_error!("Aucune équipe Apple — accepte les conditions sur developer.apple.com") if teams.nil? || teams.empty?
+
+  personal = teams.find { |t| t["type"].to_s == "Individual" }
+  team = personal || teams.first
+  UI.success("Team ID détecté : #{team['teamId']} (#{team['name']})")
+  team["teamId"]
+end
+
 platform :ios do
+  desc "Affiche le Team ID (debug)"
+  lane :show_team_id do
+    UI.success("Team ID = #{apple_team_id}")
+  end
   desc "Certificats + profil pour l'iPhone du testeur"
   lane :prepare_signing do
     setup_ci(
@@ -23,10 +45,12 @@ platform :ios do
       )
     end
 
+    team = apple_team_id
+
     cert(
       development: true,
       username: ENV.fetch("APPLE_ID"),
-      team_id: ENV.fetch("APPLE_TEAM_ID"),
+      team_id: team,
       keychain_name: keychain_name,
       keychain_password: ENV.fetch("KEYCHAIN_PASSWORD", "plexi-beer-ci-temp")
     )
@@ -35,13 +59,13 @@ platform :ios do
       development: true,
       app_identifier: "fr.eiter.plexibeer",
       username: ENV.fetch("APPLE_ID"),
-      team_id: ENV.fetch("APPLE_TEAM_ID"),
+      team_id: team,
       force: true
     )
 
     update_code_signing_settings(
       use_automatic_signing: false,
-      team_id: ENV.fetch("APPLE_TEAM_ID"),
+      team_id: team,
       code_sign_identity: "Apple Development",
       path: "ios/App/App.xcodeproj",
       targets: ["App"],
