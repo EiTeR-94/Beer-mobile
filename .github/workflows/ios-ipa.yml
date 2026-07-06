@@ -71,10 +71,34 @@ jobs:
           ruby-version: "3.3"
           bundler-cache: true
 
+      - name: Auth Apple pour Xcode (CI)
+        run: |
+          KC_PASS="${KEYCHAIN_PASSWORD:-plexibeer-ci-keychain}"
+          KC_PATH="$RUNNER_TEMP/build.keychain-db"
+          security create-keychain -p "$KC_PASS" "$KC_PATH"
+          security set-keychain-settings -lut 21600 "$KC_PATH"
+          security unlock-keychain -p "$KC_PASS" "$KC_PATH"
+          security list-keychains -d user -s "$KC_PATH" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$KC_PATH"
+
+          cat > ~/.netrc << EOF
+          machine api.apple.com
+            login $APPLE_ID
+            password $APPLE_APP_SPECIFIC_PASSWORD
+          machine idmsa.apple.com
+            login $APPLE_ID
+            password $APPLE_APP_SPECIFIC_PASSWORD
+          machine appstoreconnect.apple.com
+            login $APPLE_ID
+            password $APPLE_APP_SPECIFIC_PASSWORD
+          EOF
+          chmod 600 ~/.netrc
+          echo "Auth Apple configurée (.netrc + keychain)"
+
       - name: Build IPA (signature auto — compte gratuit)
         run: |
           echo "Commit: $GITHUB_SHA"
-          echo "Compte: $APPLE_ID (pas de portail developer.apple.com)"
+          echo "Team: $APPLE_TEAM_ID"
           bundle exec fastlane ios build_ipa --verbose
 
       - name: Publier l'artifact IPA

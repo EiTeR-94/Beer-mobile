@@ -15,12 +15,8 @@ def signing_team_id
   UI.user_error!(
     "Secret GitHub APPLE_TEAM_ID obligatoire.\n\n" \
     "Impossible de le détecter automatiquement (Apple demande la 2FA sur GitHub).\n\n" \
-    "Comment l'obtenir (5 min) :\n" \
-    "1. Télécharge 3uTools : https://www.3u.com\n" \
-    "2. Branche l'iPhone en USB\n" \
-    "3. Onglet iDevice → Provisioning Profiles (Profils)\n" \
-    "4. Copie le Team ID (10 caractères, ex. AB12CD34EF)\n" \
-    "5. GitHub → Settings → Secrets → APPLE_TEAM_ID"
+    "iPhone : Réglages → Général → Gestion VPN et appareil → App développeur\n" \
+    "→ Team ID (10 caractères) → secret GitHub APPLE_TEAM_ID"
   )
 end
 
@@ -35,14 +31,60 @@ platform :ios do
 
     setup_ci(force: true)
 
-    update_code_signing_settings(
-      use_automatic_signing: true,
-      path: "ios/App/App.xcodeproj",
-      targets: ["App"],
-      bundle_identifier: "fr.eiter.plexibeer",
-      code_sign_identity: "Apple Development",
-      team_id: team
-    )
+    apple_id = ENV.fetch("APPLE_ID")
+
+    begin
+      register_devices(
+        devices: { "Plexi iPhone" => udid },
+        team_id: team,
+        username: apple_id
+      )
+    rescue StandardError => e
+      UI.important("register_devices : #{e.message}")
+    end
+
+    manual_profile = nil
+    begin
+      cert(
+        development: true,
+        username: apple_id,
+        team_id: team,
+        force: false
+      )
+      sigh(
+        development: true,
+        app_identifier: "fr.eiter.plexibeer",
+        username: apple_id,
+        team_id: team,
+        force: true,
+        include_all_certificates: true
+      )
+      manual_profile = lane_context[SharedValues::SIGH_NAME]
+      UI.success("Profil : #{manual_profile}")
+    rescue StandardError => e
+      UI.important("cert/sigh : #{e.message} — Xcode tentera signature auto")
+    end
+
+    if manual_profile
+      update_code_signing_settings(
+        use_automatic_signing: false,
+        path: "ios/App/App.xcodeproj",
+        targets: ["App"],
+        bundle_identifier: "fr.eiter.plexibeer",
+        code_sign_identity: "Apple Development",
+        team_id: team,
+        profile_name: manual_profile
+      )
+    else
+      update_code_signing_settings(
+        use_automatic_signing: true,
+        path: "ios/App/App.xcodeproj",
+        targets: ["App"],
+        bundle_identifier: "fr.eiter.plexibeer",
+        code_sign_identity: "Apple Development",
+        team_id: team
+      )
+    end
 
     build_app(
       workspace: "ios/App/App.xcworkspace",
