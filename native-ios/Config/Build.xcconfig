@@ -1,2 +1,2 @@
-// Injecté au build CI depuis BEER_SERVER_URL
-BEER_API_BASE = https://CHANGE_ME/beer
+// Généré au build CI
+BEER_API_BASE = https://eiter.freeboxos.fr:8444/beer

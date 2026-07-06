@@ -22,9 +22,9 @@ final class BeerAPI {
     static let shared = BeerAPI()
 
     private let session: URLSession
-    private let baseURL: URL
+    private(set) var baseURL: URL
 
-    init(baseURL: URL = BuildConfig.apiBase) {
+    init(baseURL: URL = ServerSettings.apiBase) {
         self.baseURL = baseURL
         let config = URLSessionConfiguration.default
         config.httpCookieStorage = HTTPCookieStorage.shared
@@ -32,6 +32,17 @@ final class BeerAPI {
         config.httpCookieAcceptPolicy = .always
         config.timeoutIntervalForRequest = 30
         self.session = URLSession(configuration: config)
+    }
+
+    func setBaseURL(_ url: URL) {
+        baseURL = url
+    }
+
+    func healthCheck() async throws -> Bool {
+        var req = URLRequest(url: try url("/api/health"))
+        req.httpMethod = "GET"
+        let (_, http) = try await data(for: req)
+        return http.statusCode == 200
     }
 
     private func url(_ path: String) throws -> URL {

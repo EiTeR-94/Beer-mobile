@@ -39,7 +39,7 @@ struct ProfileView: View {
                     .beerCard()
                 }
 
-                Text("API : \(BuildConfig.apiBase.absoluteString)")
+                Text("API : \(ServerSettings.apiBaseString)")
                     .font(.caption2)
                     .foregroundStyle(Theme.muted)
 

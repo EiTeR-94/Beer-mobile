@@ -51,6 +51,25 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func applyServerURL(_ raw: String) {
+        let normalized = ServerSettings.normalizeInput(raw)
+        ServerSettings.save(normalized)
+        if let url = URL(string: normalized) {
+            api.setBaseURL(url)
+        }
+    }
+
+    func testServer() async -> String {
+        do {
+            if try await api.healthCheck() {
+                return "Serveur OK · \(ServerSettings.apiBaseString)"
+            }
+            return "Réponse inattendue"
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
     func login(username: String, password: String) async throws {
         let res = try await api.login(username: username, password: password)
         user = res.user ?? username
