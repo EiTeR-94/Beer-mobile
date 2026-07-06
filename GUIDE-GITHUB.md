@@ -16,22 +16,25 @@ Crée un compte sur https://github.com si besoin.
 
 > Apple refuse souvent le login « mot de passe pour app » **depuis les serveurs GitHub**, même si le mot de passe est bon. Ce n’est pas une erreur de copie.
 
-Sur ton **PC Windows** (PowerShell en admin) :
+Sur ton **PC Windows** (PowerShell) — **ne pas utiliser `fastlane spaceauth`** (cassé sur Windows).
 
 ```powershell
-# 1) Ruby : https://rubyinstaller.org/downloads/ → Ruby+Devkit 3.3.x
-# 2) Puis dans un NOUVEAU PowerShell :
+chcp 65001
+$env:LC_ALL = "en_US.UTF-8"
+$env:LANG = "en_US.UTF-8"
+$env:APPLE_ID = "eiter_94@hotmail.com"
+$env:FASTLANE_PASSWORD = "xxxx-xxxx-xxxx-xxxx"   # mot de passe POUR APP, pas Hotmail
+
 gem install fastlane
-fastlane spaceauth -u eiter_94@hotmail.com
+cd C:\chemin\vers\beer-mobile
+ruby scripts/export-apple-session.rb
 ```
 
-- Mot de passe demandé → colle ton **mot de passe pour app** (pas iCloud)
-- Code 2FA → reçu sur l’iPhone
-- À la fin, fastlane affiche un bloc qui commence par `---` et contient `FASTLANE_SESSION`
+- Remplace le mot de passe par le tien (mot de passe **pour app** Apple)
+- Le script affiche un bloc + ton **Team ID**
+- Copie **tout le bloc** → secret GitHub `FASTLANE_SESSION`
 
-**Copie tout le bloc** (plusieurs lignes) → secret GitHub `FASTLANE_SESSION`.
-
-Valide ~1 mois ; à regénérer ensuite (même commande sur Windows).
+Valide ~1 mois ; regénère avec le même script si besoin.
 
 ### 3. Mot de passe spécifique Apple (pour spaceauth ci-dessus)
 
