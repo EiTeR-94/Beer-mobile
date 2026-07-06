@@ -1,23 +1,10 @@
-# Trouve APPLE_TEAM_ID (compte gratuit AltStore) — Windows
+# APPLE_TEAM_ID sans rien installer — AltStore a deja cree un certificat Windows
 # Usage : powershell -ExecutionPolicy Bypass -File scripts\extract-team-id.ps1
 
 param(
   [string]$ProfilePath = "",
   [string]$IpaPath = ""
 )
-
-function Get-TeamFromBytes([byte[]]$bytes) {
-  foreach ($enc in @(
-      [Text.Encoding]::UTF8,
-      [Text.Encoding]::GetEncoding(28591)
-    )) {
-    $text = $enc.GetString($bytes)
-    if ($text -match "TeamIdentifier[\s\S]{0,120}?([A-Z0-9]{10})") { return $Matches[1] }
-    if ($text -match "ApplicationIdentifierPrefix[\s\S]{0,120}?([A-Z0-9]{10})") { return $Matches[1] }
-    if ($text -match "com\.apple\.developer\.team-identifier[\s\S]{0,120}?([A-Z0-9]{10})") { return $Matches[1] }
-  }
-  return $null
-}
 
 function Show-Team($team, $source) {
   Write-Host ""
@@ -26,91 +13,101 @@ function Show-Team($team, $source) {
   Write-Host "Source : $source" -ForegroundColor DarkGray
   Write-Host "=======================================" -ForegroundColor Green
   Write-Host ""
-  Write-Host "GitHub → Beer-mobile → Settings → Secrets → APPLE_TEAM_ID"
+  Write-Host "GitHub -> Beer-mobile -> Settings -> Secrets -> APPLE_TEAM_ID"
+  exit 0
 }
 
-function Read-TeamFromProvisionFile($path) {
-  if (-not (Test-Path $path)) { return $null }
-  return Get-TeamFromBytes ([IO.File]::ReadAllBytes($path))
+function Team-From-Subject($subject) {
+  if ($subject -match "Apple (Development|Distribution):.*\(([A-Z0-9]{10})\)") {
+    return $Matches[2]
+  }
+  if ($subject -match "\(([A-Z0-9]{10})\)") {
+    return $Matches[1]
+  }
+  return $null
 }
 
-function Read-TeamFromIpa($path) {
-  if (-not (Test-Path $path)) { return $null }
+function Get-TeamFromBytes([byte[]]$bytes) {
+  foreach ($enc in @([Text.Encoding]::UTF8, [Text.Encoding]::GetEncoding(28591))) {
+    $text = $enc.GetString($bytes)
+    if ($text -match "TeamIdentifier[\s\S]{0,120}?([A-Z0-9]{10})") { return $Matches[1] }
+    if ($text -match "ApplicationIdentifierPrefix[\s\S]{0,120}?([A-Z0-9]{10})") { return $Matches[1] }
+  }
+  return $null
+}
+
+if ($ProfilePath -ne "" -and (Test-Path $ProfilePath)) {
+  $t = Get-TeamFromBytes ([IO.File]::ReadAllBytes($ProfilePath))
+  if ($t) { Show-Team $t $ProfilePath }
+}
+
+if ($IpaPath -ne "" -and (Test-Path $IpaPath)) {
   Add-Type -AssemblyName System.IO.Compression.FileSystem
-  $zip = [IO.Compression.ZipFile]::OpenRead($path)
+  $zip = [IO.Compression.ZipFile]::OpenRead($IpaPath)
   try {
     $entry = $zip.Entries | Where-Object { $_.FullName -like "*embedded.mobileprovision" } | Select-Object -First 1
-    if (-not $entry) { return $null }
-    $stream = $entry.Open()
-    try {
+    if ($entry) {
       $ms = New-Object IO.MemoryStream
-      $stream.CopyTo($ms)
-      return Get-TeamFromBytes $ms.ToArray()
-    } finally { $stream.Close() }
+      $entry.Open().CopyTo($ms)
+      $t = Get-TeamFromBytes $ms.ToArray()
+      if ($t) { Show-Team $t $IpaPath }
+    }
   } finally { $zip.Dispose() }
 }
 
-if ($ProfilePath -ne "") {
-  $t = Read-TeamFromProvisionFile $ProfilePath
-  if ($t) { Show-Team $t $ProfilePath; exit 0 }
-  Write-Host "Fichier fourni mais Team ID introuvable : $ProfilePath" -ForegroundColor Red
-  exit 1
-}
-
-if ($IpaPath -ne "") {
-  $t = Read-TeamFromIpa $IpaPath
-  if ($t) { Show-Team $t $IpaPath; exit 0 }
-  Write-Host "IPA fourni mais Team ID introuvable : $IpaPath" -ForegroundColor Red
-  exit 1
-}
-
-Write-Host "=== Methode 1 : chercher des .ipa (AltStore) ===" -ForegroundColor Cyan
-$ipaRoots = @(
-  "$env:USERPROFILE\Desktop",
-  "$env:USERPROFILE\Downloads",
-  "$env:USERPROFILE\Documents",
-  "C:\Users\BunnY\Desktop"
-) | Select-Object -Unique
-
-foreach ($root in $ipaRoots) {
-  if (-not (Test-Path $root)) { continue }
-  Get-ChildItem -Path $root -Recurse -Filter "*.ipa" -ErrorAction SilentlyContinue | ForEach-Object {
-    $t = Read-TeamFromIpa $_.FullName
-    if ($t) { Show-Team $t $_.FullName; exit 0 }
+Write-Host "=== Methode 1 : certificat AltStore (deja sur ton PC) ===" -ForegroundColor Cyan
+$stores = @(
+  "Cert:\CurrentUser\My",
+  "Cert:\CurrentUser\CA",
+  "Cert:\LocalMachine\My"
+)
+foreach ($store in $stores) {
+  Get-ChildItem $store -ErrorAction SilentlyContinue | ForEach-Object {
+    $subj = $_.Subject
+    if ($subj -notmatch "Apple") { return }
+    $t = Team-From-Subject $subj
+    if ($t) { Show-Team $t "Certificat Windows : $subj" }
   }
 }
 
-Write-Host "=== Methode 2 : chercher .mobileprovision ===" -ForegroundColor Cyan
-$provRoots = @(
+Write-Host "=== Methode 2 : fichiers AltServer / iTunes ===" -ForegroundColor Cyan
+$roots = @(
   "$env:LOCALAPPDATA\AltServer",
   "$env:APPDATA\AltServer",
-  "$env:LOCALAPPDATA\AltStore",
-  "$env:APPDATA\AltStore",
-  "$env:USERPROFILE\.altstore",
-  "$env:USERPROFILE\Apple\MobileDevice",
-  "$env:USERPROFILE\Desktop",
-  "$env:USERPROFILE\Downloads"
-) | Select-Object -Unique
-
-foreach ($root in $provRoots) {
+  "$env:LOCALAPPDATA\Programs\AltServer",
+  "$env:ProgramFiles\AltServer",
+  "${env:ProgramFiles(x86)}\AltServer",
+  "$env:APPDATA\Apple Computer\MobileSync\Backup"
+)
+foreach ($root in $roots) {
   if (-not (Test-Path $root)) { continue }
-  Get-ChildItem -Path $root -Recurse -Filter "*.mobileprovision" -ErrorAction SilentlyContinue | ForEach-Object {
-    $t = Read-TeamFromProvisionFile $_.FullName
-    if ($t) { Show-Team $t $_.FullName; exit 0 }
+  Get-ChildItem $root -Recurse -Include "*.mobileprovision","*.ipa" -ErrorAction SilentlyContinue | Select-Object -First 50 | ForEach-Object {
+    if ($_.Extension -eq ".ipa") {
+      Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+      try {
+        $zip = [IO.Compression.ZipFile]::OpenRead($_.FullName)
+        $entry = $zip.Entries | Where-Object { $_.FullName -like "*embedded.mobileprovision" } | Select-Object -First 1
+        if ($entry) {
+          $ms = New-Object IO.MemoryStream
+          $entry.Open().CopyTo($ms)
+          $t = Get-TeamFromBytes $ms.ToArray()
+          if ($t) { $zip.Dispose(); Show-Team $t $_.FullName }
+        }
+        $zip.Dispose()
+      } catch {}
+    } else {
+      $t = Get-TeamFromBytes ([IO.File]::ReadAllBytes($_.FullName))
+      if ($t) { Show-Team $t $_.FullName }
+    }
   }
 }
 
 Write-Host ""
-Write-Host "RIEN TROUVE sur ce PC." -ForegroundColor Yellow
+Write-Host "Rien trouve." -ForegroundColor Red
 Write-Host ""
-Write-Host "=== Methode 3 : 3uTools (la plus fiable) ===" -ForegroundColor Cyan
-Write-Host "1. Telecharge 3uTools : https://www.3u.com"
-Write-Host "2. Branche l'iPhone USB"
-Write-Host "3. Onglet iDevice -> Provisioning Profiles (ou Profils)"
-Write-Host "4. Note le Team ID (10 caracteres) a cote de ton Apple ID"
+Write-Host "Verifie qu'AltServer tourne et qu'AltStore est installe sur l'iPhone."
+Write-Host "Puis relance ce script."
 Write-Host ""
-Write-Host "=== Methode 4 : fichier manuel ===" -ForegroundColor Cyan
-Write-Host "Si tu as un .ipa ou .mobileprovision quelque part :"
-Write-Host '  powershell -ExecutionPolicy Bypass -File scripts\extract-team-id.ps1 -IpaPath "C:\chemin\app.ipa"'
-Write-Host '  powershell -ExecutionPolicy Bypass -File scripts\extract-team-id.ps1 -ProfilePath "C:\chemin\profil.mobileprovision"'
+Write-Host "Commande directe (copie-colle) :"
+Write-Host 'Get-ChildItem Cert:\CurrentUser\My | ? { $_.Subject -match "Apple" } | % { $_.Subject }'
 exit 1
