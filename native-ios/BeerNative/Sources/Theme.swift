@@ -36,9 +36,20 @@ struct CardStyle: ViewModifier {
             .background(Theme.card)
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.border))
             .clipShape(RoundedRectangle(cornerRadius: 14))
+            .beerShadow()
     }
 }
 
 extension View {
     func beerCard() -> some View { modifier(CardStyle()) }
+
+    func beerShadow(radius: CGFloat = 6, y: CGFloat = 2) -> some View {
+        shadow(color: .black.opacity(0.28), radius: radius, x: 0, y: y)
+    }
+
+    func beerSheetChrome() -> some View {
+        presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .preferredColorScheme(.dark)
+    }
 }

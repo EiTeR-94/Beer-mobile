@@ -50,8 +50,17 @@ struct GallerySheetView: View {
                             }
                         }
                     }
-                    if withPhotos.isEmpty {
-                        Text("Aucune photo").foregroundStyle(Theme.muted).padding()
+                    if loading && items.isEmpty {
+                        ProgressView("Chargement…")
+                            .tint(Theme.accent)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 40)
+                    } else if withPhotos.isEmpty {
+                        BeerEmptyState(
+                            icon: "📷",
+                            title: "Aucune photo",
+                            subtitle: "Les dégustations avec photo apparaîtront ici."
+                        )
                     }
                 }
                 .padding(12)
@@ -80,34 +89,23 @@ struct GallerySheetView: View {
                 CheckinEditView(item: item) { Task { await reload() } }
             }
         }
-        .preferredColorScheme(.dark)
     }
 
     private var filtersRow: some View {
-        VStack(spacing: 8) {
-            Picker("Style", selection: $filterStyle) {
-                Text("Tous styles").tag("")
-                ForEach(styles.filter { !$0.value.isEmpty }) { s in
-                    Text(s.label).tag(s.value)
-                }
-            }
-            .pickerStyle(.menu)
-            .tint(Theme.accent)
-            HStack {
-                Picker("Note min", selection: $filterRating) {
-                    Text("Toutes").tag(0.0)
-                    ForEach([0.25, 1.0, 2.0, 3.0, 4.0, 5.0], id: \.self) { v in
-                        Text("\(BeerFormatters.ratingLabel(v)) ★+").tag(v)
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    FilterChip(title: "Tous styles", selected: filterStyle.isEmpty) { filterStyle = "" }
+                    ForEach(styles.filter { !$0.value.isEmpty }) { s in
+                        FilterChip(title: s.label, selected: filterStyle == s.value) { filterStyle = s.value }
                     }
                 }
-                .pickerStyle(.menu)
-                Picker("Période", selection: $filterPeriod) {
-                    Text("Tout").tag("")
-                    Text("7 jours").tag("week")
-                    Text("30 jours").tag("month")
-                    Text("1 an").tag("year")
-                }
-                .pickerStyle(.menu)
+            }
+            HStack(spacing: 6) {
+                FilterChip(title: "Toutes notes", selected: filterRating == 0) { filterRating = 0 }
+                FilterChip(title: "3 ★+", selected: filterRating == 3) { filterRating = 3 }
+                FilterChip(title: "4 ★+", selected: filterRating == 4) { filterRating = 4 }
+                FilterChip(title: "5 ★", selected: filterRating == 5) { filterRating = 5 }
             }
         }
     }

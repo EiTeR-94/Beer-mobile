@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Header
 
@@ -66,7 +67,9 @@ struct BeerStepButton: View {
     @Binding var current: Int
 
     var body: some View {
-        Button { current = index } label: {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) { current = index }
+        } label: {
             Text(title)
                 .font(.system(size: 12, weight: index == current ? .semibold : .regular))
                 .frame(maxWidth: .infinity)
@@ -98,6 +101,7 @@ struct BeerPrimaryButton: View {
             .background(Theme.primaryGradient)
             .foregroundStyle(Theme.btnPrimaryText)
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            .beerShadow(radius: 8, y: 3)
         }
         .disabled(disabled || busy)
         .opacity(disabled || busy ? 0.55 : 1)
@@ -289,6 +293,7 @@ private struct ScanLine: View {
 
 struct UntappdRatingSlider: View {
     @Binding var rating: Double
+    @State private var lastHapticRating: Double = 0
 
     private let minR = 0.25
     private let maxR = 5.0
@@ -322,9 +327,15 @@ struct UntappdRatingSlider: View {
                     DragGesture(minimumDistance: 0)
                         .onChanged { v in
                             let raw = minR + (maxR - minR) * max(0, min(1, v.location.x / geo.size.width))
-                            rating = (raw / step).rounded() * step
+                            let snapped = (raw / step).rounded() * step
+                            if snapped != lastHapticRating {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                lastHapticRating = snapped
+                            }
+                            rating = snapped
                         }
                 )
+                .onAppear { lastHapticRating = rating }
             }
             .frame(height: 28)
             Text("\(BeerFormatters.ratingLabel(rating))/5")
@@ -526,6 +537,7 @@ struct HistoryCardView: View {
         .background(Theme.card)
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.border))
         .clipShape(RoundedRectangle(cornerRadius: 14))
+        .beerShadow()
     }
 
     @ViewBuilder
@@ -561,5 +573,87 @@ struct HistoryCardView: View {
 
     private var starFill: CGFloat {
         CGFloat(item.rating / 5.0) * 55
+    }
+}
+
+// MARK: - Filter chips
+
+struct FilterChip: View {
+    let title: String
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: selected ? .semibold : .medium))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(selected ? Theme.accent.opacity(0.22) : Theme.card)
+                .foregroundStyle(selected ? Theme.accent : Theme.muted)
+                .overlay(Capsule().stroke(selected ? Theme.accent.opacity(0.55) : Theme.border))
+                .clipShape(Capsule())
+        }
+    }
+}
+
+struct BeerEmptyState: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text(icon).font(.system(size: 36))
+            Text(title)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Theme.text)
+            Text(subtitle)
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.muted)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 32)
+        .padding(.horizontal, 20)
+    }
+}
+
+struct InviteHelpBar: View {
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            (Text("Conseil").fontWeight(.semibold).foregroundStyle(Theme.text)
+                + Text(" — garde Beer Log installé et évite de vider ses données dans les réglages iPhone : c'est ce qui maintient ta connexion.")
+                .foregroundStyle(Theme.muted))
+                .font(.system(size: 12))
+            Button(action: onDismiss) {
+                Text("×")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(Theme.muted)
+                    .padding(.horizontal, 4)
+            }
+        }
+        .padding(10)
+        .background(Theme.accent.opacity(0.1))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.accent.opacity(0.22)))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+struct OfflineBadge: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle().fill(Theme.accent).frame(width: 6, height: 6)
+            Text("Hors ligne")
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .foregroundStyle(Theme.accent)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Theme.accent.opacity(0.12))
+        .overlay(Capsule().stroke(Theme.accent.opacity(0.3)))
+        .clipShape(Capsule())
     }
 }

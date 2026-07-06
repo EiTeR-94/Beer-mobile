@@ -39,7 +39,6 @@ struct BeerWizardView: View {
     @State private var hopTags: [String] = []
     @State private var showFlavors = true
     @State private var showHops = true
-    @State private var saveMessage: String?
     @State private var saving = false
     @State private var showDuplicate = false
     @State private var duplicateDetail = ""
@@ -47,16 +46,25 @@ struct BeerWizardView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                switch step {
-                case 1: stepBeer
-                case 2: stepPhoto
-                default: stepRating
+                Group {
+                    switch step {
+                    case 1: stepBeer
+                    case 2: stepPhoto
+                    default: stepRating
+                    }
                 }
+                .id(step)
+                .transition(.asymmetric(
+                    insertion: .move(edge: .trailing).combined(with: .opacity),
+                    removal: .move(edge: .leading).combined(with: .opacity)
+                ))
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 24)
+            .animation(.easeInOut(duration: 0.25), value: step)
         }
         .background(Theme.bg)
+        .scrollDismissesKeyboard(.interactively)
         .onChange(of: photoItem, perform: { item in Task { await loadPhoto(item, tasting: true) } })
         .onChange(of: scanPhotoItem, perform: { item in Task { await decodeScanPhoto(item) } })
         .onAppear {
@@ -310,13 +318,6 @@ struct BeerWizardView: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
 
-            if let saveMessage {
-                Text(saveMessage)
-                    .font(.footnote)
-                    .foregroundStyle(saveMessage.contains("✓") ? Theme.ok : Theme.accent)
-                    .multilineTextAlignment(.center)
-            }
-
             BeerSecondaryButton(title: "← Retour") { step = 2 }
             BeerPrimaryButton(
                 title: saving ? "Enregistrement…" : "Enregistrer",
@@ -334,6 +335,7 @@ struct BeerWizardView: View {
         let digits = code.filter(\.isNumber)
         guard digits.count >= 8 else {
             scanStatus = "Code trop court"
+            app.showToast("Code-barres trop court", variant: .warn)
             return
         }
         busy = true
@@ -351,10 +353,12 @@ struct BeerWizardView: View {
             if res.ok {
                 product = res.asProduct(fallbackBarcode: digits)
                 scanStatus = "Bière identifiée ✓"
+                app.showToast("Bière identifiée ✓", variant: .success)
             } else {
                 product = nil
                 scannedCode = digits
                 scanStatus = res.error ?? "Introuvable"
+                app.showToast(res.error ?? "Bière introuvable", variant: .warn)
             }
         } catch let err {
             scanStatus = err.localizedDescription
@@ -494,7 +498,6 @@ struct BeerWizardView: View {
     private func save(force: Bool) async {
         guard let product else { return }
         saving = true
-        saveMessage = nil
         defer { saving = false }
         do {
             let msg = try await app.saveCheckin(
@@ -514,11 +517,13 @@ struct BeerWizardView: View {
                 showDuplicate = true
                 return
             }
-            saveMessage = msg
+            let variant: ToastPayload.Variant = msg.contains("✓") ? .success
+                : msg.contains("iPhone") ? .info : .success
+            app.showToast(msg, variant: variant)
             try? await Task.sleep(nanoseconds: 900_000_000)
             resetWizard()
         } catch let err {
-            saveMessage = err.localizedDescription
+            app.showToast(err.localizedDescription, variant: .error, durationMs: 4200)
         }
     }
 
@@ -543,9 +548,9 @@ struct BeerWizardView: View {
                 style: product.style,
                 barcode: product.barcode
             )
-            scanStatus = "Ajouté à « À boire » ✓"
+            app.showToast("Ajouté à « À boire » ✓", variant: .success)
         } catch let err {
-            scanStatus = err.localizedDescription
+            app.showToast(err.localizedDescription, variant: .error)
         }
     }
 
@@ -573,7 +578,6 @@ struct BeerWizardView: View {
         customFlavorInput = ""
         customHopInput = ""
         scanStatus = "Cadre le code-barres dans le rectangle"
-        saveMessage = nil
         duplicateDetail = ""
     }
 }

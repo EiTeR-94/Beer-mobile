@@ -9,7 +9,7 @@ final class AppModel: ObservableObject {
     @Published var isInvite = false
     @Published var isLoggedIn = false
     @Published var isLoading = true
-    @Published var banner: String?
+    @Published var toast: ToastPayload?
     @Published var isOnline = true
     @Published var serverVersion: String = ""
     @Published var wizardStep = 1
@@ -20,6 +20,7 @@ final class AppModel: ObservableObject {
 
     private let monitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "beer.network")
+    private var toastTask: Task<Void, Never>?
 
     init() {
         monitor.pathUpdateHandler = { [weak self] path in
@@ -53,7 +54,11 @@ final class AppModel: ObservableObject {
             if let saved = KeychainStore.username {
                 user = saved
                 isLoggedIn = true
-                banner = isOnline ? "Session à vérifier" : "Hors ligne · \(saved)"
+                if isOnline {
+                    showToast("Session à vérifier", variant: .warn)
+                } else {
+                    showToast("Hors ligne · \(saved)", variant: .info, durationMs: 4200)
+                }
             }
         }
     }
@@ -81,7 +86,7 @@ final class AppModel: ObservableObject {
         isInvite = me.isInvite
         isLoggedIn = me.user != nil
         KeychainStore.username = user
-        banner = nil
+        hideToast()
         await syncPending()
     }
 
@@ -92,7 +97,29 @@ final class AppModel: ObservableObject {
         isInvite = false
         isLoggedIn = false
         KeychainStore.username = nil
-        banner = nil
+        hideToast()
+    }
+
+    func showToast(
+        _ message: String,
+        variant: ToastPayload.Variant = .info,
+        detail: String? = nil,
+        label: String? = nil,
+        durationMs: Int = 2800
+    ) {
+        toastTask?.cancel()
+        toast = ToastPayload(variant: variant, message: message, detail: detail, label: label)
+        toastTask = Task {
+            try? await Task.sleep(nanoseconds: UInt64(durationMs) * 1_000_000)
+            guard !Task.isCancelled else { return }
+            hideToast()
+        }
+    }
+
+    func hideToast() {
+        toastTask?.cancel()
+        toastTask = nil
+        toast = nil
     }
 
     func startRetaste(_ item: CheckinItem, step: Int = 2) {
@@ -125,7 +152,9 @@ final class AppModel: ObservableObject {
     func syncPending() async {
         guard isLoggedIn, isOnline else { return }
         let n = await offline.flush(using: api)
-        if n > 0 { banner = "\(n) dégustation(s) synchronisée(s)" }
+        if n > 0 {
+            showToast("\(n) dégustation(s) synchronisée(s)", variant: .success)
+        }
     }
 
     func saveCheckin(

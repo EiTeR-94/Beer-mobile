@@ -4,19 +4,26 @@ struct RootView: View {
     @EnvironmentObject private var app: AppModel
 
     var body: some View {
-        Group {
-            if app.isLoading {
-                ZStack {
-                    Theme.bg.ignoresSafeArea()
-                    ProgressView("Chargement…")
-                        .tint(Theme.accent)
+        ZStack {
+            Group {
+                if app.isLoading {
+                    ZStack {
+                        Theme.bg.ignoresSafeArea()
+                        VStack(spacing: 14) {
+                            Text("🍺").font(.system(size: 44))
+                            ProgressView("Chargement…")
+                                .tint(Theme.accent)
+                        }
+                    }
+                } else if app.isLoggedIn {
+                    MainView()
+                } else {
+                    LoginView()
                 }
-            } else if app.isLoggedIn {
-                MainView()
-            } else {
-                LoginView()
             }
+            .background(Theme.bg)
+
+            ToastOverlay(toast: app.toast, onDismiss: { app.hideToast() })
         }
-        .background(Theme.bg)
     }
 }

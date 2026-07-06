@@ -7,6 +7,7 @@ enum BeerSheet: String, Identifiable {
 
 struct MainView: View {
     @EnvironmentObject private var app: AppModel
+    @AppStorage("inviteHelpDismissed") private var inviteHelpDismissed = false
     @State private var sheet: BeerSheet?
     @State private var globalSearch = ""
     @State private var historySearchSeed = ""
@@ -14,15 +15,10 @@ struct MainView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            if app.isInvite {
-                Text("Compte invité — historique personnel uniquement. Pour quitter, supprime l'app ou vide les données Beer Log.")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.muted)
+            if app.isInvite && !inviteHelpDismissed {
+                InviteHelpBar { inviteHelpDismissed = true }
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 6)
-            }
-            if let banner = app.banner {
-                Text(banner).font(.caption).foregroundStyle(Theme.accent).padding(.horizontal, 16)
+                    .padding(.bottom, 8)
             }
             BeerStepNav(step: $app.wizardStep)
             BeerWizardView(step: $app.wizardStep)
@@ -30,14 +26,24 @@ struct MainView: View {
         .background(Theme.bg)
         .sheet(item: $sheet) { s in
             switch s {
-            case .history: HistorySheetView(initialSearch: historySearchSeed, onOpenGallery: {
-                sheet = .gallery
-            })
-            case .gallery: GallerySheetView()
-            case .wishlist: WishlistSheetView()
-            case .gifts: GiftsSheetView()
-            case .admin: AdminSheetView()
-            case .patchnotes: PatchnotesSheetView()
+            case .history:
+                HistorySheetView(initialSearch: historySearchSeed, onOpenGallery: { sheet = .gallery })
+                    .beerSheetChrome()
+            case .gallery:
+                GallerySheetView()
+                    .beerSheetChrome()
+            case .wishlist:
+                WishlistSheetView()
+                    .beerSheetChrome()
+            case .gifts:
+                GiftsSheetView()
+                    .beerSheetChrome()
+            case .admin:
+                AdminSheetView()
+                    .beerSheetChrome()
+            case .patchnotes:
+                PatchnotesSheetView()
+                    .beerSheetChrome()
             }
         }
         .environmentObject(app)
@@ -47,18 +53,25 @@ struct MainView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Beer Log").font(.system(size: 22, weight: .bold))
+                    Text("Beer Log")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(Theme.text)
                     Text(app.serverVersion.isEmpty ? "scan · photo · note" : "v\(app.serverVersion) · scan · photo · note")
-                        .font(.system(size: 12)).foregroundStyle(Theme.muted)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.muted)
                 }
                 Spacer()
-                if let user = app.user {
-                    Text(userPillText(user))
-                        .font(.caption.weight(.medium))
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(Theme.card)
-                        .overlay(Capsule().stroke(Theme.border))
-                        .clipShape(Capsule())
+                VStack(alignment: .trailing, spacing: 6) {
+                    if !app.isOnline { OfflineBadge() }
+                    if let user = app.user {
+                        Text(userPillText(user))
+                            .font(.caption.weight(.medium))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Theme.card)
+                            .overlay(Capsule().stroke(Theme.border))
+                            .clipShape(Capsule())
+                    }
                 }
             }
 
@@ -101,6 +114,9 @@ struct MainView: View {
         .padding(.top, 8)
         .padding(.bottom, 10)
         .background(Theme.bg)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Theme.border).frame(height: 1)
+        }
     }
 
     private func userPillText(_ user: String) -> String {
@@ -109,11 +125,17 @@ struct MainView: View {
         return user
     }
 
-    private func headerBtn(_ title: String, destructive: Bool = false, accent: Bool = false, action: @escaping () -> Void) -> some View {
+    private func headerBtn(
+        _ title: String,
+        destructive: Bool = false,
+        accent: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 13, weight: accent ? .semibold : .medium))
-                .padding(.horizontal, 12).padding(.vertical, 7)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
                 .background(destructive ? Color.clear : accent ? Theme.accent.opacity(0.18) : Theme.card)
                 .foregroundStyle(destructive ? Theme.error : accent ? Theme.accent : Theme.text)
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(
