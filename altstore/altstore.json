@@ -28,11 +28,11 @@
       "versions": [
         {
           "version": "3.0.0",
-          "buildVersion": "29",
+          "buildVersion": "31",
           "date": "2026-07-06",
-          "localizedDescription": "Build 29 — sync automatique homelab",
+          "localizedDescription": "Build 31 — sync automatique homelab",
           "downloadURL": "https://github.com/EiTeR-94/Beer-mobile/releases/latest/download/PlexiBeer.ipa",
-          "size": 825983,
+          "size": 877316,
           "minOSVersion": "16.0"
         }
       ]
