@@ -1,9 +1,17 @@
-# IPA native SwiftUI — xcodebuild (comme Xcode), pas Capacitor
+# IPA native SwiftUI — build auto + artifact pour sync homelab (AltStore OTA)
 
 name: Build iOS IPA
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "native-ios/**"
+      - "scripts/build-native-ipa.sh"
+      - "scripts/write-native-config.js"
+      - "scripts/generate-altstore-source.js"
+      - ".github/workflows/ios-ipa.yml"
 
 permissions:
   contents: read
@@ -32,6 +40,12 @@ jobs:
             exit 1
           fi
 
+      - name: Bump build number (CI)
+        run: |
+          BUILD="${{ github.run_number }}"
+          perl -i -pe "s/^(\s*CURRENT_PROJECT_VERSION:\s*).*/\${1}\"$BUILD\"/" native-ios/project.yml
+          echo "Build number → $BUILD"
+
       - name: XcodeGen
         run: brew install xcodegen
 
@@ -51,10 +65,15 @@ jobs:
           ! find build/Payload -name "capacitor.config.json" | grep -q .
           ! find build/Payload -name "index.html" | grep -q .
 
-      - name: Publier artifact
+      - name: Générer manifest AltStore
+        run: node scripts/generate-altstore-source.js build/PlexiBeer.ipa "${{ github.run_number }}"
+
+      - name: Publier artifacts
         uses: actions/upload-artifact@v4
         with:
           name: PlexiBeer-ipa
-          path: build/PlexiBeer.ipa
+          path: |
+            build/PlexiBeer.ipa
+            dist/altstore.json
           retention-days: 30
           if-no-files-found: error
