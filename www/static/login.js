@@ -38,10 +38,8 @@
         showError(data.detail || data.error || "Identifiants incorrects");
         return;
       }
-      // Use replace + reload hint for PWA standalone to avoid back-to-login loops
+      if (data.user && window.BEER_MOBILE) localStorage.setItem("beer_mobile_user", data.user);
       window.location.replace(window.BEER_MOBILE ? "./index.html" : api("/app"));
-      // Force a reload shortly in case of cached redirect state (PWA)
-      setTimeout(() => { if (location.pathname.endsWith('/app')) location.reload(); }, 150);
     } catch (e) {
       showError("Connexion impossible");
     } finally {
@@ -57,7 +55,10 @@
   fetch(api("/api/me"), { credentials: "include" })
     .then((r) => (r.ok ? r.json() : null))
     .then((d) => {
-      if (d?.user) window.location.replace(window.BEER_MOBILE ? "./index.html" : api("/app"));
+      if (d?.user) {
+        if (window.BEER_MOBILE) localStorage.setItem("beer_mobile_user", d.user);
+        window.location.replace(window.BEER_MOBILE ? "./index.html" : api("/app"));
+      }
     })
     .catch(() => {});
 })();

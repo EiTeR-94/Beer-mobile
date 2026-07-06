@@ -99,6 +99,7 @@ function patchAppJs(code) {
       fetch(api("/api/logout"), { method: "POST", credentials: "include" })
         .catch(function () {})
         .finally(function () {
+          localStorage.removeItem("beer_mobile_user");
           clearBeerSession();
           window.location.replace("./login.html");
         });
@@ -113,22 +114,108 @@ function patchAppJs(code) {
     "if (!window.BEER_MOBILE) registerServiceWorker();",
   );
 
+  if (!out.includes("function showMobileSessionBar")) {
+    out = out.replace(
+      /async function loadSession\(\) \{[\s\S]*?\n  \}/,
+      `function showMobileSessionBar(user, mode) {
+    if (!window.BEER_MOBILE) return;
+    const bar = document.getElementById("mobile-session-bar");
+    const label = document.getElementById("mobile-session-user");
+    if (!bar || !label) return;
+    let text = "Non connecté";
+    if (user) {
+      let role = "";
+      if (state.isAdmin) role = " · admin";
+      else if (state.isInvite) role = " · invité";
+      text = "Connecté · " + user + role;
+    } else if (mode === "offline") {
+      const cached = localStorage.getItem("beer_mobile_user");
+      text = cached ? "Hors ligne · " + cached : "Hors ligne · compte inconnu";
+    }
+    label.textContent = text;
+    bar.classList.remove("hidden");
+    const mLogout = document.getElementById("btn-mobile-logout");
+    if (mLogout) {
+      mLogout.classList.toggle("hidden", !user);
+      if (!mLogout.__bound) {
+        mLogout.__bound = true;
+        mLogout.addEventListener("click", logout);
+      }
+    }
+  }
+
+  async function loadSession() {
+    const cached = localStorage.getItem("beer_mobile_user");
+    if (cached && window.BEER_MOBILE) showMobileSessionBar(cached, "cached");
+
+    try {
+      const r = await fetchApi("/api/me");
+      if (!r.ok) throw new Error("session");
+      const d = await r.json();
+      if (d.auth && !d.user) {
+        localStorage.removeItem("beer_mobile_user");
+        clearBeerSession();
+        window.location.replace(window.BEER_MOBILE ? "./login.html" : api("/"));
+        return;
+      }
+      state.currentUser = d.user || null;
+      state.isAdmin = !!d.is_admin;
+      state.isInvite = !!d.is_invite;
+      if (d.user) localStorage.setItem("beer_mobile_user", d.user);
+      if (d.auth && d.user && els.userPill) {
+        els.userPill.textContent = d.user;
+        els.userPill.classList.remove("hidden");
+      }
+      if (d.auth && d.user && !d.is_invite && els.btnLogout) {
+        els.btnLogout.classList.remove("hidden");
+      } else if (els.btnLogout) {
+        els.btnLogout.classList.add("hidden");
+      }
+      if (d.is_admin && els.btnAdmin) {
+        els.btnAdmin.classList.remove("hidden");
+      }
+      if (d.is_admin && els.btnPatchnotes) {
+        els.btnPatchnotes.classList.remove("hidden");
+      } else if (els.btnPatchnotes) {
+        els.btnPatchnotes.classList.add("hidden");
+      }
+      applyInviteUi();
+      showMobileSessionBar(d.user, "online");
+    } catch (e) {
+      if (window.BEER_MOBILE) {
+        const offlineUser = localStorage.getItem("beer_mobile_user");
+        showMobileSessionBar(offlineUser, offlineUser ? "offline" : "none");
+        if (!offlineUser) {
+          window.location.replace("./login.html");
+        }
+      }
+    }
+  }`,
+    );
+  }
+
   return out;
 }
 
 function patchLoginJs(code) {
   return code
     .replace(
-      /window\.location\.replace\(api\("\/app"\)\);/g,
-      'window.location.replace(window.BEER_MOBILE ? "./index.html" : api("/app"));',
-    )
-    .replace(
-      /if \(d\?\.user\) window\.location\.replace\(api\("\/app"\)\);/,
-      'if (d?.user) window.location.replace(window.BEER_MOBILE ? "./index.html" : api("/app"));',
-    )
-    .replace(
       /if \("serviceWorker" in navigator\) \{[\s\S]*?\}\s*\n\s*fetch/,
       "fetch",
+    )
+    .replace(
+      /\/\/ Use replace \+ reload hint[\s\S]*?setTimeout\(\(\) => \{ if \(location\.pathname\.endsWith\('\/app'\)\) location\.reload\(\); \}, 150\);/,
+      `if (data.user && window.BEER_MOBILE) localStorage.setItem("beer_mobile_user", data.user);
+      window.location.replace(window.BEER_MOBILE ? "./index.html" : api("/app"));`,
+    )
+    .replace(
+      /\.then\(\(d\) => \{\s*if \(d\?\.user\) window\.location\.replace\(api\("\/app"\)\);\s*\}\)/,
+      `.then((d) => {
+      if (d?.user) {
+        if (window.BEER_MOBILE) localStorage.setItem("beer_mobile_user", d.user);
+        window.location.replace(window.BEER_MOBILE ? "./index.html" : api("/app"));
+      }
+    })`,
     );
 }
 
@@ -155,6 +242,19 @@ function injectMobileEnv(html) {
   );
 }
 
+function injectMobileSessionBar(html) {
+  if (html.includes("mobile-session-bar")) return html;
+  return html.replace(
+    /<\/header>/,
+    `</header>\n\n  <div id="mobile-session-bar" class="mobile-session-bar hidden" role="status">\n    <span id="mobile-session-user">Compte</span>\n    <button type="button" class="btn ghost mobile-session-logout hidden" id="btn-mobile-logout">Déconnexion</button>\n  </div>`,
+  );
+}
+
+function patchStyleCss(code) {
+  if (code.includes(".mobile-session-bar")) return code;
+  return `${code}\n\n.mobile-session-bar {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 0.5rem;\n  margin: 0 1rem 0.75rem;\n  padding: 0.55rem 0.75rem;\n  border: 1px solid var(--border);\n  border-radius: 10px;\n  background: var(--card);\n  font-size: 0.82rem;\n  color: var(--text);\n}\n\n.mobile-session-bar.hidden {\n  display: none;\n}\n\n.mobile-session-logout {\n  font-size: 0.75rem;\n  padding: 0.25rem 0.5rem;\n}\n`;
+}
+
 if (!fs.existsSync(beerStatic)) {
   console.error(`Source Beer introuvable : ${beerStatic}`);
   console.error("Définis BEER_STATIC_DIR ou lance depuis le serveur Plexi.");
@@ -170,6 +270,7 @@ for (const name of ["style.css", "app.js", "login.js", "ptr.js"]) {
   let content = fs.readFileSync(path.join(beerStatic, name), "utf8");
   if (name === "app.js") content = patchAppJs(content);
   if (name === "login.js") content = patchLoginJs(content);
+  if (name === "style.css") content = patchStyleCss(content);
   fs.writeFileSync(path.join(staticWww, name), content);
 }
 
@@ -179,6 +280,7 @@ for (const page of ["index.html", "login.html"]) {
   let html = fs.readFileSync(path.join(beerStatic, page), "utf8");
   html = patchHtml(html, version);
   html = injectMobileEnv(html);
+  if (page === "index.html") html = injectMobileSessionBar(html);
   const outName = page === "index.html" ? "index.html" : "login.html";
   fs.writeFileSync(path.join(www, outName), html);
 }

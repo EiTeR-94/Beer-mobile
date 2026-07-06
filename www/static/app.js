@@ -5199,11 +5199,43 @@
     }
   }
 
+  function showMobileSessionBar(user, mode) {
+    if (!window.BEER_MOBILE) return;
+    const bar = document.getElementById("mobile-session-bar");
+    const label = document.getElementById("mobile-session-user");
+    if (!bar || !label) return;
+    let text = "Non connecté";
+    if (user) {
+      let role = "";
+      if (state.isAdmin) role = " · admin";
+      else if (state.isInvite) role = " · invité";
+      text = "Connecté · " + user + role;
+    } else if (mode === "offline") {
+      const cached = localStorage.getItem("beer_mobile_user");
+      text = cached ? "Hors ligne · " + cached : "Hors ligne · compte inconnu";
+    }
+    label.textContent = text;
+    bar.classList.remove("hidden");
+    const mLogout = document.getElementById("btn-mobile-logout");
+    if (mLogout) {
+      mLogout.classList.toggle("hidden", !user);
+      if (!mLogout.__bound) {
+        mLogout.__bound = true;
+        mLogout.addEventListener("click", logout);
+      }
+    }
+  }
+
   async function loadSession() {
+    const cached = localStorage.getItem("beer_mobile_user");
+    if (cached && window.BEER_MOBILE) showMobileSessionBar(cached, "cached");
+
     try {
       const r = await fetchApi("/api/me");
+      if (!r.ok) throw new Error("session");
       const d = await r.json();
       if (d.auth && !d.user) {
+        localStorage.removeItem("beer_mobile_user");
         clearBeerSession();
         window.location.replace(window.BEER_MOBILE ? "./login.html" : api("/"));
         return;
@@ -5211,6 +5243,7 @@
       state.currentUser = d.user || null;
       state.isAdmin = !!d.is_admin;
       state.isInvite = !!d.is_invite;
+      if (d.user) localStorage.setItem("beer_mobile_user", d.user);
       if (d.auth && d.user && els.userPill) {
         els.userPill.textContent = d.user;
         els.userPill.classList.remove("hidden");
@@ -5229,8 +5262,15 @@
         els.btnPatchnotes.classList.add("hidden");
       }
       applyInviteUi();
+      showMobileSessionBar(d.user, "online");
     } catch (e) {
-      /* ignore */
+      if (window.BEER_MOBILE) {
+        const offlineUser = localStorage.getItem("beer_mobile_user");
+        showMobileSessionBar(offlineUser, offlineUser ? "offline" : "none");
+        if (!offlineUser) {
+          window.location.replace("./login.html");
+        }
+      }
     }
   }
 
@@ -5239,6 +5279,7 @@
       fetch(api("/api/logout"), { method: "POST", credentials: "include" })
         .catch(function () {})
         .finally(function () {
+          localStorage.removeItem("beer_mobile_user");
           clearBeerSession();
           window.location.replace("./login.html");
         });

@@ -2859,3 +2859,26 @@ dialog::backdrop { background: rgba(0,0,0,0.65); }
   padding: 0.22rem 0.7rem;
   white-space: nowrap;
 }
+
+.mobile-session-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 1rem 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.mobile-session-bar.hidden {
+  display: none;
+}
+
+.mobile-session-logout {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
