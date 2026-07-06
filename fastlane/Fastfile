@@ -1,104 +1,45 @@
-# Build IPA développement (compte Apple ID gratuit → AltStore)
+# Build IPA développement — compte Apple ID GRATUIT (AltStore)
+# Pas de portail developer.apple.com (souvent « Access Unavailable » sans les 99 €).
 
 opt_out_usage
 default_platform(:ios)
-
-def portal_login
-  if ENV["FASTLANE_SESSION"].to_s.strip != ""
-    UI.message("Connexion Apple via FASTLANE_SESSION…")
-    Spaceship::Portal.login_via_env
-    return
-  end
-
-  UI.message("Connexion Apple via mot de passe pour app (souvent bloqué depuis GitHub)…")
-  Spaceship::Portal.login(
-    ENV.fetch("APPLE_ID"),
-    ENV.fetch("FASTLANE_PASSWORD")
-  )
-end
-
-def apple_team_id
-  explicit = ENV["APPLE_TEAM_ID"].to_s.strip
-  return explicit unless explicit.empty?
-
-  portal_login
-  teams = Spaceship::Portal.client.teams
-  UI.user_error!("Aucune équipe Apple — accepte les conditions sur developer.apple.com") if teams.nil? || teams.empty?
-
-  personal = teams.find { |t| t["type"].to_s == "Individual" }
-  team = personal || teams.first
-  UI.success("Team ID détecté : #{team['teamId']} (#{team['name']})")
-  team["teamId"]
-end
 
 def device_udid
   ENV["IOS_DEVICE_UDID"].to_s.strip.gsub(/\s+/, "")
 end
 
-platform :ios do
-  desc "Affiche le Team ID (debug)"
-  lane :show_team_id do
-    UI.success("Team ID = #{apple_team_id}")
-  end
+def signing_team_id
+  ENV["APPLE_TEAM_ID"].to_s.strip
+end
 
-  desc "Certificats + profil pour l'iPhone du testeur"
-  lane :prepare_signing do
+platform :ios do
+  desc "IPA AltStore — signature automatique Xcode (gratuit)"
+  lane :build_ipa do
+    udid = device_udid
+    UI.user_error!("Secret GitHub IOS_DEVICE_UDID manquant ou invalide") if udid.length < 20
+
     setup_ci(force: true)
 
-    team = apple_team_id
-    apple_id = ENV.fetch("APPLE_ID")
-
-    begin
-      produce(
-        app_identifier: "fr.eiter.plexibeer",
-        app_name: "Plexi Beer",
-        skip_itc: true,
-        username: apple_id,
-        team_id: team
-      )
-    rescue StandardError => e
-      UI.message("produce ignoré : #{e.message}")
+    team = signing_team_id
+    if team.empty?
+      UI.important("APPLE_TEAM_ID absent — Xcode utilisera la Personal Team de #{ENV.fetch('APPLE_ID', 'ton Apple ID')}")
+    else
+      UI.message("Team ID : #{team}")
     end
 
-    udid = device_udid
-    UI.user_error!("IOS_DEVICE_UDID vide ou invalide") if udid.length < 20
-
-    register_devices(
-      devices: { "Plexi iPhone" => udid },
-      team_id: team,
-      username: apple_id
-    )
-
-    cert(
-      development: true,
-      username: apple_id,
-      team_id: team,
-      force: false
-    )
-
-    sigh(
-      development: true,
-      app_identifier: "fr.eiter.plexibeer",
-      username: apple_id,
-      team_id: team,
-      force: true,
-      include_all_certificates: true
-    )
-
-    update_code_signing_settings(
-      use_automatic_signing: false,
-      team_id: team,
-      code_sign_identity: "Apple Development",
+    signing = {
+      use_automatic_signing: true,
       path: "ios/App/App.xcodeproj",
       targets: ["App"],
-      profile_name: lane_context[SharedValues::SIGH_NAME],
-      bundle_identifier: "fr.eiter.plexibeer"
-    )
-  end
+      bundle_identifier: "fr.eiter.plexibeer",
+      code_sign_identity: "Apple Development"
+    }
+    signing[:team_id] = team unless team.empty?
 
-  desc "Archive + export IPA pour AltStore"
-  lane :build_ipa do
-    prepare_signing
+    update_code_signing_settings(signing)
+
+    xcargs = "-allowProvisioningUpdates"
+    xcargs += " DEVELOPMENT_TEAM=#{team}" unless team.empty?
 
     build_app(
       workspace: "ios/App/App.xcworkspace",
@@ -109,7 +50,8 @@ platform :ios do
       output_name: "PlexiBeer",
       clean: true,
       skip_package_ipa: false,
-      xcargs: "-allowProvisioningUpdates"
+      xcargs: xcargs,
+      export_xcargs: "-allowProvisioningUpdates"
     )
   end
 end

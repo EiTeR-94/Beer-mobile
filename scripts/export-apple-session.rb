@@ -1,69 +1,36 @@
 #!/usr/bin/env ruby
-# Génère FASTLANE_SESSION (Windows OK) — portail développeur Apple.
-#
-# PowerShell :
-#   New-Item -ItemType Directory -Force -Path C:\tmp
-#   chcp 65001; $env:LC_ALL="en_US.UTF-8"; $env:LANG="en_US.UTF-8"
-#   $env:APPLE_ID="eiter_94@hotmail.com"
-#   $env:FASTLANE_PASSWORD="xxxx-xxxx-xxxx-xxxx"
-#   ruby scripts/export-apple-session.rb
-#
-# Ruby recommandé : 3.3.x (pas 4.0 — fastlane instable)
+# OBSOLÈTE pour compte gratuit (AltStore) — le portail web Apple refuse l'accès.
+# Utilise GitHub Actions → Build iOS IPA (sans FASTLANE_SESSION).
 
-require "fileutils"
+abort <<~MSG
 
-if Gem.win_platform?
-  FileUtils.mkdir_p("C:/tmp")
-  FileUtils.mkdir_p(File.join(ENV["TEMP"] || "C:/tmp", "spaceship"))
-end
+  ══════════════════════════════════════════════════════════════════════
+  PAS BESOIN DE CE SCRIPT (compte gratuit AltStore)
+  ══════════════════════════════════════════════════════════════════════
 
-require "spaceship"
+  Ce script se connecte au PORTAIL developer.apple.com.
+  Avec un compte gratuit tu as souvent :
+    « Access Unavailable — only for developers enrolled in a program »
 
-user = ENV["APPLE_ID"].to_s.strip
-pass = ENV["FASTLANE_PASSWORD"].to_s.strip
+  Apple répond alors :
+    Invalid username and password / Unauthorized Access
 
-if user.empty? || pass.empty?
-  warn "Variables requises : APPLE_ID et FASTLANE_PASSWORD (mot de passe pour app)"
-  exit 1
-end
+  Ce n'est PAS ton mot de passe qui est faux. Le portail web te bloque.
 
-puts "Connexion portail développeur Apple (#{user})…"
+  ── À faire à la place ──
 
-last_err = nil
-3.times do |attempt|
-  begin
-    Spaceship::Portal.login(user, pass)
-    last_err = nil
-    break
-  rescue StandardError => e
-    last_err = e
-    warn "Tentative #{attempt + 1}/3 échouée : #{e.message}"
-    sleep 8 if attempt < 2
-  end
-end
+  1. GitHub → repo Beer-mobile → Settings → Secrets :
+       APPLE_ID
+       APPLE_APP_SPECIFIC_PASSWORD   (mot de passe POUR APP sur appleid.apple.com)
+       IOS_DEVICE_UDID
 
-if last_err
-  warn "\nÉchec connexion Apple."
-  warn "Vérifie : mot de passe POUR APP (appleid.apple.com), pas Hotmail."
-  warn "Ouvre https://developer.apple.com/account et accepte les conditions."
-  warn "Ruby 3.3.x recommandé (Ruby 4.0 + fastlane = souvent cassé)."
-  raise last_err
-end
+  2. Supprime le secret FASTLANE_SESSION (inutile).
 
-session = Spaceship::Portal.client.store_cookie
+  3. Actions → « Build iOS IPA » → Run workflow
 
-unless session && !session.empty?
-  warn "Session vide après login."
-  exit 1
-end
+  Plan B immédiat : Safari → https://eiter.freeboxos.fr:8443/beer/
+                    → Partager → Sur l'écran d'accueil
 
-teams = Spaceship::Portal.client.teams
-if teams && !teams.empty?
-  t = teams.find { |x| x["type"] == "Individual" } || teams.first
-  puts "Team ID : #{t['teamId']} (#{t['name']})"
-  puts "(optionnel : secret GitHub APPLE_TEAM_ID = #{t['teamId']})"
-end
+  ══════════════════════════════════════════════════════════════════════
 
-puts "\n========== COPIE TOUT CE BLOC dans GitHub secret FASTLANE_SESSION ==========\n"
-puts session
-puts "========== FIN =========="
+MSG

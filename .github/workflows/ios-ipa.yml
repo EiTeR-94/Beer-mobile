@@ -25,7 +25,6 @@ jobs:
       FASTLANE_USER: ${{ secrets.APPLE_ID }}
       FASTLANE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      FASTLANE_SESSION: ${{ secrets.FASTLANE_SESSION }}
       KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
       FASTLANE_SKIP_UPDATE_CHECK: "true"
       FASTLANE_DISABLE_ANIMATION: "true"
@@ -71,9 +70,10 @@ jobs:
           ruby-version: "3.3"
           bundler-cache: true
 
-      - name: Build IPA (Fastlane)
+      - name: Build IPA (signature auto — compte gratuit)
         run: |
           echo "Commit: $GITHUB_SHA"
+          echo "Compte: $APPLE_ID (pas de portail developer.apple.com)"
           bundle exec fastlane ios build_ipa --verbose
 
       - name: Publier l'artifact IPA
