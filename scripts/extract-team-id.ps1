@@ -1,63 +1,116 @@
-# Trouve ton Team ID Apple (compte gratuit AltStore) — Windows PowerShell
-# Usage : powershell -File scripts/extract-team-id.ps1
+# Trouve APPLE_TEAM_ID (compte gratuit AltStore) — Windows
+# Usage : powershell -ExecutionPolicy Bypass -File scripts\extract-team-id.ps1
 
-function Get-TeamFromMobileProvision($path) {
-  $raw = [System.IO.File]::ReadAllBytes($path)
-  $text = [System.Text.Encoding]::UTF8.GetString($raw)
-  if ($text -match "TeamIdentifier.*?<array>\s*<string>([A-Z0-9]{10})</string>") {
-    return $Matches[1]
-  }
-  if ($text -match "<key>ApplicationIdentifierPrefix</key>\s*<array>\s*<string>([A-Z0-9]{10})</string>") {
-    return $Matches[1]
+param(
+  [string]$ProfilePath = "",
+  [string]$IpaPath = ""
+)
+
+function Get-TeamFromBytes([byte[]]$bytes) {
+  foreach ($enc in @(
+      [Text.Encoding]::UTF8,
+      [Text.Encoding]::GetEncoding(28591)
+    )) {
+    $text = $enc.GetString($bytes)
+    if ($text -match "TeamIdentifier[\s\S]{0,120}?([A-Z0-9]{10})") { return $Matches[1] }
+    if ($text -match "ApplicationIdentifierPrefix[\s\S]{0,120}?([A-Z0-9]{10})") { return $Matches[1] }
+    if ($text -match "com\.apple\.developer\.team-identifier[\s\S]{0,120}?([A-Z0-9]{10})") { return $Matches[1] }
   }
   return $null
 }
 
-$roots = @(
-  "$env:LOCALAPPDATA\AltServer",
-  "$env:APPDATA\AltServer",
-  "$env:USERPROFILE\.altstore",
-  "$env:LOCALAPPDATA\AltStore"
-)
+function Show-Team($team, $source) {
+  Write-Host ""
+  Write-Host "========== TON APPLE_TEAM_ID ==========" -ForegroundColor Green
+  Write-Host $team
+  Write-Host "Source : $source" -ForegroundColor DarkGray
+  Write-Host "=======================================" -ForegroundColor Green
+  Write-Host ""
+  Write-Host "GitHub → Beer-mobile → Settings → Secrets → APPLE_TEAM_ID"
+}
 
-Write-Host "Recherche de profils AltStore / .mobileprovision ..." -ForegroundColor Cyan
+function Read-TeamFromProvisionFile($path) {
+  if (-not (Test-Path $path)) { return $null }
+  return Get-TeamFromBytes ([IO.File]::ReadAllBytes($path))
+}
 
-$files = @()
-foreach ($root in $roots) {
-  if (Test-Path $root) {
-    $files += Get-ChildItem -Path $root -Recurse -Filter "*.mobileprovision" -ErrorAction SilentlyContinue
+function Read-TeamFromIpa($path) {
+  if (-not (Test-Path $path)) { return $null }
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $zip = [IO.Compression.ZipFile]::OpenRead($path)
+  try {
+    $entry = $zip.Entries | Where-Object { $_.FullName -like "*embedded.mobileprovision" } | Select-Object -First 1
+    if (-not $entry) { return $null }
+    $stream = $entry.Open()
+    try {
+      $ms = New-Object IO.MemoryStream
+      $stream.CopyTo($ms)
+      return Get-TeamFromBytes $ms.ToArray()
+    } finally { $stream.Close() }
+  } finally { $zip.Dispose() }
+}
+
+if ($ProfilePath -ne "") {
+  $t = Read-TeamFromProvisionFile $ProfilePath
+  if ($t) { Show-Team $t $ProfilePath; exit 0 }
+  Write-Host "Fichier fourni mais Team ID introuvable : $ProfilePath" -ForegroundColor Red
+  exit 1
+}
+
+if ($IpaPath -ne "") {
+  $t = Read-TeamFromIpa $IpaPath
+  if ($t) { Show-Team $t $IpaPath; exit 0 }
+  Write-Host "IPA fourni mais Team ID introuvable : $IpaPath" -ForegroundColor Red
+  exit 1
+}
+
+Write-Host "=== Methode 1 : chercher des .ipa (AltStore) ===" -ForegroundColor Cyan
+$ipaRoots = @(
+  "$env:USERPROFILE\Desktop",
+  "$env:USERPROFILE\Downloads",
+  "$env:USERPROFILE\Documents",
+  "C:\Users\BunnY\Desktop"
+) | Select-Object -Unique
+
+foreach ($root in $ipaRoots) {
+  if (-not (Test-Path $root)) { continue }
+  Get-ChildItem -Path $root -Recurse -Filter "*.ipa" -ErrorAction SilentlyContinue | ForEach-Object {
+    $t = Read-TeamFromIpa $_.FullName
+    if ($t) { Show-Team $t $_.FullName; exit 0 }
   }
 }
 
-if ($files.Count -eq 0) {
-  Write-Host ""
-  Write-Host "Aucun profil trouvé automatiquement." -ForegroundColor Yellow
-  Write-Host "Branche l'iPhone, ouvre AltStore, rafraîchis une app, puis relance ce script."
-  Write-Host ""
-  Write-Host "Ou exporte un .mobileprovision depuis 3uTools / iMazing et lance :"
-  Write-Host '  powershell -File scripts/extract-team-id.ps1 -ProfilePath "C:\chemin\profil.mobileprovision"'
-  exit 1
-}
+Write-Host "=== Methode 2 : chercher .mobileprovision ===" -ForegroundColor Cyan
+$provRoots = @(
+  "$env:LOCALAPPDATA\AltServer",
+  "$env:APPDATA\AltServer",
+  "$env:LOCALAPPDATA\AltStore",
+  "$env:APPDATA\AltStore",
+  "$env:USERPROFILE\.altstore",
+  "$env:USERPROFILE\Apple\MobileDevice",
+  "$env:USERPROFILE\Desktop",
+  "$env:USERPROFILE\Downloads"
+) | Select-Object -Unique
 
-$teams = @{}
-foreach ($f in $files) {
-  $tid = Get-TeamFromMobileProvision $f.FullName
-  if ($tid) { $teams[$tid] = $f.FullName }
-}
-
-if ($teams.Count -eq 0) {
-  Write-Host "Profils trouvés mais Team ID illisible." -ForegroundColor Red
-  exit 1
+foreach ($root in $provRoots) {
+  if (-not (Test-Path $root)) { continue }
+  Get-ChildItem -Path $root -Recurse -Filter "*.mobileprovision" -ErrorAction SilentlyContinue | ForEach-Object {
+    $t = Read-TeamFromProvisionFile $_.FullName
+    if ($t) { Show-Team $t $_.FullName; exit 0 }
+  }
 }
 
 Write-Host ""
-Write-Host "========== TON APPLE_TEAM_ID ==========" -ForegroundColor Green
-foreach ($kv in $teams.GetEnumerator()) {
-  Write-Host $kv.Key
-  Write-Host "(fichier : $($kv.Value))" -ForegroundColor DarkGray
-}
-Write-Host "=======================================" -ForegroundColor Green
+Write-Host "RIEN TROUVE sur ce PC." -ForegroundColor Yellow
 Write-Host ""
-Write-Host "GitHub → Beer-mobile → Settings → Secrets → New secret"
-Write-Host "Nom : APPLE_TEAM_ID"
-Write-Host "Valeur : le code 10 caractères ci-dessus"
+Write-Host "=== Methode 3 : 3uTools (la plus fiable) ===" -ForegroundColor Cyan
+Write-Host "1. Telecharge 3uTools : https://www.3u.com"
+Write-Host "2. Branche l'iPhone USB"
+Write-Host "3. Onglet iDevice -> Provisioning Profiles (ou Profils)"
+Write-Host "4. Note le Team ID (10 caracteres) a cote de ton Apple ID"
+Write-Host ""
+Write-Host "=== Methode 4 : fichier manuel ===" -ForegroundColor Cyan
+Write-Host "Si tu as un .ipa ou .mobileprovision quelque part :"
+Write-Host '  powershell -ExecutionPolicy Bypass -File scripts\extract-team-id.ps1 -IpaPath "C:\chemin\app.ipa"'
+Write-Host '  powershell -ExecutionPolicy Bypass -File scripts\extract-team-id.ps1 -ProfilePath "C:\chemin\profil.mobileprovision"'
+exit 1
