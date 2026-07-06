@@ -23,7 +23,6 @@ struct BeerWizardView: View {
     @State private var styleOptions: [StyleOption] = []
     @State private var manualStyle = ""
     @State private var customStyle = ""
-    @State private var useCustomStyle = false
 
     @State private var scanPhotoItem: PhotosPickerItem?
     @State private var photoItem: PhotosPickerItem?

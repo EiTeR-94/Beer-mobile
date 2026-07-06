@@ -24,6 +24,7 @@ rm -rf "$ROOT/build/Payload" "$DERIVED" "$ROOT/build/PlexiBeer.ipa"
 mkdir -p "$ROOT/build"
 
 echo "==> xcodebuild (Release iphoneos)"
+set +e
 xcodebuild \
   -project "$ROOT/native-ios/BeerNative.xcodeproj" \
   -scheme BeerNative \
@@ -35,7 +36,16 @@ xcodebuild \
   CODE_SIGN_IDENTITY="-" \
   CODE_SIGNING_REQUIRED=YES \
   DEVELOPMENT_TEAM="" \
-  AD_HOC_CODE_SIGNING_ALLOWED=YES
+  AD_HOC_CODE_SIGNING_ALLOWED=YES \
+  2>&1 | tee "$ROOT/build/xcodebuild.log"
+XC=${PIPESTATUS[0]}
+set -e
+if [[ "$XC" -ne 0 ]]; then
+  echo "::group::Swift compile errors"
+  grep -E "error:|warning:.*BeerNative" "$ROOT/build/xcodebuild.log" | tail -40 || true
+  echo "::endgroup::"
+  exit "$XC"
+fi
 
 APP="$(find "$DERIVED/Build/Products/Release-iphoneos" -maxdepth 1 -name "*.app" -type d | head -1)"
 if [[ -z "$APP" || ! -d "$APP" ]]; then

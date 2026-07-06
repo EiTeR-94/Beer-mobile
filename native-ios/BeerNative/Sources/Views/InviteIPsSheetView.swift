@@ -13,7 +13,7 @@ struct InviteIPsSheetView: View {
                 } else {
                     ForEach(Array(entries.enumerated()), id: \.offset) { _, e in
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(e.ip ?? "—").font(.body.monospaced())
+                            Text(e.ip ?? "—").font(.system(.body, design: .monospaced))
                             if let first = e.firstSeen {
                                 Text("1re : \(BeerFormatters.formatDate(first))").font(.caption).foregroundStyle(Theme.muted)
                             }

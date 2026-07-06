@@ -48,36 +48,18 @@ struct AdminSheetView: View {
 
                     Text("Comptes").font(.headline).padding(.top, 8)
                     ForEach(users) { u in
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text(u.username).fontWeight(.semibold)
-                                if u.isAdmin {
-                                    Text("admin").font(.caption2).padding(4).background(Theme.accent.opacity(0.2)).clipShape(Capsule())
-                                }
-                                Spacer()
-                                Text("\(u.checkins) dégust.").font(.caption).foregroundStyle(Theme.muted)
+                        AdminUserCard(
+                            user: u,
+                            password: passwordBinding(for: u.username),
+                            isSelf: u.username == app.user,
+                            onSetPassword: { Task { await setPassword(u.username) } },
+                            onToggleAdmin: {
+                                Task { try? await app.api.adminSetAdmin(u.username, isAdmin: !u.isAdmin); await reload() }
+                            },
+                            onDelete: {
+                                Task { try? await app.api.adminDeleteUser(u.username); await reload() }
                             }
-                            BeerField(
-                                label: "Nouveau mot de passe",
-                                text: Binding(
-                                    get: { userPasswords[u.username] ?? "" },
-                                    set: { userPasswords[u.username] = $0 }
-                                ),
-                                secure: true
-                            )
-                            HStack {
-                                Button("MDP") { Task { await setPassword(u.username) } }.font(.caption)
-                                if u.username != app.user {
-                                    Button(u.isAdmin ? "Retirer admin" : "Promouvoir") {
-                                        Task { try? await app.api.adminSetAdmin(u.username, isAdmin: !u.isAdmin); await reload() }
-                                    }.font(.caption)
-                                    Button("Suppr.", role: .destructive) {
-                                        Task { try? await app.api.adminDeleteUser(u.username); await reload() }
-                                    }.font(.caption)
-                                }
-                            }
-                        }
-                        .padding(10).background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 10))
+                        )
                     }
 
                     HStack {
@@ -193,24 +175,26 @@ struct AdminSheetView: View {
             if let validity = inv.validityLabel, validity != "—" {
                 Text("Type : \(validity)").font(.caption2).foregroundStyle(Theme.muted)
             }
-            FlowLayout(spacing: 6) {
-                if let log = inv.ipLog, !log.isEmpty {
-                    inviteAction("IP") { openInviteIPs(inv) }
-                }
-                if let url = inv.url, inv.revokedAt == nil { inviteAction("Copier") { copyURL(url) } }
-                if inv.canExtend == true {
-                    inviteAction("+24h") { Task { await extend(inv, "24h") } }
-                    inviteAction("+48h") { Task { await extend(inv, "48h") } }
-                    inviteAction("+7j") { Task { await extend(inv, "7d") } }
-                    inviteAction("+30j") { Task { await extend(inv, "30d") } }
-                    inviteAction("Perm.") { Task { await extend(inv, "permanent") } }
-                }
-                if inv.canReissue == true || inv.reactivationPending == true {
-                    inviteAction("Renvoyer l'accès") { Task { await reissue(inv) } }
-                }
-                if inv.revokedAt == nil {
-                    inviteAction("Révoquer", destructive: true) {
-                        Task { try? await app.api.adminRevokeInvite(id: inv.id); await reload() }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    if let log = inv.ipLog, !log.isEmpty {
+                        inviteAction("IP") { openInviteIPs(inv) }
+                    }
+                    if let url = inv.url, inv.revokedAt == nil { inviteAction("Copier") { copyURL(url) } }
+                    if inv.canExtend == true {
+                        inviteAction("+24h") { Task { await extend(inv, "24h") } }
+                        inviteAction("+48h") { Task { await extend(inv, "48h") } }
+                        inviteAction("+7j") { Task { await extend(inv, "7d") } }
+                        inviteAction("+30j") { Task { await extend(inv, "30d") } }
+                        inviteAction("Perm.") { Task { await extend(inv, "permanent") } }
+                    }
+                    if inv.canReissue == true || inv.reactivationPending == true {
+                        inviteAction("Renvoyer l'accès") { Task { await reissue(inv) } }
+                    }
+                    if inv.revokedAt == nil {
+                        inviteAction("Révoquer", destructive: true) {
+                            Task { try? await app.api.adminRevokeInvite(id: inv.id); await reload() }
+                        }
                     }
                 }
             }
@@ -242,6 +226,13 @@ struct AdminSheetView: View {
         ipTitle = "IP — \(inv.label ?? "—")"
         ipEntries = inv.ipLog ?? []
         showIPs = true
+    }
+
+    private func passwordBinding(for username: String) -> Binding<String> {
+        Binding(
+            get: { userPasswords[username] ?? "" },
+            set: { userPasswords[username] = $0 }
+        )
     }
 
     private func copyURL(_ url: String) {
@@ -329,5 +320,36 @@ struct AdminSheetView: View {
             }
             await reload()
         } catch let err { errorMessage = err.localizedDescription }
+    }
+}
+
+private struct AdminUserCard: View {
+    let user: AdminUser
+    @Binding var password: String
+    let isSelf: Bool
+    let onSetPassword: () -> Void
+    let onToggleAdmin: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(user.username).fontWeight(.semibold)
+                if user.isAdmin {
+                    Text("admin").font(.caption2).padding(4).background(Theme.accent.opacity(0.2)).clipShape(Capsule())
+                }
+                Spacer()
+                Text("\(user.checkins) dégust.").font(.caption).foregroundStyle(Theme.muted)
+            }
+            BeerField(label: "Nouveau mot de passe", text: $password, secure: true)
+            HStack {
+                Button("MDP", action: onSetPassword).font(.caption)
+                if !isSelf {
+                    Button(user.isAdmin ? "Retirer admin" : "Promouvoir", action: onToggleAdmin).font(.caption)
+                    Button("Suppr.", role: .destructive, action: onDelete).font(.caption)
+                }
+            }
+        }
+        .padding(10).background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
