@@ -1,90 +1,21 @@
-# Build IPA AltStore — compte Apple ID GRATUIT
-# Pas de connexion au portail Apple (2FA + « Unauthorized Access » en CI).
+# IPA non signée → AltStore / AltServer re-signe sur ton PC Windows (gratuit)
 
 opt_out_usage
 default_platform(:ios)
 
-def device_udid
-  ENV["IOS_DEVICE_UDID"].to_s.strip.gsub(/\s+/, "")
-end
-
-def signing_team_id
-  tid = ENV["APPLE_TEAM_ID"].to_s.strip
-  return tid unless tid.empty?
-
-  UI.user_error!(
-    "Secret GitHub APPLE_TEAM_ID obligatoire.\n\n" \
-    "Impossible de le détecter automatiquement (Apple demande la 2FA sur GitHub).\n\n" \
-    "iPhone : Réglages → Général → Gestion VPN et appareil → App développeur\n" \
-    "→ Team ID (10 caractères) → secret GitHub APPLE_TEAM_ID"
-  )
-end
-
 platform :ios do
-  desc "IPA AltStore — signature automatique Xcode"
+  desc "Build IPA non signée pour AltStore"
   lane :build_ipa do
-    udid = device_udid
-    UI.user_error!("Secret GitHub IOS_DEVICE_UDID manquant ou invalide") if udid.length < 20
-
-    team = signing_team_id
-    UI.message("Team ID : #{team}")
-
     setup_ci(force: true)
 
-    apple_id = ENV.fetch("APPLE_ID")
-
-    begin
-      register_devices(
-        devices: { "Plexi iPhone" => udid },
-        team_id: team,
-        username: apple_id
-      )
-    rescue StandardError => e
-      UI.important("register_devices : #{e.message}")
-    end
-
-    manual_profile = nil
-    begin
-      cert(
-        development: true,
-        username: apple_id,
-        team_id: team,
-        force: false
-      )
-      sigh(
-        development: true,
-        app_identifier: "fr.eiter.plexibeer",
-        username: apple_id,
-        team_id: team,
-        force: true,
-        include_all_certificates: true
-      )
-      manual_profile = lane_context[SharedValues::SIGH_NAME]
-      UI.success("Profil : #{manual_profile}")
-    rescue StandardError => e
-      UI.important("cert/sigh : #{e.message} — Xcode tentera signature auto")
-    end
-
-    if manual_profile
-      update_code_signing_settings(
-        use_automatic_signing: false,
-        path: "ios/App/App.xcodeproj",
-        targets: ["App"],
-        bundle_identifier: "fr.eiter.plexibeer",
-        code_sign_identity: "Apple Development",
-        team_id: team,
-        profile_name: manual_profile
-      )
-    else
-      update_code_signing_settings(
-        use_automatic_signing: true,
-        path: "ios/App/App.xcodeproj",
-        targets: ["App"],
-        bundle_identifier: "fr.eiter.plexibeer",
-        code_sign_identity: "Apple Development",
-        team_id: team
-      )
-    end
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: "ios/App/App.xcodeproj",
+      targets: ["App"],
+      bundle_identifier: "fr.eiter.plexibeer",
+      code_sign_identity: "",
+      team_id: ""
+    )
 
     build_app(
       workspace: "ios/App/App.xcworkspace",
@@ -94,9 +25,15 @@ platform :ios do
       output_directory: "build",
       output_name: "PlexiBeer",
       clean: true,
+      skip_codesigning: true,
       skip_package_ipa: false,
-      xcargs: "-allowProvisioningUpdates DEVELOPMENT_TEAM=#{team}",
-      export_xcargs: "-allowProvisioningUpdates"
+      xcargs: "CODE_SIGN_IDENTITY='-' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO"
     )
+
+    ipa = Dir["build/*.ipa"].first
+    UI.user_error!("IPA non générée") unless ipa
+
+    UI.success("IPA non signée : #{ipa}")
+    UI.success("AltStore la re-signera avec ton Apple ID à l'installation.")
   end
 end

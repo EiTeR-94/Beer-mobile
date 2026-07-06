@@ -1,4 +1,4 @@
-# Build IPA Plexi Beer sur Mac gratuit (GitHub Actions) → artifact → AltStore
+# Build IPA Plexi Beer — NON signée sur GitHub, re-signée par AltStore sur Windows
 
 name: Build iOS IPA
 
@@ -18,14 +18,6 @@ jobs:
     timeout-minutes: 45
 
     env:
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      IOS_DEVICE_UDID: ${{ secrets.IOS_DEVICE_UDID }}
-      FASTLANE_USER: ${{ secrets.APPLE_ID }}
-      FASTLANE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
       FASTLANE_SKIP_UPDATE_CHECK: "true"
       FASTLANE_DISABLE_ANIMATION: "true"
       FASTLANE_OPT_OUT_USAGE: "true"
@@ -34,20 +26,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Vérifier les secrets
-        run: |
-          missing=0
-          for s in APPLE_ID APPLE_APP_SPECIFIC_PASSWORD IOS_DEVICE_UDID APPLE_TEAM_ID; do
-            if [ -z "${!s}" ]; then
-              echo "::error::Secret manquant : $s"
-              missing=1
-            fi
-          done
-          if [ "$missing" -eq 1 ]; then
-            exit 1
-          fi
-          echo "UDID longueur: ${#IOS_DEVICE_UDID}"
 
       - name: Node.js
         uses: actions/setup-node@v4
@@ -61,8 +39,9 @@ jobs:
           npm ci 2>/dev/null || npm install
           npx cap add ios
           node scripts/patch-ios-plist.js
-          node scripts/patch-ios-team.js
+          node scripts/patch-ios-nosign.js
           npx cap sync ios
+          node scripts/patch-ios-nosign.js
           cd ios/App && pod install
 
       - name: Ruby + Fastlane
@@ -71,35 +50,22 @@ jobs:
           ruby-version: "3.3"
           bundler-cache: true
 
-      - name: Auth Apple pour Xcode (CI)
-        run: |
-          KC_PASS="${KEYCHAIN_PASSWORD:-plexibeer-ci-keychain}"
-          KC_PATH="$RUNNER_TEMP/build.keychain-db"
-          security create-keychain -p "$KC_PASS" "$KC_PATH"
-          security set-keychain-settings -lut 21600 "$KC_PATH"
-          security unlock-keychain -p "$KC_PASS" "$KC_PATH"
-          security list-keychains -d user -s "$KC_PATH" $(security list-keychains -d user | tr -d '"')
-          security default-keychain -s "$KC_PATH"
-
-          cat > ~/.netrc << EOF
-          machine api.apple.com
-            login $APPLE_ID
-            password $APPLE_APP_SPECIFIC_PASSWORD
-          machine idmsa.apple.com
-            login $APPLE_ID
-            password $APPLE_APP_SPECIFIC_PASSWORD
-          machine appstoreconnect.apple.com
-            login $APPLE_ID
-            password $APPLE_APP_SPECIFIC_PASSWORD
-          EOF
-          chmod 600 ~/.netrc
-          echo "Auth Apple configurée (.netrc + keychain)"
-
-      - name: Build IPA (signature auto — compte gratuit)
+      - name: Build IPA non signée
         run: |
           echo "Commit: $GITHUB_SHA"
-          echo "Team: $APPLE_TEAM_ID"
-          bundle exec fastlane ios build_ipa --verbose
+          echo "Pas de connexion Apple — AltStore re-signera sur ton PC"
+          bundle exec fastlane ios build_ipa --verbose || true
+          if [ ! -f build/PlexiBeer.ipa ]; then
+            ARCHIVE=$(find ~/Library/Developer/Xcode/Archives -name "*.xcarchive" -mmin -60 | head -1)
+            if [ -n "$ARCHIVE" ] && [ -d "$ARCHIVE/Products/Applications" ]; then
+              rm -rf build/Payload
+              mkdir -p build/Payload
+              cp -r "$ARCHIVE/Products/Applications/"*.app build/Payload/
+              (cd build && zip -qr PlexiBeer.ipa Payload)
+              echo "IPA empaquetée depuis l'archive Xcode"
+            fi
+          fi
+          test -f build/PlexiBeer.ipa
 
       - name: Publier l'artifact IPA
         uses: actions/upload-artifact@v4
