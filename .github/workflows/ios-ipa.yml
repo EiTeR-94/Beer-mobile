@@ -70,27 +70,14 @@ jobs:
 
       - name: Valider manifest AltStore (JSON)
         run: |
-          python3 -c "import json; json.load(open('dist/altstore.json'))"
-          python3 -c "
-          import json, re
-          raw = open('dist/altstore.json', 'rb').read()
-          assert not re.search(rb'[^\\x00-\\x7F]', raw), 'manifest non-ASCII (AltStore 3840)'
-          d=json.loads(raw)
-          v=d['apps'][0]['versions'][0]
-          url=v.get('downloadURL','')
-          assert 'PlexiBeer.ipa' in url
-          assert '/releases/download/ios-build-' in url, url
-          import os
-          assert os.path.getsize('build/PlexiBeer.ipa') == int(v['size'])
-          print('OK manifest', v['version'], v['buildVersion'], v['size'], url)
-          "
+          node scripts/validate-altstore-json.js dist/altstore.json "$(stat -f%z build/PlexiBeer.ipa)"
 
       - name: Release GitHub (IPA + source)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ios-build-${{ github.run_number }}
           name: Beer Log iOS build ${{ github.run_number }}
-          body: "Build automatique — AltStore source : releases/latest/download/altstore.json"
+          body: "Build automatique — AltStore source (sans redirect) : https://raw.githubusercontent.com/EiTeR-94/Beer-mobile/main/altstore/altstore.json"
           files: |
             build/PlexiBeer.ipa
             dist/altstore.json

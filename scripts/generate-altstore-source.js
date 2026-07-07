@@ -19,6 +19,10 @@ function ymlVal(key, fallback = "") {
   return m ? m[1].trim() : fallback;
 }
 
+/** URL source AltStore : HTTP 200 direct, zero redirection (latest/download = 3840). */
+const CANONICAL_SOURCE_URL =
+  "https://raw.githubusercontent.com/EiTeR-94/Beer-mobile/main/altstore/altstore.json";
+
 /** AltStore / NSCocoa 3840 : JSON 100 % ASCII (pas d'accents). */
 function ascii(s) {
   return String(s)
@@ -27,6 +31,18 @@ function ascii(s) {
     .replace(/[^\x20-\x7E]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Securise tout le manifest (y compris champs ajoutes plus tard). */
+function sanitizeDeep(value) {
+  if (typeof value === "string") return ascii(value);
+  if (Array.isArray(value)) return value.map(sanitizeDeep);
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = sanitizeDeep(v);
+    return out;
+  }
+  return value;
 }
 
 const version = ymlVal("MARKETING_VERSION", "2.0.0");
@@ -47,13 +63,13 @@ const STABLE_VERSION = "3.3.0";
 function versionReleaseNotes(ver, buildNum) {
   if (ver === STABLE_VERSION) {
     return ascii(
-      "v3.3.0 Stable — version figee Plexi. UI polish, mode hors ligne, admin invite, scan + toasts, AltStore OK."
+      "v3.3.0 Stable - version figee Plexi. UI polish, mode hors ligne, admin invite, scan + toasts, AltStore OK."
     );
   }
   if (ver === "3.3.1") {
     return ascii("bugs fix");
   }
-  return ascii(`Build ${buildNum} — Beer Log native`);
+  return ascii(`Build ${buildNum} - Beer Log native`);
 }
 
 const githubAssetBase = `https://github.com/EiTeR-94/Beer-mobile/releases/download/ios-build-${build}`;
@@ -63,17 +79,17 @@ const homelabBase = (
 const assetBase = distMode === "homelab" ? homelabBase : githubAssetBase;
 
 const appLongDescription = ascii(
-  "Beer Log, c'est ton journal de bieres sur le serveur Plexi d'EiTeR — 100% natif iPhone, zero WebView. " +
+  "Beer Log, c'est ton journal de bieres sur le serveur Plexi d'EiTeR - 100% natif iPhone, zero WebView. " +
     "Tu scannes un code-barres, tu cherches sur Untappd, tu poses la photo du verre, tu notes avec des demi-etoiles, " +
     "saveurs et houblons. Historique, galerie, liste a boire, idees cadeaux : tout est la, pense pour le quotidien entre amis. " +
     "Mode hors ligne : tes degustations restent sur l'iPhone et partent au serveur des que le Wi-Fi maison ou le VPN Plexi revient. " +
     "Connexion : eiter.freeboxos.fr. Admin : comptes, invitations privees, referentiels. " +
-    "v3.3.1 — la version de reference du homelab. Fait avec soin pour Plexi, pas pour l'App Store."
+    "v3.3.1 - la version de reference du homelab. Fait avec soin pour Plexi, pas pour l'App Store."
 );
 
-const source = {
+const manifest = {
   name: ascii("Plexi Homelab"),
-  subtitle: ascii("Apps perso EiTeR — homelab Freebox + Plexi"),
+  subtitle: ascii("Apps perso EiTeR - homelab Freebox + Plexi"),
   description: ascii(
     "Source privee pour installer et mettre a jour les apps iOS du homelab Plexi (serveur .50, LAN/VPN). " +
       "Beer Log : carnet de degustation natif, sync sur ton serveur maison. MAJ auto apres build GitHub vert."
@@ -124,6 +140,8 @@ const source = {
   news: [],
 };
 
+const source = sanitizeDeep(manifest);
+
 const outDir = process.env.ALTSTORE_OUT_DIR || path.join(ROOT, "dist");
 fs.mkdirSync(outDir, { recursive: true });
 const outFile = path.join(outDir, "altstore.json");
@@ -138,7 +156,5 @@ console.log(`IPA URL: ${assetBase}/${ipaName}`);
 if (distMode === "homelab") {
   console.log(`Source iPhone (LAN/VPN): ${homelabBase}/altstore.json`);
 } else {
-  console.log(
-    "Source iPhone (GitHub): https://github.com/EiTeR-94/Beer-mobile/releases/latest/download/altstore.json"
-  );
+  console.log(`Source iPhone (GitHub, sans redirect): ${CANONICAL_SOURCE_URL}`);
 }
