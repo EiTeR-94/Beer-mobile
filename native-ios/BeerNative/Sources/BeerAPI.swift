@@ -142,7 +142,7 @@ final class BeerAPI {
 
     func login(username: String, password: String) async throws -> LoginResponse {
         let body = try JSONEncoder().encode(["username": username, "password": password])
-        let (data, http, _) = try await request(
+        let (data, http, responseURL) = try await request(
             path: "/api/login",
             method: "POST",
             body: body,
@@ -159,6 +159,13 @@ final class BeerAPI {
         }
         if http.statusCode == 401 || decoded.ok == false {
             throw BeerAPIError.server(decoded.error ?? "Identifiants incorrects")
+        }
+        // Explicitly store any Set-Cookie from login response to ensure subsequent requests (checkins, gallery etc.) carry the session cookie
+        if let allHeaders = http.allHeaderFields as? [String: String] {
+            let cookies = HTTPCookie.cookies(withResponseHeaderFields: allHeaders, for: responseURL)
+            for cookie in cookies {
+                HTTPCookieStorage.shared.setCookie(cookie)
+            }
         }
         return decoded
     }
