@@ -47,9 +47,9 @@ const BAD_URL_PATTERNS = [
   "/releases/latest/download/",
   "/releases/download/",
   "raw.githubusercontent.com",
-  ":8444",
-  "192.168.",
 ];
+
+const BAD_URL_PATTERNS_STRICT = [...BAD_URL_PATTERNS, ":8444", "192.168."];
 
 function collectUrls(value, out = []) {
   if (typeof value === "string" && /^https?:\/\//.test(value)) out.push(value);
@@ -61,7 +61,11 @@ function collectUrls(value, out = []) {
 
 const urls = collectUrls(data);
 for (const url of urls) {
-  for (const bad of BAD_URL_PATTERNS) {
+  const patterns =
+    url === String(ver.downloadURL || "") || url === String(app.iconURL || "")
+      ? BAD_URL_PATTERNS
+      : BAD_URL_PATTERNS_STRICT;
+  for (const bad of patterns) {
     if (url.includes(bad)) {
       console.error(`ERREUR: URL interdite (${bad}) — ${url}`);
       process.exit(1);

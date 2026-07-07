@@ -24,7 +24,11 @@ function ymlVal(key, fallback = "") {
 const WAN_BASE = (
   process.env.MOBILE_DIST_BASE_URL || "https://eiter.freeboxos.fr/mobile/beer"
 ).replace(/\/$/, "");
-const CANONICAL_SOURCE_URL = `${WAN_BASE}/altstore.json`;
+/** LAN : evite AAAA cassee (AltStore 3840/2005) pour JSON + IPA + icone */
+const LAN_BASE = (
+  process.env.MOBILE_DIST_LAN_BASE_URL || "https://192.168.1.50:8444/mobile/beer"
+).replace(/\/$/, "");
+const CANONICAL_SOURCE_URL = `${LAN_BASE}/altstore.json`;
 
 /** AltStore / NSCocoa 3840 : JSON 100 % ASCII (pas d'accents). */
 function ascii(s) {
@@ -81,6 +85,7 @@ function versionReleaseNotes(ver, buildNum) {
 }
 
 const githubAssetBase = `https://github.com/EiTeR-94/Beer-mobile/releases/download/ios-build-${build}`;
+/** IPA + icone en LAN (install fiable) ; source AltStore = meme base */
 const assetBase =
   distMode === "github"
     ? githubAssetBase
@@ -89,7 +94,7 @@ const assetBase =
           /\/$/,
           ""
         )
-      : WAN_BASE;
+      : LAN_BASE;
 
 const appLongDescription = ascii(
   "Beer Log, c'est ton journal de bieres sur le serveur Plexi d'EiTeR - 100% natif iPhone, zero WebView. " +
@@ -124,7 +129,7 @@ const manifest = {
       tintColor: "#f59e0b",
       category: "lifestyle",
       appPermissions: {
-        entitlements: ["com.apple.developer.associated-domains"],
+        entitlements: [],
         privacy: {
           NSCameraUsageDescription: ascii(
             "Scanner les codes-barres et prendre des photos de tes degustations."
