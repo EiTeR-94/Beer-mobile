@@ -80,9 +80,15 @@ file "$APP/$BIN_NAME" | grep -q "Mach-O" || {
   exit 1
 }
 
+ENTITLEMENTS="$ROOT/native-ios/BeerNative/Resources/BeerNative.entitlements"
 echo "==> Signature ad-hoc (AltStore re-signera)"
-codesign --force --sign - --timestamp=none --deep "$APP" 2>/dev/null || \
-  codesign --force --sign - --timestamp=none "$APP"
+if [[ -f "$ENTITLEMENTS" ]]; then
+  codesign --force --sign - --timestamp=none --entitlements "$ENTITLEMENTS" "$APP" 2>/dev/null || \
+    codesign --force --sign - --timestamp=none --entitlements "$ENTITLEMENTS" --deep "$APP"
+else
+  codesign --force --sign - --timestamp=none --deep "$APP" 2>/dev/null || \
+    codesign --force --sign - --timestamp=none "$APP"
+fi
 
 echo "==> IPA"
 rm -rf "$ROOT/build/Payload"

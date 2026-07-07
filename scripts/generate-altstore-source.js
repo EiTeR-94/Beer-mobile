@@ -69,7 +69,7 @@ function versionReleaseNotes(ver, buildNum) {
       "v3.3.0 Stable - version figee Plexi. UI polish, mode hors ligne, admin invite, scan + toasts, AltStore OK."
     );
   }
-  if (ver === "3.3.1" || ver === "3.3.2" || ver === "3.3.3") {
+  if (ver === "3.3.1" || ver === "3.3.2" || ver === "3.3.3" || ver === "3.3.4") {
     return ascii("bugs fix");
   }
   return ascii(`Build ${buildNum} - Beer Log native`);
