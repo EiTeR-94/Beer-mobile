@@ -19,6 +19,7 @@ struct AdminSheetView: View {
 
     @State private var inviteLabel = ""
     @State private var inviteValidity = "7d"
+    @State private var inviteCreating = false
     @State private var createdInviteURL: String?
     @State private var message: String?
     @State private var errorMessage: String?
@@ -97,7 +98,11 @@ struct AdminSheetView: View {
                             onSelect: { inviteValidity = $0 }
                         )
                         .padding(.top, 10)
-                        BeerPrimaryButton(title: "Créer le lien", disabled: inviteLabel.count < 2) {
+                        BeerPrimaryButton(
+                            title: inviteCreating ? "Génération…" : "Créer le lien",
+                            disabled: inviteLabel.count < 2 || inviteCreating,
+                            busy: inviteCreating
+                        ) {
                             Task { await createInvite() }
                         }
                     }
@@ -357,15 +362,35 @@ struct AdminSheetView: View {
     }
 
     private func createInvite() async {
+        guard !inviteCreating else { return }
+        let label = inviteLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard label.count >= 2 else {
+            app.showToast("Nom trop court (2 car. min.)", variant: .warn)
+            return
+        }
+        inviteCreating = true
+        app.showToast(
+            "Lien en cours de génération…",
+            variant: .info,
+            label: "Invitation",
+            durationMs: 120_000
+        )
+        defer { inviteCreating = false }
         do {
-            let res = try await app.api.adminCreateInvite(label: inviteLabel, validity: inviteValidity)
+            let res = try await app.api.adminCreateInvite(label: label, validity: inviteValidity)
+            app.hideToast()
             createdInviteURL = res.url
             inviteLabel = ""
-            message = "Invitation créée"
+            message = nil
             errorMessage = nil
             if let url = res.url { UIPasteboard.general.string = url }
+            app.showToast("Lien créé — copie-le maintenant", variant: .success, durationMs: 3800)
             await reload()
-        } catch let err { errorMessage = err.localizedDescription }
+        } catch let err {
+            app.hideToast()
+            errorMessage = err.localizedDescription
+            app.showToast(err.localizedDescription, variant: .error, durationMs: 4200)
+        }
     }
 
     private func extend(_ inv: InviteItem, _ validity: String) async {

@@ -697,3 +697,30 @@ struct OfflineBadge: View {
         NetworkStatusBar(status: .offline)
     }
 }
+
+// MARK: - Clavier
+
+enum KeyboardDismiss {
+    static func endEditing() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
+    }
+}
+
+private struct DismissKeyboardOnTapModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content.simultaneousGesture(
+            TapGesture().onEnded { _ in KeyboardDismiss.endEditing() }
+        )
+    }
+}
+
+extension View {
+    func dismissKeyboardOnTap() -> some View {
+        modifier(DismissKeyboardOnTapModifier())
+    }
+}

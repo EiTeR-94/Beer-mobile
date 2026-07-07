@@ -18,6 +18,7 @@ struct BeerOverlayScreen<Content: View>: View {
                     .padding(.bottom, 20)
             }
             .scrollDismissesKeyboard(.interactively)
+            .dismissKeyboardOnTap()
             .refreshable {
                 if let onRefresh { await onRefresh() }
             }
@@ -94,6 +95,57 @@ struct BeerFilterLabel<Content: View>: View {
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Menu déroulant aligné sur le style des champs de formulaire (admin, saisie manuelle).
+struct BeerFormSelectField: View {
+    let label: String
+    let value: String
+    let options: [(String, String)]
+    let onSelect: (String) -> Void
+
+    private var display: String {
+        options.first(where: { $0.0 == value })?.1 ?? "Choisir…"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.system(size: Theme.Font.field))
+                .foregroundStyle(Theme.muted)
+            Menu {
+                ForEach(options, id: \.0) { opt in
+                    Button {
+                        onSelect(opt.0)
+                    } label: {
+                        HStack {
+                            Text(opt.1)
+                            if opt.0 == value {
+                                Spacer()
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Text(display)
+                        .lineLimit(1)
+                        .foregroundStyle(value.isEmpty ? Theme.muted : Theme.text)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.muted)
+                }
+                .font(.system(size: 16))
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.fieldBg)
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+        }
     }
 }
 

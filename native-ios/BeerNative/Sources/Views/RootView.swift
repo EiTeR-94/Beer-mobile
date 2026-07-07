@@ -22,6 +22,7 @@ struct RootView: View {
                 }
             }
             .background(Theme.bg)
+            .dismissKeyboardOnTap()
 
             ToastOverlay(toast: app.toast, onDismiss: { app.hideToast() })
         }

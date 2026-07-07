@@ -43,6 +43,13 @@ struct BeerWizardView: View {
     @State private var showDuplicate = false
     @State private var duplicateDetail = ""
 
+    private var manualStyleOptions: [(String, String)] {
+        var opts: [(String, String)] = [("", "Choisir…")]
+        opts.append(contentsOf: styleOptions.filter { !$0.value.isEmpty }.map { ($0.value, $0.label) })
+        opts.append(("__other__", "Autre (saisir manuellement)"))
+        return opts
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
@@ -65,6 +72,7 @@ struct BeerWizardView: View {
         }
         .background(Theme.bg)
         .scrollDismissesKeyboard(.interactively)
+        .dismissKeyboardOnTap()
         .fullScreenCover(isPresented: $showScanCamera) {
             CameraPicker { image in Task { await processScanPhoto(image) } }
         }
@@ -102,6 +110,13 @@ struct BeerWizardView: View {
                     BarcodeScannerView { code in
                         scannedCode = code
                         manualEAN = code
+                        app.showToast(
+                            "Code-barres lu ✓",
+                            variant: .success,
+                            label: "Scan",
+                            detail: code,
+                            durationMs: 2400
+                        )
                         Task { await lookupEAN(code) }
                     }
                     .frame(height: min(min((UIScreen.main.bounds.width - 32) * 0.75, UIScreen.main.bounds.height * 0.48), 320))
@@ -173,15 +188,13 @@ struct BeerWizardView: View {
                 DisclosureGroup("Saisie manuelle (secours)", isExpanded: $showManual) {
                     BeerField(label: "Nom de la bière", text: $manualName, placeholder: "ex. Mama Whipa")
                     BeerField(label: "Brasserie", text: $manualBrewery, placeholder: "ex. Les Intenables")
-                    Picker("Style", selection: $manualStyle) {
-                        Text("Choisir…").tag("")
-                        ForEach(styleOptions.filter { !$0.value.isEmpty }) { s in
-                            Text(s.label).tag(s.value)
-                        }
-                        Text("Autre (saisir manuellement)").tag("__other__")
-                    }
-                    .pickerStyle(.menu)
-                    .tint(Theme.accent)
+                    BeerFormSelectField(
+                        label: "Style",
+                        value: manualStyle,
+                        options: manualStyleOptions,
+                        onSelect: { manualStyle = $0 }
+                    )
+                    .padding(.top, 10)
                     if manualStyle == "__other__" {
                         BeerField(label: "Style", text: $customStyle, placeholder: "Ex: Gose, Table Beer, etc.")
                     }
@@ -407,6 +420,13 @@ struct BeerWizardView: View {
                 manualEAN = digits
                 product = scan.asProduct(fallbackBarcode: digits)
                 scanStatus = "Bière identifiée ✓"
+                app.showToast(
+                    "Code-barres lu ✓",
+                    variant: .success,
+                    label: "Scan photo",
+                    detail: digits.isEmpty ? nil : digits,
+                    durationMs: 2400
+                )
             } else {
                 scanStatus = scan.error ?? "Code illisible"
             }
