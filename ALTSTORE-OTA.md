@@ -30,7 +30,7 @@ Chaque push sur `main` déclenche un build GitHub (~10 min). Ensuite AltStore pr
 
 | Message AltStore | Cause | Fix |
 |------------------|-------|-----|
-| Inconnu / pas sécurisé | Mauvaise URL ou fichier absent | URL GitHub ci-dessus, pas l’IP |
+| Inconnu / pas sécurisé | Mauvaise URL ou fichier absent | URL WAN ci-dessus uniquement, pas l’IP ni GitHub |
 | Impossible de télécharger | Pas de release encore | Attendre build vert sur GitHub Actions |
 | Erreur 2005 / NSCocoaErrorDomain 3840 | Mauvaise URL (GitHub redirect / 404 HTML) | **Supprime** la source, ré-ajoute `https://eiter.freeboxos.fr/mobile/beer/altstore.json` uniquement |
 | Erreur 2005 à l’install | AltServer / iTunes | Voir GUIDE-GITHUB.md |

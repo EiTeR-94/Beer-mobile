@@ -43,14 +43,41 @@ if (!app || !ver) {
   process.exit(1);
 }
 
+const BAD_URL_PATTERNS = [
+  "/releases/latest/download/",
+  "/releases/download/",
+  "raw.githubusercontent.com",
+  ":8444",
+  "192.168.",
+];
+
+function collectUrls(value, out = []) {
+  if (typeof value === "string" && /^https?:\/\//.test(value)) out.push(value);
+  else if (Array.isArray(value)) value.forEach((v) => collectUrls(v, out));
+  else if (value && typeof value === "object")
+    Object.values(value).forEach((v) => collectUrls(v, out));
+  return out;
+}
+
+const urls = collectUrls(data);
+for (const url of urls) {
+  for (const bad of BAD_URL_PATTERNS) {
+    if (url.includes(bad)) {
+      console.error(`ERREUR: URL interdite (${bad}) — ${url}`);
+      process.exit(1);
+    }
+  }
+}
+
 const url = String(ver.downloadURL || "");
 if (!url.endsWith("/PlexiBeer.ipa")) {
   console.error(`ERREUR: downloadURL inattendu — ${url}`);
   process.exit(1);
 }
 
-if (url.includes("/releases/latest/download/") || url.includes("/releases/download/")) {
-  console.error("ERREUR: downloadURL GitHub interdit (redirect AltStore) — utiliser eiter.freeboxos.fr/mobile/beer/");
+const icon = String(app.iconURL || "");
+if (!icon.endsWith("/icon-180.png")) {
+  console.error(`ERREUR: iconURL inattendu — ${icon}`);
   process.exit(1);
 }
 

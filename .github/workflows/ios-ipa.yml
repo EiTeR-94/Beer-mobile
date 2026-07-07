@@ -63,31 +63,25 @@ jobs:
           mkdir -p altstore
           cp native-ios/BeerNative/Resources/Assets.xcassets/AppIcon.appiconset/icon-180.png altstore/icon-180.png
 
-      - name: Manifest AltStore (GitHub HTTPS)
+      - name: Manifest AltStore (miroir WAN Plexi)
         run: node scripts/generate-altstore-source.js build/PlexiBeer.ipa "${{ github.run_number }}"
-
-      - name: Copier manifest dans altstore/
-        run: cp dist/altstore.json altstore/altstore.json
 
       - name: Valider manifest AltStore (JSON)
         run: |
           node scripts/validate-altstore-json.js dist/altstore.json "$(stat -f%z build/PlexiBeer.ipa)"
 
-      - name: Release GitHub (IPA + source)
+      - name: Release GitHub (IPA uniquement — source AltStore = WAN Plexi)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ios-build-${{ github.run_number }}
           name: Beer Log iOS build ${{ github.run_number }}
-          body: "Build automatique — AltStore source (sans redirect) : https://raw.githubusercontent.com/EiTeR-94/Beer-mobile/main/altstore/altstore.json"
+          body: |
+            Build automatique Beer Log iOS.
+
+            Source AltStore (copier-coller dans AltStore, une seule URL) :
+            https://eiter.freeboxos.fr/mobile/beer/altstore.json
+
+            Ne pas utiliser GitHub releases/latest ni raw.githubusercontent.com (erreur AltStore 3840).
           files: |
             build/PlexiBeer.ipa
-            dist/altstore.json
           make_latest: true
-
-      - name: Commit altstore/ (URL fixe raw.githubusercontent.com)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add altstore/
-          git diff --staged --quiet || git commit -m "chore(ios): altstore manifest build ${{ github.run_number }}"
-          git push
