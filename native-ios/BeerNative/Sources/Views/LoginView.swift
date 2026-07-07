@@ -38,6 +38,9 @@ struct LoginView: View {
                             .padding(.top, 8)
                     }
 
+                    NetworkStatusBar(status: app.networkStatus)
+                        .padding(.top, 8)
+
                     BeerPrimaryButton(title: busy ? "Connexion…" : "Se connecter", disabled: username.isEmpty || password.isEmpty, busy: busy) {
                         Task { await submit() }
                     }
@@ -82,14 +85,20 @@ struct LoginView: View {
     }
 
     private func submit() async {
-        busy = true
-        error = nil
-        defer { busy = false }
+        await MainActor.run {
+            busy = true
+            error = nil
+        }
+        defer {
+            Task { @MainActor in busy = false }
+        }
         do {
             try await app.login(username: username.trimmingCharacters(in: .whitespaces),
                                 password: password)
         } catch {
-            self.error = error.localizedDescription
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
         }
     }
 }
