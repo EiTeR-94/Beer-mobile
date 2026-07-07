@@ -17,6 +17,12 @@ enum ServerSettings {
         URL(string: "https://\(canonicalHost):8444/beer/")!
     }
 
+    /// Direct IP for local accounts on WiFi/VPN — more reliable than hairpin on public IP:8444.
+    /// TLS delegate accepts 192.168.* 
+    static var localLanBase: URL {
+        URL(string: "https://192.168.1.50:8444/beer/")!
+    }
+
     static var candidateURLs: [URL] {
         [lanApiBase, apiBase]
     }
