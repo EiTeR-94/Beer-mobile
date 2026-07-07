@@ -1,6 +1,6 @@
 {
   "name": "Plexi Homelab",
-  "subtitle": "Apps perso EiTeR homelab Freebox + Plexi",
+  "subtitle": "Apps perso EiTeR - homelab Freebox + Plexi",
   "description": "Source privee pour installer et mettre a jour les apps iOS du homelab Plexi (serveur .50, LAN/VPN). Beer Log : carnet de degustation natif, sync sur ton serveur maison. MAJ auto apres build GitHub vert.",
   "website": "https://eiter.freeboxos.fr/beer/",
   "tintColor": "#f59e0b",
@@ -13,7 +13,7 @@
       "bundleIdentifier": "fr.eiter.plexibeer",
       "developerName": "eiter",
       "subtitle": "Ton carnet de bieres sur Plexi",
-      "localizedDescription": "Beer Log, c'est ton journal de bieres sur le serveur Plexi d'EiTeR 100% natif iPhone, zero WebView. Tu scannes un code-barres, tu cherches sur Untappd, tu poses la photo du verre, tu notes avec des demi-etoiles, saveurs et houblons. Historique, galerie, liste a boire, idees cadeaux : tout est la, pense pour le quotidien entre amis. Mode hors ligne : tes degustations restent sur l'iPhone et partent au serveur des que le Wi-Fi maison ou le VPN Plexi revient. Connexion : eiter.freeboxos.fr. Admin : comptes, invitations privees, referentiels. v3.3.1 la version de reference du homelab. Fait avec soin pour Plexi, pas pour l'App Store.",
+      "localizedDescription": "Beer Log, c'est ton journal de bieres sur le serveur Plexi d'EiTeR - 100% natif iPhone, zero WebView. Tu scannes un code-barres, tu cherches sur Untappd, tu poses la photo du verre, tu notes avec des demi-etoiles, saveurs et houblons. Historique, galerie, liste a boire, idees cadeaux : tout est la, pense pour le quotidien entre amis. Mode hors ligne : tes degustations restent sur l'iPhone et partent au serveur des que le Wi-Fi maison ou le VPN Plexi revient. Connexion : eiter.freeboxos.fr. Admin : comptes, invitations privees, referentiels. v3.3.1 - la version de reference du homelab. Fait avec soin pour Plexi, pas pour l'App Store.",
       "iconURL": "https://raw.githubusercontent.com/EiTeR-94/Beer-mobile/main/altstore/icon-180.png",
       "tintColor": "#f59e0b",
       "category": "lifestyle",
@@ -28,11 +28,11 @@
       "versions": [
         {
           "version": "3.3.1",
-          "buildVersion": "47",
+          "buildVersion": "48",
           "date": "2026-07-07",
           "localizedDescription": "bugs fix",
-          "downloadURL": "https://github.com/EiTeR-94/Beer-mobile/releases/download/ios-build-47/PlexiBeer.ipa",
-          "size": 973826,
+          "downloadURL": "https://github.com/EiTeR-94/Beer-mobile/releases/download/ios-build-48/PlexiBeer.ipa",
+          "size": 973824,
           "minOSVersion": "16.0"
         }
       ]
