@@ -22,6 +22,9 @@ enum BeerAPIError: LocalizedError {
 
 final class BeerAPI {
     static let shared = BeerAPI()
+    private static let nativeClientHeader = "X-PlexiBeer-Client"
+    private static let nativeClientValue = "native-ios"
+    private static let nativeUserAgent = "PlexiBeer/3.2.5 (iPhone; native)"
 
     private let session: URLSession
     private(set) var baseURL: URL
@@ -652,6 +655,8 @@ final class BeerAPI {
             var req = URLRequest(url: try url(path))
             req.httpMethod = method
             if let contentType { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
+            req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
+            req.setValue(Self.nativeUserAgent, forHTTPHeaderField: "User-Agent")
             req.httpBody = body
             do {
                 let result = try await perform(req)

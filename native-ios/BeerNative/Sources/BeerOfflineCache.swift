@@ -18,13 +18,21 @@ final class BeerOfflineCache {
     }
 
     func save<T: Encodable>(_ value: T, name: String) {
-        guard let data = try? encoder.encode(CachedEnvelope(savedAt: Date(), payload: value)) else { return }
-        try? data.write(to: file(name), options: .atomic)
+        struct Envelope<P: Encodable>: Encodable {
+            let savedAt: Date
+            let payload: P
+        }
+        guard let data = try? encoder.encode(Envelope(savedAt: Date(), payload: value)) else { return }
+        try? data.write(to: file(name), options: Data.WritingOptions.atomic)
     }
 
     func load<T: Decodable>(_ type: T.Type, name: String) -> T? {
+        struct Envelope<P: Decodable>: Decodable {
+            let savedAt: Date
+            let payload: P
+        }
         guard let data = try? Data(contentsOf: file(name)),
-              let env = try? decoder.decode(CachedEnvelope<T>.self, from: data) else { return nil }
+              let env = try? decoder.decode(Envelope<T>.self, from: data) else { return nil }
         return env.payload
     }
 
@@ -38,11 +46,6 @@ final class BeerOfflineCache {
     private func file(_ name: String) -> URL {
         dir.appendingPathComponent("\(name).json")
     }
-}
-
-private struct CachedEnvelope<T: Codable>: Codable {
-    let savedAt: Date
-    let payload: T
 }
 
 enum CacheKey {
