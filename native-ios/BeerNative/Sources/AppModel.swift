@@ -184,7 +184,6 @@ final class AppModel: ObservableObject {
 
     func login(username: String, password: String) async throws {
         PasskeySessionStore.clear()
-        api.forceLocalConnection()  // Bouton connexion = comptes locaux : force WiFi/VPN (LAN) uniquement
         _ = try await api.login(username: username, password: password)
         let me = try await api.me()
         applySession(
@@ -206,33 +205,8 @@ final class AppModel: ObservableObject {
     func redeemInviteToken(_ token: String) async {
         isLoading = true
         defer { isLoading = false }
-        do {
-            guard PasskeyAuth.biometricsAvailable else {
-                showToast(
-                    "Face ID ou Touch ID requis pour activer l'invitation.",
-                    variant: .error,
-                    durationMs: 4800
-                )
-                return
-            }
-            let result = try await PasskeyAuth.shared.register(inviteToken: token)
-            PasskeySessionStore.save(accessToken: result.accessToken)
-            api.forceGuest5GConnection()  // FaceID invité : forcer le chemin 5G
-            let me = try await api.me()
-            applySession(
-                user: me.user ?? result.user,
-                isAdmin: false,
-                isInvite: true,
-                loggedIn: true
-            )
-            networkStatus = .online
-            hideToast()
-            let label = result.label ?? user ?? "invité"
-            showToast("Bienvenue \(label) !", variant: .success, durationMs: 3600)
-            await syncPending()
-        } catch let err {
-            showToast(err.localizedDescription, variant: .error, durationMs: 4800)
-        }
+        showToast("Les invitations invités (5G sans VPN) sont retirées pour le moment. Utilise un compte local en WiFi/VPN.", variant: .error, durationMs: 6000)
+        // Guest invite activation disabled as requested. Local accounts only for now.
     }
 
     private func fetchMeRefreshingPasskeyIfNeeded() async throws -> MeResponse {
