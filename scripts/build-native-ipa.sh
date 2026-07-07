@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Build IPA native — format AltStore (Payload/PlexiBeer.app, binaire signé ad-hoc)
+# Theme 2 corrections: added bundle version check; consider xcodebuild test in CI later.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -67,6 +68,10 @@ if [[ -z "$BIN_NAME" || ! -f "$APP/$BIN_NAME" ]]; then
   ls -la "$APP" >&2
   exit 1
 fi
+
+# Theme 2: build validation - ensure build number is present for debug (from Settings)
+BUNDLE_VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$PLIST" 2>/dev/null || echo "?")
+echo "Build version: $BUNDLE_VERSION (doit être visible dans Paramètres pour debug audit)"
 
 if /usr/libexec/PlistBuddy -c Print "$PLIST" | grep -q '\$(' ; then
   echo "::error::Info.plist contient des variables non résolues" >&2

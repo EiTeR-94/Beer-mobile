@@ -2,6 +2,7 @@ import Foundation
 import Network
 import Security
 import UIKit
+import LocalAuthentication  // Theme 4: biometric support for sensitive actions
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -36,9 +37,16 @@ final class AppModel: ObservableObject {
     let cache = BeerOfflineCache.shared
 
     var pendingItems: [PendingCheckin] { offline.items }
+    var pendingDeletes: [Int] { offline.pendingDeletes }  // Theme 5
 
     func removePending(id: UUID) {
         offline.remove(id: id)
+        objectWillChange.send()
+    }
+
+    func removePendingDelete(id: Int) {
+        offline.removePendingDelete(checkinId: id)
+        objectWillChange.send()
     }
 
     // Haptics for actions
@@ -54,7 +62,22 @@ final class AppModel: ObservableObject {
         UIImpactFeedbackGenerator(style: style).impactOccurred()
     }
 
-    var pendingCount: Int { offline.items.count }
+    // Theme 4: biometric prompt for critical actions (delete etc)
+    func authenticateWithBiometrics(reason: String, completion: @escaping (Bool) -> Void) {
+        let context = LAContext()
+        var error: NSError?
+        if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) {
+            context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, _ in
+                DispatchQueue.main.async {
+                    completion(success)
+                }
+            }
+        } else {
+            completion(true) // fallback allow if no biometrics available (dev or setting)
+        }
+    }
+
+    var pendingCount: Int { offline.items.count + offline.pendingDeletes.count }  // include deletes for badge
     var isOfflineMode: Bool { networkStatus != .online }
 
     private let monitor = NWPathMonitor()
@@ -193,6 +216,8 @@ final class AppModel: ObservableObject {
                 loggedIn: me.user != nil
             )
             if isLoggedIn { await syncPending() }
+            cache.prune(maxFiles: 12)  // Theme 5: keep cache small
+            await prewarmRecentPhotos()
         } catch BeerAPIError.forbidden {
             await clearSessionState()
             BeerSessionStore.clear()
@@ -425,15 +450,28 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // Theme 5: pre-download photos of last N at bootstrap for snappy gallery offline
+    private func prewarmRecentPhotos() async {
+        guard networkStatus == .online, isLoggedIn else { return }
+        do {
+            let recent = try await api.checkins(limit: 8, offset: 0)
+            prewarmPhotos(recent)
+        } catch {
+            // ignore, best effort
+        }
+    }
+
     func syncPending() async {
         guard isLoggedIn, isOnline, !syncInProgress else { return }
-        guard !offline.items.isEmpty else { return }
+        let hasWork = !offline.items.isEmpty || !offline.pendingDeletes.isEmpty
+        guard hasWork else { return }
         syncInProgress = true
         defer { syncInProgress = false }
         let n = await offline.flush(using: api)
         if n > 0 {
-            showToast("\(n) dégustation(s) synchronisée(s)", variant: .success)
+            showToast("\(n) action(s) synchronisée(s)", variant: .success)
             hapticSuccess()
+            objectWillChange.send()
         }
     }
 
@@ -524,8 +562,8 @@ enum KeychainStore {
     private static let service = "fr.eiter.plexibeer"
     private static let account = "username"
 
-    // Non-sensitive identifier stored in Keychain for convenience.
-    // The real secret (passkey access token) uses stronger protection in PasskeySessionStore.
+    // Theme 4: hardened - username also AfterFirstUnlockThisDeviceOnly (consistent).
+    // Real secrets (passkey tokens) use same in PasskeySessionStore.
     static var username: String? {
         get {
             let query: [String: Any] = [

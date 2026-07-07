@@ -17,9 +17,10 @@ final class HomelabTLSDelegate: NSObject, URLSessionDelegate {
     static let shared = HomelabTLSDelegate()
 
     // Current SPKI SHA256 hash of the leaf cert public key for eiter.freeboxos.fr
-    // Update after cert renewal if pinning starts failing.
+    // Theme 3: added backup pin slot (for LE intermediate/renewal). Populate with real backup when known.
     private let pinnedSPKIHashes: Set<String> = [
-        "QfgyToNrrLTsFusj/VsUM9hl4l+EUw2FstVeDDV3HCM="
+        "QfgyToNrrLTsFusj/VsUM9hl4l+EUw2FstVeDDV3HCM=",
+        // "BACKUP_PIN_HERE="   // e.g. next leaf or intermediate SPKI base64
     ]
 
     func urlSession(

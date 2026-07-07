@@ -49,17 +49,23 @@ struct HistorySheetView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 40)
                 } else if items.isEmpty {
+                    let hasFilters = !filterStyle.isEmpty || filterRating > 0 || !filterPeriod.isEmpty
                     BeerEmptyState(
-                        icon: "🍺",
-                        title: "Aucune dégustation",
-                        subtitle: "Note ta première bière depuis l'accueil."
+                        icon: hasFilters ? "🔍" : "🍺",
+                        title: hasFilters ? "Aucun résultat" : "Aucune dégustation",
+                        subtitle: hasFilters ? "Ajuste les filtres ou réinitialise." : "Note ta première bière depuis l'accueil."
                     )
                 } else {
                     LazyVStack(spacing: 11) {
                         ForEach(items) { item in
                             historyCard(item)
+                        }
+                        // Dedicated sentinel trigger (Theme 6: pure infinite, avoid race on every cell)
+                        if hasMore {
+                            Color.clear
+                                .frame(height: 1)
                                 .onAppear {
-                                    if item.id == items.last?.id, hasMore, !loading {
+                                    if !loading {
                                         Task { await load(append: true) }
                                     }
                                 }
@@ -207,7 +213,11 @@ struct HistorySheetView: View {
                 }
                 BeerCompactButton(title: "Modifier") { editing = item }
                 BeerCompactButton(title: "Supprimer", destructive: true) {
-                    Task { await delete(item) }
+                    app.authenticateWithBiometrics(reason: "Confirmer la suppression de la dégustation") { success in
+                        if success {
+                            Task { await delete(item) }
+                        }
+                    }
                 }
             }
         }
@@ -259,7 +269,9 @@ struct HistorySheetView: View {
                 offset: append ? offset : 0
             )
             if append {
-                items.append(contentsOf: batch)
+                let existingIds = Set(items.map { $0.id })
+                let newItems = batch.filter { !existingIds.contains($0.id) }
+                items.append(contentsOf: newItems)
             } else {
                 items = batch
                 app.cache.save(batch, name: CacheKey.historyCheckins)
@@ -278,20 +290,34 @@ struct HistorySheetView: View {
     }
 
     private func delete(_ item: CheckinItem) async {
+        let shouldQueue = app.networkStatus != .online || !app.isOnline
+        if shouldQueue {
+            app.offline.enqueueDelete(checkinId: item.id)
+            items.removeAll { $0.id == item.id }
+            app.showToast("Suppression en attente (hors ligne)", variant: .info)
+            app.hapticImpact()
+            // local stats adjust
+            if var s = stats {
+                stats = HistoryStats(total: max(0, s.total - 1), avgRating: s.avgRating, topStyles: s.topStyles, last: s.last)
+            }
+            app.objectWillChange.send()  // ensure header pending badge updates live
+            return
+        }
         do {
             try await app.api.deleteCheckin(id: item.id)
             items.removeAll { $0.id == item.id }
-            // refresh stats so total decreases
+            // refresh stats so total decreases (Theme 5 invalidation)
             if let live = try? await app.api.stats() {
                 stats = live
                 app.cache.save(live, name: CacheKey.historyStats)
             } else if var s = stats {
-                // fallback decrement
                 stats = HistoryStats(total: max(0, s.total - 1), avgRating: s.avgRating, topStyles: s.topStyles, last: s.last)
             }
+            // Theme 5: invalidate relevant cache entries
+            app.cache.remove(name: CacheKey.historyCheckins)
+            app.cache.prune()
             app.showToast("Dégustation supprimée", variant: .success)
             app.hapticSuccess()
-            // also refresh gallery if needed, but since separate, user can reload
         } catch let err {
             error = err.localizedDescription
             app.showToast(err.localizedDescription, variant: .error)

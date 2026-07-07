@@ -48,6 +48,25 @@ final class BeerOfflineCache {
         return env.savedAt
     }
 
+    // Theme 5: explicit invalidation on delete etc.
+    func remove(name: String) {
+        try? FileManager.default.removeItem(at: file(name))
+    }
+
+    // Theme 5: basic size limit / prune old snapshots (call opportunistically)
+    func prune(maxFiles: Int = 20) {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+        let sorted = files.sorted { (a, b) in
+            let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return da > db
+        }
+        for f in sorted.dropFirst(maxFiles) {
+            try? fm.removeItem(at: f)
+        }
+    }
+
     private func file(_ name: String) -> URL {
         dir.appendingPathComponent("\(name).json")
     }

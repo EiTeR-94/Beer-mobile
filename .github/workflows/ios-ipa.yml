@@ -48,6 +48,7 @@ jobs:
         run: |
           chmod +x scripts/build-native-ipa.sh
           scripts/build-native-ipa.sh
+      # Theme 2: future - add `xcodebuild test` step + unit tests for Models/API (mock). Currently no tests wired.
 
       - name: Vérifier IPA AltStore
         run: |

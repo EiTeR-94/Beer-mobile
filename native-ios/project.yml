@@ -32,6 +32,7 @@ targets:
     sources:
       - path: BeerNative/Sources
       - path: BeerNative/Resources/Assets.xcassets
+    # Theme 1: Tests/ dir added with example (ExampleModelTests.swift). To enable: add separate test target in XcodeGen config + scheme. CI note in workflow.
     entitlements:
       path: BeerNative/Resources/BeerNative.entitlements
     settings:

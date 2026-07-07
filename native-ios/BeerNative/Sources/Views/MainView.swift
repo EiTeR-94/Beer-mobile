@@ -148,30 +148,55 @@ struct PendingSheetView: View {
     var body: some View {
         NavigationView {
             List {
-                if app.pendingItems.isEmpty {
-                    Text("Aucune dégustation en attente.")
-                        .foregroundStyle(Theme.muted)
-                } else {
-                    ForEach(app.pendingItems) { pending in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(pending.beerName)
-                                .font(.headline)
-                            Text("\(pending.brewery) · \(pending.style) · ★\(String(format: "%.1f", pending.rating))")
-                                .font(.subheadline)
-                                .foregroundStyle(Theme.muted)
-                            if !pending.comment.isEmpty {
-                                Text(pending.comment)
-                                    .font(.caption)
+                Section("Créations en attente") {
+                    if app.pendingItems.isEmpty {
+                        Text("Aucune dégustation en attente.")
+                            .foregroundStyle(Theme.muted)
+                    } else {
+                        ForEach(app.pendingItems) { pending in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(pending.beerName)
+                                    .font(.headline)
+                                Text("\(pending.brewery) · \(pending.style) · ★\(String(format: "%.1f", pending.rating))")
+                                    .font(.subheadline)
+                                    .foregroundStyle(Theme.muted)
+                                if !pending.comment.isEmpty {
+                                    Text(pending.comment)
+                                        .font(.caption)
+                                }
+                                Text(pending.createdAt.formatted(date: .abbreviated, time: .omitted))
+                                    .font(.caption2)
+                                    .foregroundStyle(Theme.muted)
                             }
-                            Text(pending.createdAt.formatted(date: .abbreviated, time: .omitted))
-                                .font(.caption2)
-                                .foregroundStyle(Theme.muted)
+                            .swipeActions {
+                                Button(role: .destructive) {
+                                    app.removePending(id: pending.id)
+                                } label: {
+                                    Label("Supprimer", systemImage: "trash")
+                                }
+                            }
                         }
-                        .swipeActions {
-                            Button(role: .destructive) {
-                                app.removePending(id: pending.id)
-                            } label: {
-                                Label("Supprimer", systemImage: "trash")
+                    }
+                }
+                Section("Suppressions en attente") {
+                    if app.pendingDeletes.isEmpty {
+                        Text("Aucune suppression en attente.")
+                            .foregroundStyle(Theme.muted)
+                    } else {
+                        ForEach(app.pendingDeletes, id: \.self) { delId in
+                            HStack {
+                                Text("Suppression #\(delId)")
+                                Spacer()
+                                Text("en file")
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.muted)
+                            }
+                            .swipeActions {
+                                Button(role: .destructive) {
+                                    app.removePendingDelete(id: delId)
+                                } label: {
+                                    Label("Annuler", systemImage: "trash")
+                                }
                             }
                         }
                     }
@@ -253,7 +278,8 @@ struct SettingsSheetView: View {
                     }
                     Button("Vider le cache offline") {
                         app.cache.clearAll()
-                        diagnosticResult = "Cache vidé."
+                        app.cache.prune()
+                        diagnosticResult = "Cache vidé + élagué."
                     }
                 }
 
@@ -273,6 +299,21 @@ struct SettingsSheetView: View {
                         }
                     }
                     Text("Version serveur: \(app.serverVersion.isEmpty ? "inconnue" : app.serverVersion)")
+                }
+
+                Section("Application (Theme 2)") {
+                    let marketing = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+                    let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+                    HStack {
+                        Text("Version")
+                        Spacer()
+                        Text("\(marketing) (\(build))")
+                            .font(.caption)
+                            .foregroundStyle(Theme.muted)
+                    }
+                    Text("Build exposé pour debug (corr. audit)")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.muted)
                 }
             }
             .navigationTitle("Paramètres & Diagnostic")

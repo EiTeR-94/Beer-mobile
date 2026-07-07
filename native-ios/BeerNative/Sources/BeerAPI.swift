@@ -589,10 +589,13 @@ final class BeerAPI {
             throw BeerAPIError.invalidURL
         }
         var req = URLRequest(url: resolved)
-        let (data, http, _) = try await performTransport(req)
-        try throwIfUnauthorized(http.statusCode)
-        if http.statusCode != 200 { throw BeerAPIError.server("Fichier HTTP \(http.statusCode)") }
-        return data
+        // Theme 3: retry with backoff for photo downloads (critical for gallery)
+        return try await withRetry(maxAttempts: 3, baseDelayMs: 400) {
+            let (data, http, _) = try await self.performTransport(req)
+            try self.throwIfUnauthorized(http.statusCode)
+            if http.statusCode != 200 { throw BeerAPIError.server("Fichier HTTP \(http.statusCode)") }
+            return data
+        }
     }
 
     func untappdSearch(query: String) async throws -> UntappdSearchResponse {
@@ -1046,5 +1049,23 @@ final class BeerAPI {
         }
         body.append("--\(boundary)--\(nl)".data(using: .utf8)!)
         return body
+    }
+
+    // Theme 3: exponential backoff retry for critical ops (photos, etc). LAN preferred.
+    private func withRetry<T>(maxAttempts: Int = 3, baseDelayMs: UInt64 = 300, _ op: () async throws -> T) async throws -> T {
+        var attempt = 0
+        var lastErr: Error?
+        while attempt < maxAttempts {
+            do {
+                return try await op()
+            } catch {
+                lastErr = error
+                attempt += 1
+                if attempt >= maxAttempts { break }
+                let delay = baseDelayMs * UInt64(1 << (attempt - 1))   // 300, 600, 1200...
+                try? await Task.sleep(nanoseconds: delay * 1_000_000)
+            }
+        }
+        throw lastErr ?? BeerAPIError.network(NSError(domain: "retry", code: -1))
     }
 }

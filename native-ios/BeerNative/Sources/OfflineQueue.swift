@@ -3,14 +3,18 @@ import Foundation
 @MainActor
 final class OfflineQueue: ObservableObject {
     @Published private(set) var items: [PendingCheckin] = []
+    @Published private(set) var pendingDeletes: [Int] = []  // Theme 5: support offline deletes
 
     private let fileURL: URL
+    private let deletesFileURL: URL
 
     init() {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         fileURL = dir.appendingPathComponent("pending-checkins.json")
+        deletesFileURL = dir.appendingPathComponent("pending-deletes.json")
         load()
+        loadDeletes()
     }
 
     func load() {
@@ -19,46 +23,38 @@ final class OfflineQueue: ObservableObject {
             items = decoded
             return
         }
-        struct Legacy: Decodable {
-            let id: UUID
-            let createdAt: Date
-            var barcode: String
-            var beerName: String
-            var brewery: String
-            var style: String
-            var abv: String
-            var summary: String
-            var rating: Double
-            var comment: String
-            var untappdBid: String
-            var force: Bool
-        }
-        if let legacy = try? JSONDecoder().decode([Legacy].self, from: data) {
-            items = legacy.map {
-                PendingCheckin(
-                    id: $0.id,
-                    createdAt: $0.createdAt,
-                    barcode: $0.barcode,
-                    beerName: $0.beerName,
-                    brewery: $0.brewery,
-                    style: $0.style,
-                    abv: $0.abv,
-                    summary: $0.summary,
-                    rating: $0.rating,
-                    flavors: [],
-                    hops: [],
-                    comment: $0.comment,
-                    untappdBid: $0.untappdBid,
-                    force: $0.force,
-                    photoJPEGBase64: nil
-                )
-            }
-        }
+        // Legacy decoder removed (Theme 1: clean legacy code)
+        items = []
     }
 
     private func persist() {
         guard let data = try? JSONEncoder().encode(items) else { return }
         try? data.write(to: fileURL, options: .atomic)
+    }
+
+    // Theme 5: deletes queue
+    func enqueueDelete(checkinId: Int) {
+        if !pendingDeletes.contains(checkinId) {
+            pendingDeletes.append(checkinId)
+            persistDeletes()
+        }
+    }
+
+    func removePendingDelete(checkinId: Int) {
+        pendingDeletes.removeAll { $0 == checkinId }
+        persistDeletes()
+    }
+
+    private func persistDeletes() {
+        guard let data = try? JSONEncoder().encode(pendingDeletes) else { return }
+        try? data.write(to: deletesFileURL, options: .atomic)
+    }
+
+    private func loadDeletes() {
+        guard let data = try? Data(contentsOf: deletesFileURL) else { return }
+        if let decoded = try? JSONDecoder().decode([Int].self, from: data) {
+            pendingDeletes = decoded
+        }
     }
 
     func hasSimilar(_ item: PendingCheckin) -> Bool {
@@ -107,6 +103,19 @@ final class OfflineQueue: ObservableObject {
                     remove(id: item.id)
                     synced += 1
                 }
+            } catch {
+                break
+            }
+        }
+
+        // Theme 5: flush pending deletes
+        let deleteSnapshot = pendingDeletes
+        for id in deleteSnapshot {
+            guard pendingDeletes.contains(id) else { continue }
+            do {
+                try await api.deleteCheckin(id: id)
+                removePendingDelete(checkinId: id)
+                synced += 1
             } catch {
                 break
             }
