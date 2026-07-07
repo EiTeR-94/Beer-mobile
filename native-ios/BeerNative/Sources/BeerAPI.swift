@@ -111,7 +111,7 @@ final class BeerAPI {
                     return lan.absoluteString
                 }
             } catch {
-                throw BeerAPIError.server("Accès refusé — Wi‑Fi maison ou VPN Plexi requis")
+                return nil
             }
             return nil
         }
