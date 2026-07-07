@@ -14,12 +14,13 @@ enum ServerSettings {
 
     /// Direct LAN IP for local accounts (WiFi/VPN) — avoids DNS/hairpin issues.
     /// Uses 192.168.1.50:8444, TLS delegate accepts it.
+    /// Falls back to FQDN (with forced IPv4 on :443) if direct IP unreachable.
     static var lanApiBase: URL {
         URL(string: "https://192.168.1.50:8444/beer/")!
     }
 
     static var candidateURLs: [URL] {
-        [lanApiBase]
+        [lanApiBase, apiBase]
     }
 
     static var passkeyBaseURLs: [URL] {

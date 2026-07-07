@@ -96,7 +96,7 @@ final class BeerAPI {
         if shouldUsePasskeyBearer {
             return await discoverGuestEndpoint()
         }
-        // Local accounts: only LAN IP endpoint (main accounts forbidden on WAN / 443)
+        // Local accounts: LAN IP first, fallback to FQDN (IPv4 forced) for WiFi/VPN reachability issues.
         for candidate in ServerSettings.candidateURLs {
             baseURL = Self.canonicalBase(candidate)
             do {
@@ -862,7 +862,7 @@ final class BeerAPI {
         if shouldUsePasskeyBearer {
             return try await wanRequest(path: path, method: method, body: body, contentType: contentType)
         }
-        // Local accounts: LAN IP only (WiFi/VPN). Main accounts have no WAN fallback.
+        // Local accounts: LAN IP first (WiFi/VPN), fallback to FQDN with IPv4 force if needed.
         var lastError: Error?
         for candidate in ServerSettings.candidateURLs {
             baseURL = Self.canonicalBase(candidate)
