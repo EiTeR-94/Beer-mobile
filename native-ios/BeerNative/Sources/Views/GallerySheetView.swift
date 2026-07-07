@@ -32,6 +32,23 @@ struct GallerySheetView: View {
                     Text(errorMessage).font(.footnote).foregroundStyle(Theme.muted)
                 }
 
+                HStack {
+                    Text("\(withPhotos.count) photos")
+                        .font(.caption)
+                        .foregroundStyle(Theme.muted)
+                    Spacer()
+                    if !filterStyle.isEmpty || filterRating > 0 || !filterPeriod.isEmpty {
+                        Button("Réinitialiser filtres") {
+                            filterStyle = ""
+                            filterRating = 0
+                            filterPeriod = ""
+                        }
+                        .font(.caption)
+                        .tint(Theme.accent)
+                    }
+                }
+                .padding(.horizontal, 4)
+
                 if loading && withPhotos.isEmpty {
                     ProgressView("Chargement…")
                         .tint(Theme.accent)
@@ -99,18 +116,23 @@ struct GallerySheetView: View {
 
         var all: [CheckinItem] = []
         var failed = false
-        for off in stride(from: 0, to: 150, by: 50) {
+        var offset = 0
+        let pageSize = 50
+        let maxFetch = 1000 // safety cap
+
+        while offset < maxFetch {
             do {
                 let batch = try await app.api.checkins(
                     q: "",
                     style: filterStyle,
                     minRating: filterRating,
                     period: filterPeriod,
-                    limit: 50,
-                    offset: off
+                    limit: pageSize,
+                    offset: offset
                 )
                 all.append(contentsOf: batch)
-                if batch.count < 50 { break }
+                if batch.count < pageSize { break }
+                offset += pageSize
             } catch let err {
                 failed = true
                 if let cached = app.cache.load([CheckinItem].self, name: CacheKey.historyCheckins), !cached.isEmpty {
