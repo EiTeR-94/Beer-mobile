@@ -113,8 +113,8 @@ struct BeerWizardView: View {
                         app.showToast(
                             "Code-barres lu ✓",
                             variant: .success,
-                            label: "Scan",
                             detail: code,
+                            label: "Scan",
                             durationMs: 2400
                         )
                         Task { await lookupEAN(code) }
@@ -423,8 +423,8 @@ struct BeerWizardView: View {
                 app.showToast(
                     "Code-barres lu ✓",
                     variant: .success,
-                    label: "Scan photo",
                     detail: digits.isEmpty ? nil : digits,
+                    label: "Scan photo",
                     durationMs: 2400
                 )
             } else {
