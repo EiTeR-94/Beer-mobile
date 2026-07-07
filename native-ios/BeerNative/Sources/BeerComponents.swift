@@ -53,7 +53,8 @@ struct BeerStepNav: View {
             BeerStepButton(title: "3 Note", index: 3, current: $step)
         }
         .padding(.horizontal, 16)
-        .padding(.bottom, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 16)
         .background(Theme.bg)
         .overlay(alignment: .top) {
             Rectangle().fill(Theme.border).frame(height: 1)
@@ -68,12 +69,13 @@ struct BeerStepButton: View {
 
     var body: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) { current = index }
+            withAnimation(.easeInOut(duration: 0.15)) { current = index }
         } label: {
             Text(title)
-                .font(.system(size: 12, weight: index == current ? .semibold : .regular))
+                .font(.system(size: Theme.Font.step, weight: index == current ? .semibold : .regular))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
+                .padding(.vertical, 7)
+                .padding(.horizontal, 5)
                 .background(index == current ? AnyShapeStyle(Theme.primaryGradient) : AnyShapeStyle(Theme.card))
                 .foregroundStyle(index == current ? Theme.btnPrimaryText : Theme.muted)
                 .overlay(Capsule().stroke(index == current ? Color.clear : Theme.border))
@@ -94,17 +96,19 @@ struct BeerPrimaryButton: View {
         Button(action: action) {
             HStack {
                 if busy { ProgressView().tint(Theme.btnPrimaryText) }
-                Text(title).fontWeight(.semibold)
+                Text(title)
+                    .font(.system(size: Theme.Font.btn, weight: .semibold))
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+            .padding(.vertical, 13)
+            .padding(.horizontal, 16)
             .background(Theme.primaryGradient)
             .foregroundStyle(Theme.btnPrimaryText)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .beerShadow(radius: 8, y: 3)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.btn))
         }
         .disabled(disabled || busy)
-        .opacity(disabled || busy ? 0.55 : 1)
+        .opacity(disabled || busy ? 0.45 : 1)
+        .padding(.top, 10)
     }
 }
 
@@ -115,14 +119,16 @@ struct BeerSecondaryButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .fontWeight(.semibold)
+                .font(.system(size: Theme.Font.btn, weight: .semibold))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                .padding(.vertical, 13)
+                .padding(.horizontal, 16)
                 .background(Theme.card)
                 .foregroundStyle(Theme.text)
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.border))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.btn).stroke(Theme.border))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.btn))
         }
+        .padding(.top, 10)
     }
 }
 
@@ -138,12 +144,12 @@ struct BeerGhostButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 13, weight: .medium))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .font(.system(size: Theme.Font.ghost, weight: .semibold))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
                 .background(Color.clear)
                 .foregroundStyle(Theme.text)
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.btn).stroke(Theme.border))
         }
     }
 }
@@ -158,7 +164,7 @@ struct BeerField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
-                .font(.system(size: 13))
+                .font(.system(size: Theme.Font.field))
                 .foregroundStyle(Theme.muted)
             Group {
                 if secure {
@@ -183,7 +189,7 @@ struct BeerLead: View {
     let text: String
     var body: some View {
         Text(text)
-            .font(.system(size: 15))
+            .font(.system(size: Theme.Font.lead))
             .foregroundStyle(Theme.muted)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -417,8 +423,8 @@ struct FlavorTagGrid: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Theme.text)
+                .font(.system(size: Theme.Font.tagTitle))
+                .foregroundStyle(Theme.muted)
             FlowLayout(spacing: 6) {
                 ForEach(tags, id: \.self) { tag in
                     let on = selected.contains(tag)
@@ -427,11 +433,11 @@ struct FlavorTagGrid: View {
                         else if selected.count < maxCount { selected.insert(tag) }
                     } label: {
                         Text(tag)
-                            .font(.system(size: 13))
-                            .padding(.horizontal, 10)
+                            .font(.system(size: Theme.Font.tag))
+                            .padding(.horizontal, 12)
                             .padding(.vertical, 6)
-                            .background(on ? Theme.accent.opacity(0.25) : Theme.bg)
-                            .foregroundStyle(on ? Theme.accent : Theme.muted)
+                            .background(on ? Theme.accent.opacity(0.2) : Theme.card)
+                            .foregroundStyle(on ? Theme.accent : Theme.text)
                             .overlay(Capsule().stroke(on ? Theme.accent : Theme.border))
                             .clipShape(Capsule())
                     }
@@ -624,19 +630,24 @@ struct InviteHelpBar: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Text("**Conseil** — garde Beer Log installé et évite de vider ses données dans les réglages iPhone : c'est ce qui maintient ta connexion.")
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.muted)
+            (
+                Text("Conseil").fontWeight(.semibold).foregroundStyle(Theme.accent)
+                + Text(" — garde Beer Log installé sur ton écran d'accueil et évite de vider ses données dans les réglages du téléphone : c'est ce qui maintient ta connexion.")
+                    .foregroundStyle(Theme.text)
+            )
+            .font(.system(size: 12.8))
+            .fixedSize(horizontal: false, vertical: true)
             Button(action: onDismiss) {
                 Text("×")
                     .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(Theme.muted)
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, 2)
             }
         }
-        .padding(10)
-        .background(Theme.accent.opacity(0.1))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.accent.opacity(0.22)))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(Color(hex: 0xc9a227).opacity(0.1))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(hex: 0xc9a227).opacity(0.2)))
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }

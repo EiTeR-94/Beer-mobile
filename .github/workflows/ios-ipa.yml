@@ -55,7 +55,7 @@ jobs:
           BIN="$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$APP/Info.plist")"
           test -f "$APP/$BIN"
           file "$APP/$BIN" | grep -E "Mach-O.*arm64"
-          test -n "$(find build/Payload -name '*.app' -type d | head -1)"
+          ! find build/Payload -name "index.html" | grep -q .
 
       - name: Icône AltStore
         run: |

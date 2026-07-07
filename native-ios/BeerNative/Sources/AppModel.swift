@@ -23,6 +23,7 @@ final class AppModel: ObservableObject {
     private var toastTask: Task<Void, Never>?
 
     init() {
+        api.setBaseURL(ServerSettings.apiBase)
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in
                 let online = path.status == .satisfied

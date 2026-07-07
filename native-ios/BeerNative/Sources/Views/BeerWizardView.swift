@@ -18,6 +18,7 @@ struct BeerWizardView: View {
     @State private var untappdResults: [UntappdHit] = []
     @State private var untappdError: String?
     @State private var showManual = false
+    @State private var showEANManual = false
     @State private var manualName = ""
     @State private var manualBrewery = ""
     @State private var styleOptions: [StyleOption] = []
@@ -93,64 +94,48 @@ struct BeerWizardView: View {
         Group {
             BeerLead(text: "Scan EAN optionnel — ou cherche directement sur Untappd.")
 
-            ZStack(alignment: .bottom) {
-                BarcodeScannerView { code in
-                    scannedCode = code
-                    manualEAN = code
-                    Task { await lookupEAN(code) }
+            VStack(spacing: 0) {
+                ZStack(alignment: .bottom) {
+                    BarcodeScannerView { code in
+                        scannedCode = code
+                        manualEAN = code
+                        Task { await lookupEAN(code) }
+                    }
+                    .frame(height: min((UIScreen.main.bounds.width - 32) * 0.75, UIScreen.main.bounds.height * 0.48, 320))
+                    .background(Theme.photoBg)
+                    .overlay {
+                        ScanViewfinderOverlay()
+                    }
+
+                    PhotosPicker(selection: $scanPhotoItem, matching: .images) {
+                        Text("Prendre photo")
+                            .font(.system(size: Theme.Font.ghost, weight: .semibold))
+                            .foregroundStyle(Theme.text)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(Theme.card.opacity(0.92))
+                            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.btn).stroke(Theme.border))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.btn))
+                    }
+                    .padding(.bottom, 14)
                 }
-                .frame(height: min(UIScreen.main.bounds.width * 0.75, 320))
-                .background(Theme.photoBg)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
-                .overlay {
-                    ScanViewfinderOverlay()
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                }
                 .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.border))
-
-                Text(scanStatus)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(.black.opacity(0.65))
-                    .clipShape(Capsule())
-                    .padding(12)
+                .background(Theme.card)
             }
 
-            PhotosPicker(selection: $scanPhotoItem, matching: .images) {
-                Text("📷 Prendre photo du code-barres")
-                    .font(.system(size: 14, weight: .medium))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Theme.card)
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
-            }
-
-            DisclosureGroup("Code illisible ? Saisie EAN à la main", isExpanded: .constant(true)) {
-                HStack {
-                    TextField("ex. 5411680001111", text: $manualEAN)
-                        .keyboardType(.numberPad)
-                        .padding(12)
-                        .background(Theme.card)
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .foregroundStyle(Theme.text)
-                    Button("Identifier par EAN") { Task { await lookupEAN(manualEAN) } }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Theme.accent)
-                }
-            }
-            .font(.system(size: 13))
-            .foregroundStyle(Theme.muted)
-            .tint(Theme.accent)
+            Text(scanStatus)
+                .font(.system(size: Theme.Font.lead * 0.94))
+                .foregroundStyle(Theme.muted)
+                .frame(maxWidth: .infinity)
+                .multilineTextAlignment(.center)
 
             VStack(alignment: .leading, spacing: 10) {
                 Text("Chercher sur Untappd")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: Theme.Font.tagTitle, weight: .semibold))
                     .foregroundStyle(Theme.text)
-                Text("Top 5 résultats — utilise Brasserie + Nom pour affiner.")
-                    .font(.system(size: 13))
+                Text("Top 5 résultats seulement (limite Untappd dans le HTML). Utilise Brasserie + Nom pour faire apparaître ta bière précise dans ces 5.")
+                    .font(.system(size: Theme.Font.lead * 0.94))
                     .foregroundStyle(Theme.muted)
                 BeerField(label: "Brasserie (optionnel)", text: $untappdBrewery, placeholder: "ex. Les Intenables")
                 BeerField(label: "Nom de la bière", text: $untappdName, placeholder: "ex. Mama Whipa")
@@ -181,35 +166,44 @@ struct BeerWizardView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                     }
                 }
+
+                DisclosureGroup("Saisie manuelle (secours)", isExpanded: $showManual) {
+                    BeerField(label: "Nom de la bière", text: $manualName, placeholder: "ex. Mama Whipa")
+                    BeerField(label: "Brasserie", text: $manualBrewery, placeholder: "ex. Les Intenables")
+                    Picker("Style", selection: $manualStyle) {
+                        Text("Choisir…").tag("")
+                        ForEach(styleOptions.filter { !$0.value.isEmpty }) { s in
+                            Text(s.label).tag(s.value)
+                        }
+                        Text("Autre (saisir manuellement)").tag("__other__")
+                    }
+                    .pickerStyle(.menu)
+                    .tint(Theme.accent)
+                    if manualStyle == "__other__" {
+                        BeerField(label: "Style", text: $customStyle, placeholder: "Ex: Gose, Table Beer, etc.")
+                    }
+                    BeerSecondaryButton(title: "Continuer") {
+                        Task { await saveManualProduct() }
+                    }
+                }
+                .font(.system(size: Theme.Font.field))
+                .foregroundStyle(Theme.muted)
+                .tint(Theme.accent)
             }
             .beerCard()
 
-            DisclosureGroup("Saisie manuelle (secours)", isExpanded: $showManual) {
-                BeerField(label: "Nom de la bière", text: $manualName, placeholder: "ex. Mama Whipa")
-                BeerField(label: "Brasserie", text: $manualBrewery, placeholder: "ex. Les Intenables")
-                Picker("Style", selection: $manualStyle) {
-                    Text("Choisir…").tag("")
-                    ForEach(styleOptions.filter { !$0.value.isEmpty }) { s in
-                        Text(s.label).tag(s.value)
-                    }
-                    Text("Autre (saisir manuellement)").tag("__other__")
-                }
-                .pickerStyle(.menu)
-                .tint(Theme.accent)
-                if manualStyle == "__other__" {
-                    BeerField(label: "Style personnalisé", text: $customStyle, placeholder: "ex. IPA")
-                }
-                BeerPrimaryButton(title: "Continuer", disabled: manualName.count < 2) {
-                    Task { await saveManualProduct() }
+            DisclosureGroup("Code illisible ? Saisie EAN à la main", isExpanded: $showEANManual) {
+                BeerField(label: "Code EAN", text: $manualEAN, placeholder: "ex. 5411680001111", keyboard: .numberPad)
+                BeerSecondaryButton(title: "Identifier par EAN") {
+                    Task { await lookupEAN(manualEAN) }
                 }
             }
-            .font(.system(size: 13))
+            .font(.system(size: Theme.Font.field))
             .foregroundStyle(Theme.muted)
             .tint(Theme.accent)
 
             if let product, !product.beerName.isEmpty {
                 BeerPreviewCard(product: product)
-                BeerSecondaryButton(title: "Changer de bière") { clearProduct() }
                 if !app.isInvite {
                     BeerSecondaryButton(title: "+ Ajouter à la liste « À boire »") {
                         Task { await addToWishlist(product) }
@@ -255,23 +249,21 @@ struct BeerWizardView: View {
         }
     }
 
+    private var flavorTagsTitle: String {
+        guard let product,
+              !product.displayStyle.isEmpty,
+              product.displayStyle != "Unknown" else { return "Goûts" }
+        return "Goûts \(product.displayStyle)"
+    }
+
     // MARK: - Step 3
 
     private var stepRating: some View {
         Group {
-            if let product {
-                Text(product.beerName)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if !product.displayStyle.isEmpty && product.displayStyle != "Unknown" {
-                    Text("(\(product.displayStyle))")
-                        .font(.caption)
-                        .foregroundStyle(Theme.muted)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+            if let product, !product.beerName.isEmpty {
+                BeerLead(text: product.beerName)
             } else {
-                BeerLead(text: "Pas de bière identifiée — retourne à l'étape 1.")
+                BeerLead(text: "Pas de bière identifiée — retourne à l'étape 1 ou cherche sur Untappd.")
             }
 
             UntappdRatingSlider(rating: $rating)
@@ -279,28 +271,49 @@ struct BeerWizardView: View {
 
             if showFlavors {
                 if !flavorTags.isEmpty {
-                    FlavorTagGrid(title: "Goûts", tags: flavorTags, selected: $flavors, maxCount: 8)
+                    FlavorTagGrid(title: flavorTagsTitle, tags: flavorTags, selected: $flavors, maxCount: 8)
                 }
-                CustomTagInput(placeholder: "Goût perso", input: $customFlavorInput, selected: $flavors, maxCount: 8)
-                CustomTagChips(selected: $flavors, customOnly: flavors.subtracting(Set(flavorTags)))
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Goûts perso")
+                        .font(.system(size: Theme.Font.tagTitle))
+                        .foregroundStyle(Theme.muted)
+                    CustomTagInput(
+                        placeholder: "ex. pneus, sucrée, vanille fumée…",
+                        input: $customFlavorInput,
+                        selected: $flavors,
+                        maxCount: 8
+                    )
+                    CustomTagChips(selected: $flavors, customOnly: flavors.subtracting(Set(flavorTags)))
+                    Text("Libre — 8 goûts max au total")
+                        .font(.system(size: Theme.Font.lead * 0.94))
+                        .foregroundStyle(Theme.muted)
+                }
             }
             if showHops {
                 if !hopTags.isEmpty {
                     FlavorTagGrid(title: "Houblons", tags: hopTags, selected: $hops, maxCount: 6)
                 }
-                CustomTagInput(
-                    placeholder: "Houblon perso",
-                    input: $customHopInput,
-                    selected: $hops,
-                    maxCount: 6,
-                    onRegister: { name in Task { try? await app.api.addHop(name) } }
-                )
-                CustomTagChips(selected: $hops, customOnly: hops.subtracting(Set(hopTags)))
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Houblons perso")
+                        .font(.system(size: Theme.Font.tagTitle))
+                        .foregroundStyle(Theme.muted)
+                    CustomTagInput(
+                        placeholder: "ex. Citra, Mosaic, Galaxy…",
+                        input: $customHopInput,
+                        selected: $hops,
+                        maxCount: 6,
+                        onRegister: { name in Task { try? await app.api.addHop(name) } }
+                    )
+                    CustomTagChips(selected: $hops, customOnly: hops.subtracting(Set(hopTags)))
+                    Text("Max ~6 houblons")
+                        .font(.system(size: Theme.Font.lead * 0.94))
+                        .foregroundStyle(Theme.muted)
+                }
             }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Commentaire (optionnel, 120 car.)")
-                    .font(.system(size: 13))
+                    .font(.system(size: Theme.Font.field))
                     .foregroundStyle(Theme.muted)
                 TextField("Terrasse, avec elle, à refaire…", text: $comment, axis: .vertical)
                     .lineLimit(2...4)

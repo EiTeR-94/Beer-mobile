@@ -1,6 +1,27 @@
 import SwiftUI
 
 enum Theme {
+    enum Font {
+        static let h1: CGFloat = 21.6       // 1.35rem
+        static let sub: CGFloat = 12.8      // 0.8rem
+        static let pill: CGFloat = 11.5     // 0.72rem
+        static let search: CGFloat = 12.5   // 0.78rem
+        static let ghost: CGFloat = 12.8    // 0.8rem
+        static let step: CGFloat = 11.5     // 0.72rem
+        static let lead: CGFloat = 14.4     // 0.9rem
+        static let btn: CGFloat = 16        // 1rem
+        static let field: CGFloat = 13      // label
+        static let tag: CGFloat = 12.8     // 0.8rem
+        static let tagTitle: CGFloat = 13.6 // 0.85rem
+    }
+
+    enum Radius {
+        static let btn: CGFloat = 12
+        static let card: CGFloat = 14
+        static let field: CGFloat = 10
+        static let step: CGFloat = 999
+    }
+
     static let bg = Color(hex: 0x0f1419)
     static let card = Color(hex: 0x1a222c)
     static let text = Color(hex: 0xf1f5f9)
