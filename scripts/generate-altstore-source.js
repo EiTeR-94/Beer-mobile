@@ -39,10 +39,10 @@ const today = new Date().toISOString().slice(0, 10);
 
 const source = {
   name: "Plexi Homelab",
-  subtitle: "Beer Log iOS — MAJ auto LAN/VPN",
+  subtitle: "Beer Log iOS - MAJ auto LAN/VPN",
   description:
-    "Source privée Plexi. Ajoute cette URL une seule fois dans AltStore → Sources. " +
-    "Les nouvelles versions apparaissent après sync GitHub → serveur (.50).",
+    "Source privee Plexi. Ajoute cette URL une seule fois dans AltStore > Sources. " +
+    "Les nouvelles versions apparaissent apres sync GitHub vers serveur (.50).",
   website: "https://eiter.freeboxos.fr/beer/",
   tintColor: "#f59e0b",
   featuredApps: [bundleId],
@@ -53,7 +53,7 @@ const source = {
       developerName: "eiter",
       subtitle: "Journal de dégustation privé",
       localizedDescription:
-        "Beer Log iOS — même interface que la PWA (scan, Untappd, photo, note, historique). Wi‑Fi ou VPN Plexi.",
+        "Beer Log iOS - meme interface que la PWA (scan, Untappd, photo, note, historique). Wi-Fi ou VPN Plexi.",
       iconURL:
         distMode === "homelab"
           ? `${baseURL}/icon-180.png`
@@ -63,10 +63,11 @@ const source = {
       appPermissions: {
         entitlements: [],
         privacy: {
-          NSCameraUsageDescription: "Scanner les codes-barres EAN des bouteilles de bière.",
+          NSCameraUsageDescription:
+            "Scanner les codes-barres et prendre des photos de tes degustations.",
           NSLocalNetworkUsageDescription:
-            "Connexion au serveur Beer Log sur ton réseau local Plexi (192.168.1.50).",
-          NSPhotoLibraryUsageDescription: "Joindre une photo à ta dégustation Beer Log.",
+            "Connexion au serveur Beer Log sur ton reseau local Plexi (192.168.1.50).",
+          NSPhotoLibraryUsageDescription: "Joindre une photo a ta degustation Beer Log.",
         },
       },
       versions: [
@@ -74,7 +75,7 @@ const source = {
           version,
           buildVersion: build,
           date: today,
-          localizedDescription: `Build ${build} — sync automatique homelab`,
+          localizedDescription: `Build ${build} - sync automatique homelab`,
           downloadURL: `${baseURL}/${ipaName}`,
           size,
           minOSVersion: "16.0",

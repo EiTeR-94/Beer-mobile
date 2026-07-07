@@ -68,6 +68,19 @@ jobs:
       - name: Copier manifest dans altstore/
         run: cp dist/altstore.json altstore/altstore.json
 
+      - name: Valider manifest AltStore (JSON)
+        run: |
+          python3 -c "import json; json.load(open('dist/altstore.json'))"
+          python3 -c "
+          import json
+          d=json.load(open('dist/altstore.json'))
+          v=d['apps'][0]['versions'][0]
+          assert v.get('downloadURL','').endswith('.ipa') or 'PlexiBeer.ipa' in v.get('downloadURL','')
+          import os
+          assert os.path.getsize('build/PlexiBeer.ipa') == int(v['size'])
+          print('OK manifest', v['version'], v['buildVersion'], v['size'])
+          "
+
       - name: Release GitHub (IPA + source)
         uses: softprops/action-gh-release@v2
         with:

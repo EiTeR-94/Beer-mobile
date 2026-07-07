@@ -30,6 +30,7 @@ Chaque push sur `main` déclenche un build GitHub (~10 min). Ensuite AltStore pr
 |------------------|-------|-----|
 | Inconnu / pas sécurisé | Mauvaise URL ou fichier absent | URL GitHub ci-dessus, pas l’IP |
 | Impossible de télécharger | Pas de release encore | Attendre build vert sur GitHub Actions |
+| Erreur 2005 / NSCocoaErrorDomain 3840 | JSON invalide (souvent page HTML 403/404) | Source **GitHub** ci-dessus ; Wi‑Fi ou VPN si URL `:8444` ; supprimer/ré-ajouter la source |
 | Erreur 2005 à l’install | AltServer / iTunes | Voir GUIDE-GITHUB.md |
 
 ## Option LAN (plus tard, optionnel)

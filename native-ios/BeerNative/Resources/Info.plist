@@ -26,6 +26,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Scanner les codes-barres et prendre des photos de tes dégustations.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Joindre une photo à ta dégustation Beer Log.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connexion au serveur Beer Log Plexi (eiter.freeboxos.fr).</string>
 	<key>UIApplicationSceneManifest</key>
