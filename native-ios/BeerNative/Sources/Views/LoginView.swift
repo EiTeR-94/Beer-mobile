@@ -44,9 +44,11 @@ struct LoginView: View {
                     BeerPrimaryButton(title: busy ? "Connexion…" : "Se connecter", disabled: username.isEmpty || password.isEmpty, busy: busy) {
                         Task { await submit() }
                     }
-
+                    // Connexion invité : separate connection path (domain + Bearer/passkey + isInvite).
+                    // Uses exactly the same invite system as web (timers, restrictions, etc.).
+                    // Does NOT use local LAN/cookie config at all.
                     BeerPrimaryButton(
-                        title: busy ? "Activation…" : "Activer avec Face ID",
+                        title: busy ? "Connexion invité…" : "Connexion invité",
                         disabled: busy || biometricsUnavailable,
                         busy: busy
                     ) {
@@ -54,7 +56,7 @@ struct LoginView: View {
                     }
                     .padding(.top, 10)
 
-                    Text("Colle ton lien d'invitation — Face ID ou Touch ID requis.")
+                    Text("Colle ton lien d'invitation (même système que la web) — Face ID requis.")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)

@@ -120,13 +120,12 @@ struct MainView: View {
             buttons.append(HeaderButton(title: "Patch notes") { sheet = .patchnotes })
             buttons.append(HeaderButton(title: "Admin") { sheet = .admin })
         }
-        if !app.isInvite {
-            buttons.append(HeaderButton(title: "À boire") { sheet = .wishlist })
-        }
+        // For native guests (isInvite): allow full app use like locals (wishlist, gifts etc.).
+        // Restrictions (timers, no admin) are enforced backend + duration.
+        // Local connection path untouched.
+        buttons.append(HeaderButton(title: "À boire") { sheet = .wishlist })
         buttons.append(HeaderButton(title: "Historique") { sheet = .history })
-        if !app.isInvite {
-            buttons.append(HeaderButton(title: "Idées cadeaux") { sheet = .gifts })
-        }
+        buttons.append(HeaderButton(title: "Idées cadeaux") { sheet = .gifts })
         if app.pendingCount > 0 {
             buttons.append(HeaderButton(title: "En attente (\(app.pendingCount))") { sheet = .pending })
         }

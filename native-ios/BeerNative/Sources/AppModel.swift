@@ -302,8 +302,27 @@ final class AppModel: ObservableObject {
     func redeemInviteToken(_ token: String) async {
         isLoading = true
         defer { isLoading = false }
-        showToast("Les invitations invités (5G sans VPN) sont retirées pour le moment. Utilise un compte local en WiFi/VPN.", variant: .error, durationMs: 6000)
-        // Guest invite activation disabled as requested. Local accounts only for now.
+        do {
+            // Guest connection path: strictly separate from local accounts.
+            // Uses passkey registration for invite token (same as web invite system),
+            // Bearer token (PasskeySessionStore), apiBase (domain), isInvite=true.
+            // NEVER touches lanApiBase, cookies, or local LAN logic.
+            let result = try await PasskeyAuth.shared.register(inviteToken: token)
+            PasskeySessionStore.save(accessToken: result.accessToken)
+            applySession(
+                user: result.user,
+                isAdmin: false,
+                isInvite: true,
+                loggedIn: true
+            )
+            // Force guest base (domain) - separate connection
+            api.setBaseURL(ServerSettings.apiBase)
+            networkStatus = .online
+            hideToast()
+            await syncPending()
+        } catch {
+            showToast("Échec activation invitation : \(error.localizedDescription)", variant: .error)
+        }
     }
 
     private func fetchMeRefreshingPasskeyIfNeeded() async throws -> MeResponse {
