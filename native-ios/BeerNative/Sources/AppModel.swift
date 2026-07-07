@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import Security
+import UIKit
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -216,6 +217,34 @@ final class AppModel: ObservableObject {
         guard let idx = parts.firstIndex(of: "join"), idx + 1 < parts.count else { return nil }
         let token = parts[idx + 1]
         return token.isEmpty ? nil : token
+    }
+
+    static func parseJoinToken(from text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let url = URL(string: trimmed), let token = parseJoinToken(from: url) {
+            return token
+        }
+        if let range = trimmed.range(of: #"/join/([^/?#\s]+)"#, options: .regularExpression) {
+            let chunk = String(trimmed[range])
+            if let slash = chunk.range(of: "/join/") {
+                let token = String(chunk[slash.upperBound...])
+                return token.isEmpty ? nil : token
+            }
+        }
+        if trimmed.count >= 20, !trimmed.contains(" ") {
+            return trimmed
+        }
+        return nil
+    }
+
+    func redeemInviteFromClipboard() async {
+        let text = UIPasteboard.general.string ?? ""
+        guard let token = Self.parseJoinToken(from: text) else {
+            showToast("Colle d'abord le lien d'invitation (Messages ou mail).", variant: .error)
+            return
+        }
+        await redeemInviteToken(token)
     }
 
     func logout() async {

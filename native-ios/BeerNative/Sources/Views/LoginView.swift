@@ -40,6 +40,11 @@ struct LoginView: View {
                     BeerPrimaryButton(title: busy ? "Connexion…" : "Se connecter", disabled: username.isEmpty || password.isEmpty, busy: busy) {
                         Task { await submit() }
                     }
+
+                    BeerPrimaryButton(title: "Coller mon invitation", disabled: busy, busy: busy) {
+                        Task { await app.redeemInviteFromClipboard() }
+                    }
+                    .padding(.top, 10)
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 28)
