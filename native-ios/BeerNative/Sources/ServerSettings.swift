@@ -9,21 +9,17 @@ enum ServerSettings {
         URL(string: apiBaseString)!
     }
 
+    /// Comptes normaux : FQDN puis hub LAN (Wi‑Fi / VPN).
+    static var candidateURLs: [URL] {
+        var urls: [URL] = [apiBase]
+        if let lan = URL(string: "https://192.168.1.50:8444/beer/") {
+            urls.append(lan)
+        }
+        return urls
+    }
+
     static var wanApiBase: URL {
         URL(string: "https://\(wanIPv4)/beer/")!
-    }
-
-    /// Hub LAN — FQDN obligatoire (cookies domain=eiter.freeboxos.fr ; IP = session morte).
-    static var lanApiBase: URL {
-        URL(string: "https://\(canonicalHost):8444/beer/")!
-    }
-
-    /// Invités 5G : IP + token Bearer. Comptes perso : FQDN :8444 puis :443 (cookies OK).
-    static func candidateURLs(guestMode: Bool = false) -> [URL] {
-        if guestMode {
-            return [wanApiBase]
-        }
-        return [lanApiBase, apiBase]
     }
 
     static func serverOrigin(from base: URL = apiBase) -> String {
@@ -33,12 +29,7 @@ enum ServerSettings {
     static func resolveAssetURL(_ path: String?, base: URL = apiBase) -> URL? {
         guard let path, !path.isEmpty else { return nil }
         if path.hasPrefix("http") { return URL(string: path) }
-        let origin: String
-        if let host = base.host, IPv4Resolver.isIPv4(host) {
-            origin = "https://\(host)"
-        } else {
-            origin = serverOrigin(from: base)
-        }
+        let origin = serverOrigin(from: base)
         let p = path.hasPrefix("/") ? path : "/\(path)"
         return URL(string: origin + p)
     }

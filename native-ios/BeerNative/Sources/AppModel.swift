@@ -89,9 +89,7 @@ final class AppModel: ObservableObject {
             networkStatus = .offline
             return
         }
-        let guestMode = isInvite || BeerSessionStore.restore()?.isInvite == true
-        api.setGuestRouting(guestMode)
-        if await api.discoverWorkingEndpoint(guestMode: guestMode) != nil {
+        if await api.discoverWorkingEndpoint() != nil {
             networkStatus = .online
             serverVersion = (try? await api.version()) ?? serverVersion
         } else {
@@ -119,14 +117,11 @@ final class AppModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         restoreOfflineSessionIfNeeded()
-        let guestMode = isInvite || BeerSessionStore.restore()?.isInvite == true
-        if guestMode && !GuestAccessToken.isPresent {
-            await logout()
-            return
-        }
-        api.setGuestRouting(guestMode)
         await probeServerReachability()
-        if networkStatus != .online && !isLoggedIn {
+        guard networkStatus == .online else {
+            if isLoggedIn {
+                showToast("Mode hors ligne — données en cache", variant: .info, durationMs: 3200)
+            }
             return
         }
         do {
@@ -141,14 +136,13 @@ final class AppModel: ObservableObject {
                 isInvite: me.isInvite,
                 loggedIn: me.user != nil
             )
-            networkStatus = .online
             if isLoggedIn { await syncPending() }
         } catch {
             if !isLoggedIn, let saved = BeerSessionStore.restore() {
                 applySession(user: saved.user, isAdmin: saved.isAdmin, isInvite: saved.isInvite, loggedIn: true)
             }
             if isLoggedIn {
-                if networkStatus == .offline || !isOnline {
+                if networkStatus == .offline {
                     showToast("Hors ligne · \(user ?? "")", variant: .info, durationMs: 4200)
                 } else {
                     showToast("Session locale — serveur injoignable", variant: .warn, durationMs: 3600)
@@ -165,9 +159,7 @@ final class AppModel: ObservableObject {
 
     func testServer() async -> String {
         api.setBaseURL(ServerSettings.apiBase)
-        let guestMode = isInvite
-        api.setGuestRouting(guestMode)
-        if let ok = await api.discoverWorkingEndpoint(guestMode: guestMode) {
+        if let ok = await api.discoverWorkingEndpoint() {
             networkStatus = .online
             return "Serveur OK · \(ok)"
         }
@@ -176,9 +168,6 @@ final class AppModel: ObservableObject {
     }
 
     func login(username: String, password: String) async throws {
-        GuestAccessToken.clear()
-        api.setGuestRouting(false)
-        PlexiIPv4URLProtocol.isEnabled = true
         _ = try await api.login(username: username, password: password)
         let me = try await api.me()
         applySession(
@@ -200,16 +189,15 @@ final class AppModel: ObservableObject {
     func redeemInviteToken(_ token: String) async {
         isLoading = true
         defer { isLoading = false }
-        api.setGuestRouting(true)
         do {
             let res = try await api.redeemInvite(token: token)
+            let me = try await api.me()
             applySession(
-                user: res.user,
-                isAdmin: false,
-                isInvite: true,
-                loggedIn: res.user != nil
+                user: me.user ?? res.user,
+                isAdmin: me.isAdmin,
+                isInvite: me.isInvite,
+                loggedIn: me.user != nil
             )
-            api.setGuestRouting(true)
             networkStatus = .online
             hideToast()
             let label = res.label ?? user ?? "invité"

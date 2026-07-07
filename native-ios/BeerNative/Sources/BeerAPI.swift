@@ -27,36 +27,19 @@ final class BeerAPI {
     private static let nativeUserAgent = "PlexiBeer/3.3.4 (iPhone; native)"
 
     private let session: URLSession
-    private let guestSession: URLSession
     private(set) var baseURL: URL
     private(set) var activeEndpoint: String = ""
 
     init(baseURL: URL = ServerSettings.apiBase) {
         self.baseURL = Self.canonicalBase(baseURL)
-
-        let sharedCookies = HTTPCookieStorage.shared
-        func baseConfig() -> URLSessionConfiguration {
-            let config = URLSessionConfiguration.default
-            config.httpCookieStorage = sharedCookies
-            config.httpShouldSetCookies = true
-            config.httpCookieAcceptPolicy = .always
-            config.timeoutIntervalForRequest = 15
-            config.timeoutIntervalForResource = 30
-            return config
-        }
-
-        // Comptes perso : FQDN + cookies ; :443 passe par PlexiIPv4URLProtocol (IPv4 WAN)
-        let adminConfig = baseConfig()
-        adminConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
+        let config = URLSessionConfiguration.default
+        config.httpCookieStorage = HTTPCookieStorage.shared
+        config.httpShouldSetCookies = true
+        config.httpCookieAcceptPolicy = .always
+        config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = 30
         self.session = URLSession(
-            configuration: adminConfig,
-            delegate: HomelabTLSDelegate.shared,
-            delegateQueue: nil
-        )
-
-        // Invités 5G : IP WAN + Bearer token — pas de URLProtocol
-        self.guestSession = URLSession(
-            configuration: baseConfig(),
+            configuration: config,
             delegate: HomelabTLSDelegate.shared,
             delegateQueue: nil
         )
@@ -72,29 +55,13 @@ final class BeerAPI {
         return http.statusCode == 200
     }
 
-    /// Probe direct (sans boucle multi-endpoints) — `/api/me` est public WAN pour les invités.
-    func discoverWorkingEndpoint(guestMode: Bool = false) async -> String? {
-        let candidates = ServerSettings.candidateURLs(guestMode: guestMode)
-        for candidate in candidates {
-            baseURL = Self.canonicalBase(candidate)
+    func discoverWorkingEndpoint() async -> String? {
+        for url in ServerSettings.candidateURLs {
+            baseURL = Self.canonicalBase(url)
             do {
-                var req = URLRequest(url: try url("/api/me"))
-                req.httpMethod = "GET"
-                req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
-                req.setValue(Self.nativeUserAgent, forHTTPHeaderField: "User-Agent")
-                let (data, http, _) = try await perform(req)
-                if http.statusCode == 200 {
-                    if guestMode {
-                        if let me = try? JSONDecoder().decode(MeResponse.self, from: data),
-                           me.user != nil, GuestAccessToken.isPresent {
-                            baseURL = Self.canonicalBase(ServerSettings.wanApiBase)
-                            activeEndpoint = ServerSettings.wanApiBase.absoluteString
-                            return activeEndpoint
-                        }
-                        continue
-                    }
-                    activeEndpoint = candidate.absoluteString
-                    return candidate.absoluteString
+                if try await healthCheck() {
+                    activeEndpoint = url.absoluteString
+                    return url.absoluteString
                 }
             } catch {
                 continue
@@ -112,9 +79,7 @@ final class BeerAPI {
             contentType: "application/json"
         )
         if http.statusCode == 403 {
-            throw BeerAPIError.server(
-                "Compte perso : connecte-toi en Wi‑Fi maison (192.168.1.x) ou VPN Plexi — pas en 4G/5G."
-            )
+            throw BeerAPIError.server("Accès refusé — Wi‑Fi maison ou VPN Plexi requis")
         }
         guard let decoded = try? JSONDecoder().decode(LoginResponse.self, from: data) else {
             let hint = http.statusCode == 404
@@ -155,10 +120,6 @@ final class BeerAPI {
             }
             throw BeerAPIError.server(msg)
         }
-        guard let access = decoded.accessToken, !access.isEmpty else {
-            throw BeerAPIError.server("Token invité manquant — mets à jour l'app Beer Log.")
-        }
-        GuestAccessToken.save(access)
         return decoded
     }
 
@@ -173,7 +134,6 @@ final class BeerAPI {
 
     func logout() async {
         _ = try? await request(path: "/api/logout", method: "POST", body: nil)
-        GuestAccessToken.clear()
         if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL) {
             cookies.forEach { HTTPCookieStorage.shared.deleteCookie($0) }
         }
@@ -686,25 +646,18 @@ final class BeerAPI {
 
     // MARK: - HTTP
 
-    private var guestRouting: Bool = false
-
-    func setGuestRouting(_ enabled: Bool) {
-        guestRouting = enabled
-        PlexiIPv4URLProtocol.isEnabled = !enabled
-        if enabled {
-            baseURL = Self.canonicalBase(ServerSettings.wanApiBase)
-            activeEndpoint = ServerSettings.wanApiBase.absoluteString
-        }
-    }
-
     private func request(
         path: String,
         method: String,
         body: Data?,
         contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse, URL) {
+        var candidates = ServerSettings.candidateURLs
+        if !candidates.contains(ServerSettings.wanApiBase) {
+            candidates.append(ServerSettings.wanApiBase)
+        }
         return try await requestEndpoints(
-            ServerSettings.candidateURLs(guestMode: guestRouting),
+            candidates,
             path: path,
             method: method,
             body: body,
@@ -713,16 +666,19 @@ final class BeerAPI {
         )
     }
 
-    /// Invitations 5G : une URL FQDN, URLSession + cookies (comme fetch PWA).
+    /// Invitations 4G : IP WAN en premier (contourne AAAA Freebox), puis FQDN/LAN.
     private func requestInvite(
         path: String,
         method: String,
         body: Data?,
         contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse, URL) {
-        setGuestRouting(true)
+        var endpoints = [ServerSettings.wanApiBase]
+        for url in ServerSettings.candidateURLs where url != ServerSettings.wanApiBase {
+            endpoints.append(url)
+        }
         return try await requestEndpoints(
-            [ServerSettings.wanApiBase],
+            endpoints,
             path: path,
             method: method,
             body: body,
@@ -770,15 +726,12 @@ final class BeerAPI {
 
     private func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         var req = request
-        req.httpShouldHandleCookies = !guestRouting
         Self.applyCanonicalHostHeader(&req)
-        if guestRouting, let token = GuestAccessToken.load() {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if req.url?.host == ServerSettings.wanIPv4 {
+            return try await HomelabIPv4Transport.perform(req)
         }
-        let httpSession = guestRouting ? guestSession : session
-
         do {
-            let (data, response) = try await httpSession.data(for: req)
+            let (data, response) = try await session.data(for: req)
             guard let http = response as? HTTPURLResponse, let url = response.url else {
                 throw BeerAPIError.decode
             }
@@ -786,24 +739,20 @@ final class BeerAPI {
         } catch let err as BeerAPIError {
             throw err
         } catch let err as URLError {
-            throw Self.mapURLError(err, host: baseURL.host)
+            switch err.code {
+            case .cannotConnectToHost, .networkConnectionLost:
+                throw BeerAPIError.server("Injoignable : \(baseURL.host ?? "?")")
+            case .secureConnectionFailed, .serverCertificateUntrusted:
+                throw BeerAPIError.server("Connexion impossible — réessaie dans quelques secondes.")
+            case .timedOut:
+                throw BeerAPIError.server("Timeout \(baseURL.host ?? "?")")
+            case .notConnectedToInternet:
+                throw BeerAPIError.server("Pas de réseau")
+            default:
+                throw BeerAPIError.network(err)
+            }
         } catch {
             throw BeerAPIError.network(error)
-        }
-    }
-
-    private static func mapURLError(_ err: URLError, host: String?) -> BeerAPIError {
-        switch err.code {
-        case .cannotConnectToHost, .networkConnectionLost:
-            return .server("Injoignable : \(host ?? "?")")
-        case .secureConnectionFailed, .serverCertificateUntrusted:
-            return .server("Connexion impossible — réessaie dans quelques secondes.")
-        case .timedOut:
-            return .server("Timeout \(host ?? "?")")
-        case .notConnectedToInternet:
-            return .server("Pas de réseau")
-        default:
-            return .network(err)
         }
     }
 
