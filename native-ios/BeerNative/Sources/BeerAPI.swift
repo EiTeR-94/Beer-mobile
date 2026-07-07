@@ -161,8 +161,9 @@ final class BeerAPI {
             throw BeerAPIError.server(decoded.error ?? "Identifiants incorrects")
         }
         // Explicitly store any Set-Cookie from login response to ensure subsequent requests (checkins, gallery etc.) carry the session cookie
-        if let allHeaders = http.allHeaderFields as? [String: String] {
-            let cookies = HTTPCookie.cookies(withResponseHeaderFields: allHeaders, for: responseURL)
+        let setCookieHeader = http.value(forHTTPHeaderField: "Set-Cookie") ?? ""
+        if !setCookieHeader.isEmpty {
+            let cookies = HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": setCookieHeader], for: responseURL)
             for cookie in cookies {
                 HTTPCookieStorage.shared.setCookie(cookie)
             }
@@ -878,6 +879,11 @@ final class BeerAPI {
             if let contentType { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
             applyCommonHeaders(to: &req)
             req.httpBody = body
+            // Manually ensure session cookie is sent for local accounts (in case auto cookie handling misses it for the IP base)
+            if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL), !cookies.isEmpty {
+                let cookieString = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+                req.setValue(cookieString, forHTTPHeaderField: "Cookie")
+            }
             do {
                 // probe: false → use full timeout session even on LAN (only discover health uses short probe timeout)
                 let result = try await performOnEndpoint(candidate, request: req, guest: false, probe: false)
@@ -900,7 +906,13 @@ final class BeerAPI {
         }
         // Local accounts: use current base (LAN preferred via discover or previous set)
         // probe: false to use normal (long) timeout; short timeout only for explicit health probe in discover
-        return try await performOnEndpoint(baseURL, request: request, guest: false, probe: false)
+        var req = request
+        // Manually ensure session cookie is sent for local accounts (in case auto cookie handling misses it for the IP base)
+        if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL), !cookies.isEmpty {
+            let cookieString = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+            req.setValue(cookieString, forHTTPHeaderField: "Cookie")
+        }
+        return try await performOnEndpoint(baseURL, request: req, guest: false, probe: false)
     }
 
     private func performOnEndpoint(
