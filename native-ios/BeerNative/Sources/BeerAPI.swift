@@ -93,28 +93,7 @@ final class BeerAPI {
         if shouldUsePasskeyBearer {
             return await discoverGuestEndpoint()
         }
-        if localConnectionOnly {
-            // Pour comptes locaux (bouton connexion) : seulement le chemin WiFi/VPN
-            let lan = ServerSettings.lanApiBase
-            baseURL = Self.canonicalBase(lan)
-            do {
-                var probe = URLRequest(url: try url("/api/health"))
-                probe.httpMethod = "GET"
-                let (_, http, _) = try await performOnEndpoint(
-                    lan,
-                    request: probe,
-                    guest: false,
-                    probe: true
-                )
-                if http.statusCode == 200 {
-                    activeEndpoint = lan.absoluteString
-                    return lan.absoluteString
-                }
-            } catch {
-                return nil
-            }
-            return nil
-        }
+        // Local accounts: try LAN first then WAN (normal discover)
         for candidate in ServerSettings.candidateURLs {
             baseURL = Self.canonicalBase(candidate)
             do {

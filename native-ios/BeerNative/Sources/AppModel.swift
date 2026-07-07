@@ -107,9 +107,6 @@ final class AppModel: ObservableObject {
             KeychainStore.username = user
             if !isInvite {
                 PasskeySessionStore.clear()
-                api.forceLocalConnection()  // Comptes locaux : forcer le chemin WiFi/VPN
-            } else {
-                api.forceGuest5GConnection()
             }
         }
     }
@@ -117,9 +114,6 @@ final class AppModel: ObservableObject {
     func restoreOfflineSessionIfNeeded() {
         guard let saved = BeerSessionStore.restore() else { return }
         applySession(user: saved.user, isAdmin: saved.isAdmin, isInvite: saved.isInvite, loggedIn: true)
-        if !saved.isInvite {
-            api.forceLocalConnection()  // Comptes locaux restaurés : rester sur le chemin WiFi/VPN
-        }
     }
 
     func bootstrap() async {
