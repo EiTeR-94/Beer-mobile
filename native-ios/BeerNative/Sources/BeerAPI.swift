@@ -902,7 +902,7 @@ final class BeerAPI {
             applyCommonHeaders(to: &req)
             req.httpBody = body
             do {
-                let result = try await performOnEndpoint(lan, request: req, guest: false, probe: true)
+                let result = try await performOnEndpoint(lan, request: req, guest: false, probe: false)
                 activeEndpoint = lan.absoluteString
                 return result
             } catch {
@@ -939,7 +939,7 @@ final class BeerAPI {
         }
         if localConnectionOnly {
             let lan = ServerSettings.lanApiBase
-            return try await performOnEndpoint(lan, request: request, guest: false, probe: true)
+            return try await performOnEndpoint(lan, request: request, guest: false, probe: false)
         }
         let isLan = ServerSettings.isLanEndpoint(baseURL)
         return try await performOnEndpoint(baseURL, request: request, guest: false, probe: isLan)
