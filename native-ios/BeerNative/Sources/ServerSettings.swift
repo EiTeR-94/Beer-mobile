@@ -1,29 +1,23 @@
 import Foundation
 
 enum ServerSettings {
-    static let canonicalHost = "eiter.freeboxos.fr"
-    static let wanIPv4 = "82.64.151.113"
-    static let apiBaseString = "https://\(canonicalHost)/beer/"
+    /// URL canonique — LAN, VPN et 4G (via VPN) via le FQDN Plexi.
+    static let apiBaseString = "https://eiter.freeboxos.fr/beer/"
 
     static var apiBase: URL {
         URL(string: apiBaseString)!
     }
 
-    /// Comptes normaux : FQDN puis hub LAN (Wi‑Fi / VPN).
     static var candidateURLs: [URL] {
-        var urls: [URL] = [apiBase]
-        if let lan = URL(string: "https://192.168.1.50:8444/beer/") {
-            urls.append(lan)
-        }
-        return urls
-    }
-
-    static var wanApiBase: URL {
-        URL(string: "https://\(wanIPv4)/beer/")!
+        [apiBase]
     }
 
     static func serverOrigin(from base: URL = apiBase) -> String {
-        "https://\(canonicalHost)"
+        var c = URLComponents(url: base, resolvingAgainstBaseURL: false) ?? URLComponents()
+        c.path = ""
+        c.query = nil
+        c.fragment = nil
+        return c.string ?? base.absoluteString
     }
 
     static func resolveAssetURL(_ path: String?, base: URL = apiBase) -> URL? {

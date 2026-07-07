@@ -164,7 +164,7 @@ final class AppModel: ObservableObject {
             return "Serveur OK · \(ok)"
         }
         networkStatus = isOnline ? .serverUnreachable : .offline
-        return "Échec — vérifie ta connexion (4G ou Wi‑Fi maison)."
+        return "Échec — vérifie ta connexion Wi‑Fi ou VPN Plexi."
     }
 
     func login(username: String, password: String) async throws {
@@ -238,21 +238,13 @@ final class AppModel: ObservableObject {
         return nil
     }
 
-    func redeemInviteFromText(_ text: String) async {
+    func redeemInviteFromClipboard() async {
+        let text = UIPasteboard.general.string ?? ""
         guard let token = Self.parseJoinToken(from: text) else {
-            showToast("Lien d'invitation invalide — colle l'URL complete ou le token.", variant: .error, durationMs: 4200)
+            showToast("Colle d'abord le lien d'invitation (Messages ou mail).", variant: .error)
             return
         }
         await redeemInviteToken(token)
-    }
-
-    func redeemInviteFromClipboard() async {
-        let text = UIPasteboard.general.string ?? ""
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            showToast("Presse-papiers vide — colle le lien dans le champ.", variant: .error)
-            return
-        }
-        await redeemInviteFromText(text)
     }
 
     func logout() async {
