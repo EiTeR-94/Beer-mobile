@@ -4,10 +4,6 @@ import SwiftUI
 struct BeerNativeApp: App {
     @StateObject private var app = AppModel()
 
-    init() {
-        URLProtocol.registerClass(PlexiIPv4URLProtocol.self)
-    }
-
     var body: some Scene {
         WindowGroup {
             RootView()

@@ -52,10 +52,12 @@ final class BeerAPI {
             delegateQueue: nil
         )
 
-        // Invités 5G : URLSession + cookies système (PWA), IPv4 via PlexiIPv4URLProtocol
-        let guestConfig = baseConfig()
-        guestConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
-        self.guestSession = URLSession(configuration: guestConfig)
+        // Invités 5G : IP WAN + Bearer token (Keychain) — URLSession native, pas de URLProtocol
+        self.guestSession = URLSession(
+            configuration: baseConfig(),
+            delegate: HomelabTLSDelegate.shared,
+            delegateQueue: nil
+        )
     }
 
     func setBaseURL(_ url: URL) {
@@ -78,12 +80,16 @@ final class BeerAPI {
                 req.httpMethod = "GET"
                 req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
                 req.setValue(Self.nativeUserAgent, forHTTPHeaderField: "User-Agent")
-                let (_, http, _) = try await perform(req)
+                let (data, http, _) = try await perform(req)
                 if http.statusCode == 200 {
                     if guestMode {
-                        baseURL = Self.canonicalBase(ServerSettings.apiBase)
-                        activeEndpoint = ServerSettings.apiBase.absoluteString
-                        return activeEndpoint
+                        if let me = try? JSONDecoder().decode(MeResponse.self, from: data),
+                           me.user != nil, GuestAccessToken.isPresent {
+                            baseURL = Self.canonicalBase(ServerSettings.wanApiBase)
+                            activeEndpoint = ServerSettings.wanApiBase.absoluteString
+                            return activeEndpoint
+                        }
+                        continue
                     }
                     activeEndpoint = candidate.absoluteString
                     return candidate.absoluteString
@@ -145,9 +151,10 @@ final class BeerAPI {
             }
             throw BeerAPIError.server(msg)
         }
-        guard HomelabIPv4Transport.guestAuthCookiesPresent() else {
-            throw BeerAPIError.server("Session invité incomplète — réessaie l'activation.")
+        guard let access = decoded.accessToken, !access.isEmpty else {
+            throw BeerAPIError.server("Token invité manquant — mets à jour l'app Beer Log.")
         }
+        GuestAccessToken.save(access)
         return decoded
     }
 
@@ -162,6 +169,7 @@ final class BeerAPI {
 
     func logout() async {
         _ = try? await request(path: "/api/logout", method: "POST", body: nil)
+        GuestAccessToken.clear()
         if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL) {
             cookies.forEach { HTTPCookieStorage.shared.deleteCookie($0) }
         }
@@ -678,10 +686,9 @@ final class BeerAPI {
 
     func setGuestRouting(_ enabled: Bool) {
         guestRouting = enabled
-        PlexiIPv4URLProtocol.isEnabled = enabled
         if enabled {
-            baseURL = Self.canonicalBase(ServerSettings.apiBase)
-            activeEndpoint = ServerSettings.apiBase.absoluteString
+            baseURL = Self.canonicalBase(ServerSettings.wanApiBase)
+            activeEndpoint = ServerSettings.wanApiBase.absoluteString
         }
     }
 
@@ -710,7 +717,7 @@ final class BeerAPI {
     ) async throws -> (Data, HTTPURLResponse, URL) {
         setGuestRouting(true)
         return try await requestEndpoints(
-            [ServerSettings.apiBase],
+            [ServerSettings.wanApiBase],
             path: path,
             method: method,
             body: body,
@@ -758,8 +765,11 @@ final class BeerAPI {
 
     private func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         var req = request
-        req.httpShouldHandleCookies = true
+        req.httpShouldHandleCookies = !guestRouting
         Self.applyCanonicalHostHeader(&req)
+        if guestRouting, let token = GuestAccessToken.load() {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         let httpSession = guestRouting ? guestSession : session
 
         do {

@@ -74,7 +74,7 @@ function versionReleaseNotes(ver, buildNum) {
   }
   if (ver === "3.3.4") {
     return ascii(
-      "Invites 5G: cookies beer_session + beer_device envoyes sur toutes les requetes (comme PWA). Historique, galerie, recherche OK hors LAN."
+      "Invites 5G: token Bearer natif (Keychain) + IPv4 direct. Fini les cookies casses. Historique, galerie, recherche hors LAN."
     );
   }
   return ascii(`Build ${buildNum} - Beer Log native`);

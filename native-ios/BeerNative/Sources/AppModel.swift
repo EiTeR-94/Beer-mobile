@@ -120,6 +120,10 @@ final class AppModel: ObservableObject {
         defer { isLoading = false }
         restoreOfflineSessionIfNeeded()
         let guestMode = isInvite || BeerSessionStore.restore()?.isInvite == true
+        if guestMode && !GuestAccessToken.isPresent {
+            await logout()
+            return
+        }
         api.setGuestRouting(guestMode)
         await probeServerReachability()
         if networkStatus != .online && !isLoggedIn {
