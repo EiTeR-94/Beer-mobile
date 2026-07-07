@@ -51,7 +51,7 @@ final class BeerAPI {
             delegate: HomelabTLSDelegate.shared,
             delegateQueue: nil
         )
-        // Face ID / passkey seulement : IPv4 forcé sur :443 (AAAA morte).
+        // Invités 5G + passkey : IPv4 forcé sur :443 (AAAA morte) + Bearer nginx-gate.
         let passkeyConfig = baseConfig()
         passkeyConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
         self.passkeySession = URLSession(
@@ -72,10 +72,34 @@ final class BeerAPI {
     }
 
     func discoverWorkingEndpoint() async -> String? {
+        if shouldUsePasskeyBearer {
+            return await discoverGuestEndpoint()
+        }
         for url in ServerSettings.candidateURLs {
             baseURL = Self.canonicalBase(url)
             do {
                 if try await healthCheck() {
+                    activeEndpoint = url.absoluteString
+                    return url.absoluteString
+                }
+            } catch {
+                continue
+            }
+        }
+        return nil
+    }
+
+    /// Invités 5G — :443 IPv4 uniquement (pas :8444 LAN). /api/me public WAN.
+    private func discoverGuestEndpoint() async -> String? {
+        for url in ServerSettings.passkeyBaseURLs {
+            baseURL = Self.canonicalBase(url)
+            do {
+                let (_, http, _) = try await wanRequest(
+                    path: "/api/me",
+                    method: "GET",
+                    body: nil
+                )
+                if http.statusCode == 200 {
                     activeEndpoint = url.absoluteString
                     return url.absoluteString
                 }
@@ -113,7 +137,7 @@ final class BeerAPI {
         let clean = inviteToken.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { throw BeerAPIError.server("Lien d'invitation invalide") }
         let body = try JSONEncoder().encode(["invite_token": clean])
-        let (data, http, _) = try await passkeyRequest(
+        let (data, http, _) = try await wanRequest(
             path: "/api/passkey/register/options",
             method: "POST",
             body: body,
@@ -139,7 +163,7 @@ final class BeerAPI {
         guard !clean.isEmpty else { throw BeerAPIError.server("Lien d'invitation invalide") }
         let payload: [String: Any] = ["invite_token": clean, "credential": credential]
         let body = try JSONSerialization.data(withJSONObject: payload)
-        let (data, http, _) = try await passkeyRequest(
+        let (data, http, _) = try await wanRequest(
             path: "/api/passkey/register/verify",
             method: "POST",
             body: body,
@@ -161,7 +185,7 @@ final class BeerAPI {
         let clean = username.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { throw BeerAPIError.server("Compte invité inconnu") }
         let body = try JSONEncoder().encode(["username": clean])
-        let (data, http, _) = try await passkeyRequest(
+        let (data, http, _) = try await wanRequest(
             path: "/api/passkey/login/options",
             method: "POST",
             body: body,
@@ -179,7 +203,7 @@ final class BeerAPI {
 
     func passkeyLoginVerify(credential: [String: Any]) async throws -> PasskeyVerifyResponse {
         let body = try JSONSerialization.data(withJSONObject: ["credential": credential])
-        let (data, http, _) = try await passkeyRequest(
+        let (data, http, _) = try await wanRequest(
             path: "/api/passkey/login/verify",
             method: "POST",
             body: body,
@@ -272,7 +296,7 @@ final class BeerAPI {
         if !period.isEmpty { items.append(URLQueryItem(name: "period", value: period)) }
         components.queryItems = items
         var req = URLRequest(url: components.url!)
-        let (data, http, _) = try await perform(req)
+        let (data, http, _) = try await performTransport(req)
         if http.statusCode == 401 { throw BeerAPIError.unauthorized }
         guard let decoded = try? JSONDecoder().decode([CheckinItem].self, from: data) else {
             throw BeerAPIError.decode
@@ -391,8 +415,9 @@ final class BeerAPI {
             fields: [:],
             file: ("photo", "photo.jpg", "image/jpeg", jpeg)
         )
-        let (_, http, _) = try await perform(req)
+        let (_, http, _) = try await performTransport(req)
         if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        if http.statusCode == 403 { throw BeerAPIError.forbidden }
         if http.statusCode >= 400 { throw BeerAPIError.server("Photo impossible") }
     }
 
@@ -499,7 +524,7 @@ final class BeerAPI {
             throw BeerAPIError.invalidURL
         }
         var req = URLRequest(url: resolved)
-        let (data, http, _) = try await perform(req)
+        let (data, http, _) = try await performTransport(req)
         if http.statusCode == 401 { throw BeerAPIError.unauthorized }
         if http.statusCode != 200 { throw BeerAPIError.server("Fichier HTTP \(http.statusCode)") }
         return data
@@ -512,7 +537,7 @@ final class BeerAPI {
             URLQueryItem(name: "limit", value: "5"),
         ]
         var req = URLRequest(url: components.url!)
-        let (data, http, _) = try await perform(req)
+        let (data, http, _) = try await performTransport(req)
         if http.statusCode == 401 { throw BeerAPIError.unauthorized }
         guard let decoded = try? JSONDecoder().decode(UntappdSearchResponse.self, from: data) else {
             throw BeerAPIError.decode
@@ -568,7 +593,7 @@ final class BeerAPI {
             fields: [:],
             file: ("image", "scan.jpg", "image/jpeg", jpeg)
         )
-        let (data, http, _) = try await perform(req)
+        let (data, http, _) = try await performTransport(req)
         if http.statusCode == 401 { throw BeerAPIError.unauthorized }
         guard let decoded = try? JSONDecoder().decode(DecodeBarcodeResponse.self, from: data) else {
             throw BeerAPIError.decode
@@ -586,7 +611,7 @@ final class BeerAPI {
             fields: [:],
             file: ("image", "scan.jpg", "image/jpeg", jpeg)
         )
-        let (data, http, _) = try await perform(req)
+        let (data, http, _) = try await performTransport(req)
         if http.statusCode == 401 { throw BeerAPIError.unauthorized }
         guard let decoded = try? JSONDecoder().decode(LookupResponse.self, from: data) else {
             throw BeerAPIError.decode
@@ -684,7 +709,7 @@ final class BeerAPI {
             URLQueryItem(name: "description", value: description),
         ]
         var req = URLRequest(url: components.url!)
-        let (data, http, _) = try await perform(req)
+        let (data, http, _) = try await performTransport(req)
         if http.statusCode == 401 { throw BeerAPIError.unauthorized }
         guard let decoded = try? JSONDecoder().decode(FlavorsResponse.self, from: data) else {
             throw BeerAPIError.decode
@@ -731,8 +756,9 @@ final class BeerAPI {
             ],
             file: photoJPEG.map { ("photo", "photo.jpg", "image/jpeg", $0) }
         )
-        let (data, http, _) = try await perform(req)
+        let (data, http, _) = try await performTransport(req)
         if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        if http.statusCode == 403 { throw BeerAPIError.forbidden }
         guard let decoded = try? JSONDecoder().decode(CreateCheckinResult.self, from: data) else {
             throw BeerAPIError.decode
         }
@@ -772,7 +798,8 @@ final class BeerAPI {
         }
     }
 
-    private func passkeyRequest(
+    /// 5G / passkey — :443 + IPv4 forcé (endpoints publics ou Bearer nginx-gate).
+    private func wanRequest(
         path: String,
         method: String,
         body: Data?,
@@ -787,14 +814,13 @@ final class BeerAPI {
             applyCommonHeaders(to: &req)
             req.httpBody = body
             do {
-                let result = try await performPasskey(req)
-                return result
+                return try await performWan(req)
             } catch {
                 lastError = error
             }
         }
         if let lastError { throw lastError }
-        throw BeerAPIError.server("Passkey injoignable (IPv4)")
+        throw BeerAPIError.server("Serveur injoignable en 5G (IPv4)")
     }
 
     private func request(
@@ -803,6 +829,9 @@ final class BeerAPI {
         body: Data?,
         contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse, URL) {
+        if shouldUsePasskeyBearer {
+            return try await wanRequest(path: path, method: method, body: body, contentType: contentType)
+        }
         var lastError: Error?
         for candidate in ServerSettings.candidateURLs {
             baseURL = Self.canonicalBase(candidate)
@@ -826,7 +855,14 @@ final class BeerAPI {
         )
     }
 
-    private func performPasskey(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
+    private func performTransport(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
+        if shouldUsePasskeyBearer {
+            return try await performWan(request)
+        }
+        return try await perform(request)
+    }
+
+    private func performWan(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         var req = request
         applyCommonHeaders(to: &req)
         do {
