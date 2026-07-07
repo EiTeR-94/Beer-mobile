@@ -1,7 +1,14 @@
 import Foundation
 import Network
 
-/// TCP/TLS IPv4 + SNI pour passkey/Face ID quand l'iPhone tente l'AAAA morte en premier.
+/// Low-level IPv4 + SNI transport used for WAN/passkey connections.
+///
+/// Used as a workaround when the system's IPv6 (AAAA) resolution for the Freebox domain
+/// leads to unreachable hosts on iOS. We connect directly to the known IPv4 while
+/// setting the correct Server Name Indication (SNI) so TLS certificate validation
+/// succeeds against the domain name.
+///
+/// See also: PlexiIPv4URLProtocol and ServerSettings.wanIPv4
 enum HomelabIPv4Transport {
     private static let wanIP = ServerSettings.wanIPv4
     private static let tlsHost = ServerSettings.canonicalHost

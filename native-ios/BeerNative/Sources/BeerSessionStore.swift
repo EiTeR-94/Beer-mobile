@@ -1,6 +1,13 @@
 import Foundation
 
-/// Session locale — permet l'accès HL après au moins une connexion réussie.
+/// Lightweight session flags stored in UserDefaults.
+///
+/// Used only for quick offline restore of "who am I" (username + role) and to decide
+/// whether we can show cached UI when the server is unreachable.
+/// Sensitive tokens are stored in Keychain (see PasskeySessionStore and KeychainStore).
+///
+/// This mix is intentional: UserDefaults is fast and survives app restarts for UX,
+/// while tokens stay protected.
 enum BeerSessionStore {
     private static let ud = UserDefaults.standard
 

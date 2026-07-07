@@ -463,6 +463,8 @@ enum KeychainStore {
     private static let service = "fr.eiter.plexibeer"
     private static let account = "username"
 
+    // Non-sensitive identifier stored in Keychain for convenience.
+    // The real secret (passkey access token) uses stronger protection in PasskeySessionStore.
     static var username: String? {
         get {
             let query: [String: Any] = [
@@ -487,7 +489,7 @@ enum KeychainStore {
             guard let value = newValue, let data = value.data(using: .utf8) else { return }
             let add: [String: Any] = query.merging([
                 kSecValueData as String: data,
-                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             ]) { $1 }
             SecItemAdd(add as CFDictionary, nil)
         }

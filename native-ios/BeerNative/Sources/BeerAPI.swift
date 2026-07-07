@@ -30,7 +30,7 @@ final class BeerAPI {
     static let shared = BeerAPI()
     private static let nativeClientHeader = "X-PlexiBeer-Client"
     private static let nativeClientValue = "native-ios"
-    private static let nativeUserAgent = "PlexiBeer/3.3.5 (iPhone; native) [timeout-fix-lan]"
+    private static let nativeUserAgent = "PlexiBeer/3.3.4 (iPhone; native) [timeout-fix-lan]"
 
     private let session: URLSession
     private let lanProbeSession: URLSession

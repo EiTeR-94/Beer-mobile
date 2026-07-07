@@ -1,6 +1,13 @@
 import Foundation
 
-/// Force IPv4 pour eiter.freeboxos.fr:443 — AAAA Freebox morte (sinon SSL refusé sur iPhone).
+/// Custom URLProtocol that forces IPv4 connections to the canonical domain on port 443.
+///
+/// Reason: The Freebox AAAA (IPv6) record for eiter.freeboxos.fr is currently unreachable
+/// from some iPhones, causing SSL/TLS failures when the system prefers IPv6.
+/// By intercepting and delegating to HomelabIPv4Transport (which connects to the IPv4
+/// address while setting the correct SNI), we work around the issue.
+///
+/// This is a homelab-specific workaround. Monitor if the underlying Freebox/IPv6 issue is resolved.
 final class PlexiIPv4URLProtocol: URLProtocol {
     private var loadTask: Task<Void, Never>?
     private static let handledKey = "PlexiIPv4URLProtocolHandled"
