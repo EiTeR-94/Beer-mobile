@@ -169,8 +169,10 @@ enum HomelabIPv4Transport {
         guard !buffer.isEmpty else { throw BeerAPIError.server("Réponse vide") }
 
         // Parse just enough to find Content-Length
-        let sepRange = buffer.range(of: Data([13, 10, 13, 10])) ?? buffer.range(of: Data([10, 10]))
-        let headerEnd = sepRange!.upperBound
+        guard let sepRange = buffer.range(of: Data([13, 10, 13, 10])) ?? buffer.range(of: Data([10, 10])) else {
+            throw BeerAPIError.server("Réponse invalide (pas de séparateur headers)")
+        }
+        let headerEnd = sepRange.upperBound
         let headerData = buffer.subdata(in: 0..<headerEnd)
         let headerText = String(data: headerData, encoding: .utf8) ?? ""
         var contentLength: Int? = nil
@@ -187,25 +189,44 @@ enum HomelabIPv4Transport {
         }
 
         var body = buffer.subdata(in: headerEnd..<buffer.count)
-        let needed = contentLength ?? 0
-        while (contentLength != nil && body.count < needed) || (contentLength == nil && body.isEmpty) {
-            let toRead = contentLength != nil ? min(needed - body.count, 65536) : 65536
-            let (chunk, _): (Data?, Bool) = try await withCheckedThrowingContinuation { cont in
-                conn.receive(minimumIncompleteLength: contentLength == nil ? 1 : 0, maximumLength: toRead) { data, _, isComplete, err in
-                    if let err {
-                        cont.resume(throwing: BeerAPIError.network(err))
-                        return
+        if let needed = contentLength {
+            while body.count < needed && body.count < 2*1024*1024 {
+                let toRead = min(needed - body.count, 65536)
+                let (chunk, _): (Data?, Bool) = try await withCheckedThrowingContinuation { cont in
+                    conn.receive(minimumIncompleteLength: 0, maximumLength: toRead) { data, _, isComplete, err in
+                        if let err {
+                            cont.resume(throwing: BeerAPIError.network(err))
+                            return
+                        }
+                        cont.resume(returning: (data, isComplete))
                     }
-                    cont.resume(returning: (data, isComplete))
+                }
+                if let chunk, !chunk.isEmpty {
+                    body.append(chunk)
+                } else {
+                    break
                 }
             }
-            if let chunk, !chunk.isEmpty { body.append(chunk) }
-            if contentLength == nil {
-                // no length: read a bit more or until we decide enough; fallback short read
-                if body.count > 0 { break }
+        } else {
+            // No content-length: read until connection closes or reasonable max
+            var safety = 0
+            while safety < 100 {
+                let (chunk, isComplete): (Data?, Bool) = try await withCheckedThrowingContinuation { cont in
+                    conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, isComplete, err in
+                        if let err {
+                            cont.resume(throwing: BeerAPIError.network(err))
+                            return
+                        }
+                        cont.resume(returning: (data, isComplete))
+                    }
+                }
+                if let chunk, !chunk.isEmpty {
+                    body.append(chunk)
+                }
+                if isComplete { break }
+                safety += 1
+                if body.count > 2*1024*1024 { break }
             }
-            if contentLength != nil && body.count >= needed { break }
-            if body.count > 2*1024*1024 { break } // safety
         }
         return (headerData, body)
     }

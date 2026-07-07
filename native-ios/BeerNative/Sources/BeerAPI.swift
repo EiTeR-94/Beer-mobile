@@ -95,7 +95,7 @@ final class BeerAPI {
         }
         if localConnectionOnly {
             // Pour comptes locaux (bouton connexion) : seulement le chemin WiFi/VPN
-            let lan = ServerSettings.localLanBase
+            let lan = ServerSettings.lanApiBase
             baseURL = Self.canonicalBase(lan)
             do {
                 var probe = URLRequest(url: try url("/api/health"))
@@ -829,7 +829,7 @@ final class BeerAPI {
 
     func forceLocalConnection() {
         localConnectionOnly = true
-        setBaseURL(ServerSettings.localLanBase)
+        setBaseURL(ServerSettings.lanApiBase)
     }
 
     func forceGuest5GConnection() {
@@ -894,7 +894,7 @@ final class BeerAPI {
         }
         if localConnectionOnly {
             // Bouton "Connexion" pour comptes locaux : force le chemin WiFi/VPN (LAN), pas de 5G.
-            let lan = ServerSettings.localLanBase
+            let lan = ServerSettings.lanApiBase
             baseURL = Self.canonicalBase(lan)
             var req = URLRequest(url: try url(path))
             req.httpMethod = method
@@ -938,7 +938,7 @@ final class BeerAPI {
             return try await performWan(request)
         }
         if localConnectionOnly {
-            let lan = ServerSettings.localLanBase
+            let lan = ServerSettings.lanApiBase
             return try await performOnEndpoint(lan, request: request, guest: false, probe: false)
         }
         let isLan = ServerSettings.isLanEndpoint(baseURL)
