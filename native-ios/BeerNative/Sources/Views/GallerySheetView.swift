@@ -13,6 +13,9 @@ struct GallerySheetView: View {
     @State private var editing: CheckinItem?
     @State private var loading = false
     @State private var errorMessage: String?
+    @State private var galleryOffset = 0
+    @State private var galleryHasMore = true
+    private let galleryPageSize = 50
 
     private var withPhotos: [CheckinItem] {
         items.filter { ($0.photoURL?.isEmpty == false) }
@@ -50,10 +53,18 @@ struct GallerySheetView: View {
                 .padding(.horizontal, 4)
 
                 if loading && withPhotos.isEmpty {
-                    ProgressView("Chargement…")
-                        .tint(Theme.accent)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 40)
+                    // meilleur skeleton loading
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 108), spacing: 8)], spacing: 8) {
+                        ForEach(0..<9, id: \.self) { _ in
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Theme.card)
+                                .frame(height: 118)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(Theme.muted.opacity(0.15))
+                                )
+                        }
+                    }
                 } else if withPhotos.isEmpty {
                     BeerEmptyState(
                         icon: "📷",
@@ -67,6 +78,16 @@ struct GallerySheetView: View {
                                 GalleryCell(item: item)
                             }
                             .buttonStyle(.plain)
+                            .onAppear {
+                                if item.id == withPhotos.last?.id, galleryHasMore, !loading {
+                                    Task { await loadGallery(append: true) }
+                                }
+                            }
+                        }
+                    }
+                    if galleryHasMore && !withPhotos.isEmpty {
+                        BeerLoadMoreButton(title: loading ? "Chargement…" : "Charger plus de photos") {
+                            Task { await loadGallery(append: true) }
                         }
                     }
                 }
@@ -114,44 +135,45 @@ struct GallerySheetView: View {
         errorMessage = nil
         defer { loading = false }
 
-        var all: [CheckinItem] = []
-        var failed = false
-        var offset = 0
-        let pageSize = 50
-        let maxFetch = 1000 // safety cap
+        galleryOffset = 0
+        galleryHasMore = true
+        items = []
+        await loadGallery(append: false)
+    }
 
-        while offset < maxFetch {
-            do {
-                let batch = try await app.api.checkins(
-                    q: "",
-                    style: filterStyle,
-                    minRating: filterRating,
-                    period: filterPeriod,
-                    limit: pageSize,
-                    offset: offset
-                )
-                all.append(contentsOf: batch)
-                if batch.count < pageSize { break }
-                offset += pageSize
-            } catch let err {
-                failed = true
-                if let cached = app.cache.load([CheckinItem].self, name: CacheKey.historyCheckins), !cached.isEmpty {
-                    items = cached
-                    errorMessage = "Galerie en cache — \(app.networkStatus.label.lowercased())"
-                    return
-                }
-                if force || items.isEmpty {
-                    errorMessage = err.localizedDescription
-                }
-                return
+    private func loadGallery(append: Bool) async {
+        guard !loading || append else { return }
+        if !append { loading = true }
+        errorMessage = nil
+        defer { if !append { loading = false } }
+
+        do {
+            let batch = try await app.api.checkins(
+                q: "",
+                style: filterStyle,
+                minRating: filterRating,
+                period: filterPeriod,
+                limit: galleryPageSize,
+                offset: append ? galleryOffset : 0
+            )
+            if append {
+                items.append(contentsOf: batch)
+            } else {
+                items = batch
             }
-        }
-
-        if !all.isEmpty || !failed {
-            items = all
-            app.cache.save(all, name: CacheKey.historyCheckins)
-            errorMessage = nil
-            app.prewarmPhotos(all)
+            galleryOffset = items.count
+            galleryHasMore = batch.count == galleryPageSize
+            if !append {
+                app.cache.save(items, name: CacheKey.historyCheckins)
+            }
+            app.prewarmPhotos(batch)
+        } catch let err {
+            if !append, let cached = app.cache.load([CheckinItem].self, name: CacheKey.historyCheckins), !cached.isEmpty {
+                items = cached
+                errorMessage = "Galerie en cache — \(app.networkStatus.label.lowercased())"
+            } else if force || items.isEmpty {
+                errorMessage = err.localizedDescription
+            }
         }
     }
 }

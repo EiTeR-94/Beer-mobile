@@ -41,6 +41,19 @@ final class AppModel: ObservableObject {
         offline.remove(id: id)
     }
 
+    // Haptics for actions
+    func hapticSuccess() {
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    func hapticError() {
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
+
+    func hapticImpact(style: UIImpactFeedbackGenerator.FeedbackStyle = .medium) {
+        UIImpactFeedbackGenerator(style: style).impactOccurred()
+    }
+
     var pendingCount: Int { offline.items.count }
     var isOfflineMode: Bool { networkStatus != .online }
 
@@ -419,6 +432,7 @@ final class AppModel: ObservableObject {
         let n = await offline.flush(using: api)
         if n > 0 {
             showToast("\(n) dégustation(s) synchronisée(s)", variant: .success)
+            hapticSuccess()
         }
     }
 
@@ -476,6 +490,7 @@ final class AppModel: ObservableObject {
                 return "duplicate|\(pc?.beerName ?? product.beerName)|\(pc?.rating ?? 0)|\(pc?.createdAt ?? "")"
             }
             if result.ok == true || result.id != nil {
+                hapticSuccess()
                 return "Enregistré ✓"
             }
             throw BeerAPIError.server(result.error ?? "Échec")
@@ -483,6 +498,7 @@ final class AppModel: ObservableObject {
             if Self.isNetworkFailure(error) {
                 offline.enqueue(pending)
                 networkStatus = .serverUnreachable
+                hapticImpact()
                 return "Enregistré sur l'iPhone — sync au retour réseau"
             }
             throw error

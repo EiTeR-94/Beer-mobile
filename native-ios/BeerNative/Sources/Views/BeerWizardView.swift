@@ -566,6 +566,7 @@ struct BeerWizardView: View {
             let variant: ToastPayload.Variant = msg.contains("✓") ? .success
                 : msg.contains("iPhone") ? .info : .success
             app.showToast(msg, variant: variant)
+            app.hapticSuccess()
             try? await Task.sleep(nanoseconds: 900_000_000)
             resetWizard()
         } catch let err {

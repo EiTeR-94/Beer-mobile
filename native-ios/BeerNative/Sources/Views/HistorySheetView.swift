@@ -281,7 +281,17 @@ struct HistorySheetView: View {
         do {
             try await app.api.deleteCheckin(id: item.id)
             items.removeAll { $0.id == item.id }
+            // refresh stats so total decreases
+            if let live = try? await app.api.stats() {
+                stats = live
+                app.cache.save(live, name: CacheKey.historyStats)
+            } else if var s = stats {
+                // fallback decrement
+                stats = HistoryStats(total: max(0, s.total - 1), avgRating: s.avgRating, topStyles: s.topStyles, last: s.last)
+            }
             app.showToast("Dégustation supprimée", variant: .success)
+            app.hapticSuccess()
+            // also refresh gallery if needed, but since separate, user can reload
         } catch let err {
             error = err.localizedDescription
             app.showToast(err.localizedDescription, variant: .error)
