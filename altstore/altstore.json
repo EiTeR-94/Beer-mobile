@@ -27,12 +27,12 @@
       },
       "versions": [
         {
-          "version": "3.2.7",
-          "buildVersion": "44",
+          "version": "3.2.8",
+          "buildVersion": "45",
           "date": "2026-07-07",
-          "localizedDescription": "Build 44 - Beer Log native",
-          "downloadURL": "https://github.com/EiTeR-94/Beer-mobile/releases/download/ios-build-44/PlexiBeer.ipa",
-          "size": 971267,
+          "localizedDescription": "Build 45 - Beer Log native",
+          "downloadURL": "https://github.com/EiTeR-94/Beer-mobile/releases/download/ios-build-45/PlexiBeer.ipa",
+          "size": 971261,
           "minOSVersion": "16.0"
         }
       ]
