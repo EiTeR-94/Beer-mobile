@@ -100,13 +100,42 @@ enum HomelabIPv4Transport {
     }
 
     private static func storeCookies(from setCookieLines: [String]) {
-        guard !setCookieLines.isEmpty else { return }
-        var fields = [String: String]()
-        for (idx, line) in setCookieLines.enumerated() {
-            fields[idx == 0 ? "Set-Cookie" : "Set-Cookie-\(idx)"] = line
+        for line in setCookieLines {
+            guard let cookie = makeCookie(from: line) else { continue }
+            HTTPCookieStorage.shared.setCookie(cookie)
         }
-        let cookies = HTTPCookie.cookies(withResponseHeaderFields: fields, for: cookieURL)
-        cookies.forEach { HTTPCookieStorage.shared.setCookie($0) }
+    }
+
+    /// Cookies reçus via IP WAN : forcer le domaine FQDN pour les requêtes suivantes.
+    private static func makeCookie(from line: String) -> HTTPCookie? {
+        let parts = line.split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }
+        guard let first = parts.first, let eq = first.firstIndex(of: "=") else { return nil }
+        let name = String(first[..<eq])
+        let value = String(first[first.index(after: eq)...])
+
+        var path = "/beer"
+        var maxAge: Int?
+        var secure = true
+        for attr in parts.dropFirst() {
+            let lower = attr.lowercased()
+            if lower.hasPrefix("path=") {
+                path = String(attr.dropFirst(5))
+            } else if lower.hasPrefix("max-age=") {
+                maxAge = Int(attr.dropFirst(8))
+            } else if lower == "secure" {
+                secure = true
+            }
+        }
+
+        var props: [HTTPCookiePropertyKey: Any] = [
+            .name: name,
+            .value: value,
+            .domain: tlsHost,
+            .path: path,
+            .secure: secure,
+        ]
+        if let maxAge { props[.maximumAge] = maxAge }
+        return HTTPCookie(properties: props)
     }
 
     private static func send(conn: NWConnection, data: Data) async throws {

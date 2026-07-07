@@ -191,12 +191,11 @@ final class AppModel: ObservableObject {
         defer { isLoading = false }
         do {
             let res = try await api.redeemInvite(token: token)
-            let me = try await api.me()
             applySession(
-                user: me.user ?? res.user,
-                isAdmin: me.isAdmin,
-                isInvite: me.isInvite,
-                loggedIn: me.user != nil
+                user: res.user,
+                isAdmin: false,
+                isInvite: true,
+                loggedIn: res.user != nil
             )
             networkStatus = .online
             hideToast()
