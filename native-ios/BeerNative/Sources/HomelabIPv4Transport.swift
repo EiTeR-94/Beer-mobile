@@ -99,9 +99,12 @@ enum HomelabIPv4Transport {
         payload.append(body)
 
         try await send(conn: conn, data: payload)
-        let raw = try await receive(conn: conn)
+        let (headersData, bodyData) = try await receiveResponse(conn: conn)
+        let raw = headersData + bodyData
         let parsed = try parseHTTP(raw, url: url)
         storeCookiesForURLSession(parsed.setCookieLines)
+        // Close promptly; do not rely on server FIN for body end
+        conn.cancel()
         return (parsed.body, parsed.response, url)
     }
 
@@ -141,10 +144,13 @@ enum HomelabIPv4Transport {
         }
     }
 
-    private static func receive(conn: NWConnection) async throws -> Data {
+    /// Receive headers (until blank line) then body using Content-Length when present.
+    /// Avoids hanging on servers that delay FIN despite "Connection: close".
+    private static func receiveResponse(conn: NWConnection) async throws -> (Data, Data) {
         var buffer = Data()
+        // Read until we have headers separator
         while true {
-            let (chunk, complete): (Data?, Bool) = try await withCheckedThrowingContinuation { cont in
+            let (chunk, _): (Data?, Bool) = try await withCheckedThrowingContinuation { cont in
                 conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, isComplete, err in
                     if let err {
                         cont.resume(throwing: BeerAPIError.network(err))
@@ -154,10 +160,54 @@ enum HomelabIPv4Transport {
                 }
             }
             if let chunk, !chunk.isEmpty { buffer.append(chunk) }
-            if complete { break }
+            if buffer.range(of: Data([13, 10, 13, 10])) != nil || buffer.range(of: Data([10, 10])) != nil {
+                break
+            }
+            // safety to avoid infinite on broken
+            if buffer.count > 64 * 1024 { break }
         }
         guard !buffer.isEmpty else { throw BeerAPIError.server("Réponse vide") }
-        return buffer
+
+        // Parse just enough to find Content-Length
+        let sepRange = buffer.range(of: Data([13, 10, 13, 10])) ?? buffer.range(of: Data([10, 10]))
+        let headerEnd = sepRange!.upperBound
+        let headerData = buffer.subdata(in: 0..<headerEnd)
+        let headerText = String(data: headerData, encoding: .utf8) ?? ""
+        var contentLength: Int? = nil
+        for line in headerText.split(separator: "\n") {
+            let t = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let colon = t.firstIndex(of: ":") {
+                let k = String(t[..<colon]).trimmingCharacters(in: .whitespaces).lowercased()
+                if k == "content-length" {
+                    if let v = Int(String(t[t.index(after: colon)...]).trimmingCharacters(in: .whitespaces)) {
+                        contentLength = v
+                    }
+                }
+            }
+        }
+
+        var body = buffer.subdata(in: headerEnd..<buffer.count)
+        let needed = contentLength ?? 0
+        while (contentLength != nil && body.count < needed) || (contentLength == nil && body.isEmpty) {
+            let toRead = contentLength != nil ? min(needed - body.count, 65536) : 65536
+            let (chunk, _): (Data?, Bool) = try await withCheckedThrowingContinuation { cont in
+                conn.receive(minimumIncompleteLength: contentLength == nil ? 1 : 0, maximumLength: toRead) { data, _, isComplete, err in
+                    if let err {
+                        cont.resume(throwing: BeerAPIError.network(err))
+                        return
+                    }
+                    cont.resume(returning: (data, isComplete))
+                }
+            }
+            if let chunk, !chunk.isEmpty { body.append(chunk) }
+            if contentLength == nil {
+                // no length: read a bit more or until we decide enough; fallback short read
+                if body.count > 0 { break }
+            }
+            if contentLength != nil && body.count >= needed { break }
+            if body.count > 2*1024*1024 { break } // safety
+        }
+        return (headerData, body)
     }
 
     private struct ParsedHTTP {

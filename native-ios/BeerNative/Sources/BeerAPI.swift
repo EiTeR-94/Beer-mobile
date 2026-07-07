@@ -145,7 +145,7 @@ final class BeerAPI {
             contentType: "application/json"
         )
         if http.statusCode == 403 {
-            throw BeerAPIError.server("Accès refusé — Wi‑Fi maison ou VPN Plexi requis")
+            throw BeerAPIError.server("Accès refusé — Wi‑Fi maison ou VPN Plexi requis pour les comptes principaux")
         }
         guard let decoded = try? JSONDecoder().decode(LoginResponse.self, from: data) else {
             let hint = http.statusCode == 404
@@ -867,7 +867,8 @@ final class BeerAPI {
             applyCommonHeaders(to: &req)
             req.httpBody = body
             do {
-                let result = try await performOnEndpoint(candidate, request: req, guest: false)
+                let isLan = ServerSettings.isLanEndpoint(candidate)
+                let result = try await performOnEndpoint(candidate, request: req, guest: false, probe: isLan)
                 activeEndpoint = candidate.absoluteString
                 return result
             } catch {
@@ -885,7 +886,8 @@ final class BeerAPI {
         if shouldUsePasskeyBearer {
             return try await performWan(request)
         }
-        return try await performOnEndpoint(baseURL, request: request, guest: false)
+        let isLan = ServerSettings.isLanEndpoint(baseURL)
+        return try await performOnEndpoint(baseURL, request: request, guest: false, probe: isLan)
     }
 
     private func performOnEndpoint(
