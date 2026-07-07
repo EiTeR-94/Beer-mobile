@@ -737,9 +737,13 @@ final class BeerAPI {
     private func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         var req = request
         Self.applyCanonicalHostHeader(&req)
-        if req.url?.host == ServerSettings.wanIPv4 {
-            return try await HomelabIPv4Transport.perform(req)
+
+        // PWA : fetch same-origin sur eiter.freeboxos.fr. Safari bascule IPv6→IPv4 tout seul ;
+        // URLSession iOS tente l'AAAA Freebox (::1) → secureConnectionFailed. On force IPv4+SNI.
+        if let routed = Self.ipv4WanRequest(from: req) {
+            return try await HomelabIPv4Transport.perform(routed)
         }
+
         do {
             let (data, response) = try await session.data(for: req)
             guard let http = response as? HTTPURLResponse, let url = response.url else {
@@ -749,22 +753,9 @@ final class BeerAPI {
         } catch let err as BeerAPIError {
             throw err
         } catch let err as URLError {
-            if guestRouting, let wanReq = Self.wanFallbackRequest(from: req), Self.isConnectivityError(err) {
-                return try await HomelabIPv4Transport.perform(wanReq)
-            }
             throw Self.mapURLError(err, host: baseURL.host)
         } catch {
             throw BeerAPIError.network(error)
-        }
-    }
-
-    private static func isConnectivityError(_ err: URLError) -> Bool {
-        switch err.code {
-        case .cannotConnectToHost, .networkConnectionLost, .timedOut,
-             .secureConnectionFailed, .serverCertificateUntrusted, .dnsLookupFailed:
-            return true
-        default:
-            return false
         }
     }
 
@@ -783,16 +774,22 @@ final class BeerAPI {
         }
     }
 
-    /// Dernier recours invité : IPv4 WAN + SNI FQDN si le FQDN échoue (AAAA Freebox).
-    private static func wanFallbackRequest(from request: URLRequest) -> URLRequest? {
-        guard let url = request.url, url.host == ServerSettings.canonicalHost else { return nil }
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        components?.host = ServerSettings.wanIPv4
-        guard let wanURL = components?.url else { return nil }
-        var wanReq = request
-        wanReq.url = wanURL
-        applyCanonicalHostHeader(&wanReq)
-        return wanReq
+    /// FQDN WAN → IPv4 publique + Host/SNI FQDN (équivalent Safari / curl --resolve).
+    private static func ipv4WanRequest(from request: URLRequest) -> URLRequest? {
+        guard let url = request.url, let host = url.host else { return nil }
+        let isFqdn = host == ServerSettings.canonicalHost
+        let isWanIP = host == ServerSettings.wanIPv4
+        guard isFqdn || isWanIP else { return nil }
+        if isFqdn {
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            components?.host = ServerSettings.wanIPv4
+            guard let wanURL = components?.url else { return nil }
+            var wanReq = request
+            wanReq.url = wanURL
+            applyCanonicalHostHeader(&wanReq)
+            return wanReq
+        }
+        return request
     }
 
     private static func applyCanonicalHostHeader(_ request: inout URLRequest) {

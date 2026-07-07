@@ -193,6 +193,7 @@ final class AppModel: ObservableObject {
     func redeemInviteToken(_ token: String) async {
         isLoading = true
         defer { isLoading = false }
+        api.setGuestRouting(true)
         do {
             let res = try await api.redeemInvite(token: token)
             applySession(
