@@ -28,11 +28,11 @@
       "versions": [
         {
           "version": "3.3.0",
-          "buildVersion": "45",
+          "buildVersion": "46",
           "date": "2026-07-07",
           "localizedDescription": "v3.3.0 Stable version figee Plexi. UI polish, mode hors ligne, admin invite, scan + toasts, AltStore OK.",
-          "downloadURL": "https://github.com/EiTeR-94/Beer-mobile/releases/download/ios-build-45/PlexiBeer.ipa",
-          "size": 971261,
+          "downloadURL": "https://github.com/EiTeR-94/Beer-mobile/releases/download/ios-build-46/PlexiBeer.ipa",
+          "size": 971262,
           "minOSVersion": "16.0"
         }
       ]
