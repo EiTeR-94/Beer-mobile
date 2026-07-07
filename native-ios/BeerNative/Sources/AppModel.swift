@@ -238,13 +238,21 @@ final class AppModel: ObservableObject {
         return nil
     }
 
-    func redeemInviteFromClipboard() async {
-        let text = UIPasteboard.general.string ?? ""
+    func redeemInviteFromText(_ text: String) async {
         guard let token = Self.parseJoinToken(from: text) else {
-            showToast("Colle d'abord le lien d'invitation (Messages ou mail).", variant: .error)
+            showToast("Lien d'invitation invalide — colle l'URL complete ou le token.", variant: .error, durationMs: 4200)
             return
         }
         await redeemInviteToken(token)
+    }
+
+    func redeemInviteFromClipboard() async {
+        let text = UIPasteboard.general.string ?? ""
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            showToast("Presse-papiers vide — colle le lien dans le champ.", variant: .error)
+            return
+        }
+        await redeemInviteFromText(text)
     }
 
     func logout() async {
