@@ -45,14 +45,16 @@ final class BeerAPI {
             return config
         }
 
-        // Admin / LAN : URLSession classique
+        // Comptes perso : FQDN + cookies ; :443 passe par PlexiIPv4URLProtocol (IPv4 WAN)
+        let adminConfig = baseConfig()
+        adminConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
         self.session = URLSession(
-            configuration: baseConfig(),
+            configuration: adminConfig,
             delegate: HomelabTLSDelegate.shared,
             delegateQueue: nil
         )
 
-        // Invités 5G : IP WAN + Bearer token (Keychain) — URLSession native, pas de URLProtocol
+        // Invités 5G : IP WAN + Bearer token — pas de URLProtocol
         self.guestSession = URLSession(
             configuration: baseConfig(),
             delegate: HomelabTLSDelegate.shared,
@@ -688,6 +690,7 @@ final class BeerAPI {
 
     func setGuestRouting(_ enabled: Bool) {
         guestRouting = enabled
+        PlexiIPv4URLProtocol.isEnabled = !enabled
         if enabled {
             baseURL = Self.canonicalBase(ServerSettings.wanApiBase)
             activeEndpoint = ServerSettings.wanApiBase.absoluteString

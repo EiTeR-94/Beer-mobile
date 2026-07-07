@@ -13,13 +13,17 @@ enum ServerSettings {
         URL(string: "https://\(wanIPv4)/beer/")!
     }
 
-    /// Invités 5G : IP WAN + token. Comptes normaux : LAN puis IP WAN (jamais FQDN — AAAA morte).
+    /// Hub LAN — FQDN obligatoire (cookies domain=eiter.freeboxos.fr ; IP = session morte).
+    static var lanApiBase: URL {
+        URL(string: "https://\(canonicalHost):8444/beer/")!
+    }
+
+    /// Invités 5G : IP + token Bearer. Comptes perso : FQDN :8444 puis :443 (cookies OK).
     static func candidateURLs(guestMode: Bool = false) -> [URL] {
         if guestMode {
             return [wanApiBase]
         }
-        let lan = URL(string: "https://192.168.1.50:8444/beer/")!
-        return [lan, wanApiBase]
+        return [lanApiBase, apiBase]
     }
 
     static func serverOrigin(from base: URL = apiBase) -> String {

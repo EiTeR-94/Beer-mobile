@@ -11,7 +11,11 @@ final class PlexiIPv4URLProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool {
         guard isEnabled, let url = request.url else { return false }
         if property(forKey: handledKey, in: request) != nil { return false }
-        return url.scheme == "https" && url.host == ServerSettings.canonicalHost
+        // :8444 = LAN direct (DNS .50). :443 = WAN IPv4 forcé (AAAA morte).
+        let port = url.port ?? 443
+        return url.scheme == "https"
+            && url.host == ServerSettings.canonicalHost
+            && port == 443
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest {

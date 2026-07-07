@@ -26,8 +26,8 @@ struct LoginView: View {
                     }
                     .padding(.bottom, 12)
 
-                    Text("Comptes perso (admin) : Wi‑Fi maison ou VPN Plexi — pas la 4G.")
-                        .font(.system(size: 12))
+                    Text("Compte perso : Wi‑Fi maison + DNS 192.168.1.50 sur l’iPhone (Réglages Wi‑Fi). Pas la 4G.")
+                        .font(.system(size: 11))
                         .foregroundStyle(Theme.muted)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 8)
