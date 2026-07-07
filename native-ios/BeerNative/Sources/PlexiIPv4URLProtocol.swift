@@ -41,10 +41,10 @@ final class PlexiIPv4URLProtocol: URLProtocol {
                 client?.urlProtocol(self, didLoad: data)
                 client?.urlProtocolDidFinishLoading(self)
             } catch {
-                let nsErr = NSError(domain: "fr.eiter.plexibeer", code: 0, userInfo: [
-                    NSLocalizedDescriptionKey: "Erreur 5G (IPv4): \(error.localizedDescription)"
-                ])
-                client?.urlProtocol(self, didFailWithError: nsErr)
+                // Toujours produire une erreur avec description claire pour éviter "erreur 0" générique
+                let desc = "Erreur 5G invité (IPv4 transport): \(error.localizedDescription)"
+                let urlErr = URLError(.unknown, userInfo: [NSLocalizedDescriptionKey: desc])
+                client?.urlProtocol(self, didFailWithError: urlErr)
             }
         }
     }
