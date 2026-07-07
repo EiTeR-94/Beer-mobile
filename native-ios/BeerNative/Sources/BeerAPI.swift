@@ -105,7 +105,7 @@ final class BeerAPI {
             throw BeerAPIError.server("Trop de tentatives — réessaie dans une minute.")
         }
         if http.statusCode == 403 {
-            throw BeerAPIError.server("Accès refusé — Wi‑Fi maison ou VPN Plexi requis")
+            throw BeerAPIError.server("Invitation refusée ou accès bloqué")
         }
         guard let decoded = try? JSONDecoder().decode(JoinInviteResponse.self, from: data) else {
             throw BeerAPIError.decode
@@ -677,8 +677,10 @@ final class BeerAPI {
     }
 
     private func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
+        var req = request
+        Self.applyCanonicalHostHeader(&req)
         do {
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await session.data(for: req)
             guard let http = response as? HTTPURLResponse, let url = response.url else {
                 throw BeerAPIError.decode
             }
@@ -691,7 +693,7 @@ final class BeerAPI {
                 throw BeerAPIError.server("Injoignable : \(baseURL.host ?? "?")")
             case .secureConnectionFailed, .serverCertificateUntrusted:
                 throw BeerAPIError.server(
-                    "Connexion SSL impossible — Wi‑Fi maison ou VPN Plexi requis (pas en 4G seule)."
+                    "Connexion impossible (souvent IPv6 Freebox) — coupe/rallume le réseau ou réessaie en Wi‑Fi maison."
                 )
             case .timedOut:
                 throw BeerAPIError.server("Timeout \(baseURL.host ?? "?")")
@@ -703,6 +705,11 @@ final class BeerAPI {
         } catch {
             throw BeerAPIError.network(error)
         }
+    }
+
+    private static func applyCanonicalHostHeader(_ request: inout URLRequest) {
+        guard let host = request.url?.host, IPv4Resolver.isIPv4(host) else { return }
+        request.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
     }
 
     private static func canonicalBase(_ url: URL) -> URL {

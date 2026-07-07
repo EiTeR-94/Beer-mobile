@@ -164,7 +164,7 @@ final class AppModel: ObservableObject {
             return "Serveur OK · \(ok)"
         }
         networkStatus = isOnline ? .serverUnreachable : .offline
-        return "Échec — vérifie ta connexion Wi‑Fi ou VPN Plexi."
+        return "Échec — vérifie ta connexion (4G ou Wi‑Fi maison)."
     }
 
     func login(username: String, password: String) async throws {

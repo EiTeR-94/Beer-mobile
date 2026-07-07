@@ -8,6 +8,7 @@ final class HomelabTLSDelegate: NSObject, URLSessionDelegate {
         "192.168.1.50",
         "192.168.1.44",
         "eiter.freeboxos.fr",
+        "82.64.151.113",
     ]
 
     func urlSession(

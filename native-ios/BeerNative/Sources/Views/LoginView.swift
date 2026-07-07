@@ -91,7 +91,7 @@ struct LoginView: View {
                         }
                         .padding(.top, 10)
 
-                        Text("Wi‑Fi maison ou VPN Plexi requis — colle le lien puis Activer.")
+                        Text("4G ou Wi‑Fi — colle le lien reçu puis Activer.")
                             .font(.system(size: 11))
                             .foregroundStyle(Theme.muted)
                             .frame(maxWidth: .infinity, alignment: .leading)

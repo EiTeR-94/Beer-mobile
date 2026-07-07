@@ -1,15 +1,22 @@
 import Foundation
 
 enum ServerSettings {
-    /// URL canonique — Wi‑Fi maison ou VPN Plexi via le FQDN Plexi.
-    static let apiBaseString = "https://eiter.freeboxos.fr/beer/"
+    /// URL canonique — invitations actives en 4G (session invité + appareil lié).
+    static let canonicalHost = "eiter.freeboxos.fr"
+    static let apiBaseString = "https://\(canonicalHost)/beer/"
 
     static var apiBase: URL {
         URL(string: apiBaseString)!
     }
 
     static var candidateURLs: [URL] {
-        [apiBase]
+        var urls = [apiBase]
+        if let ipv4 = IPv4Resolver.resolve(canonicalHost),
+           let fallback = URL(string: "https://\(ipv4)/beer/"),
+           fallback != apiBase {
+            urls.append(fallback)
+        }
+        return urls
     }
 
     static func serverOrigin(from base: URL = apiBase) -> String {
