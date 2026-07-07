@@ -1,16 +1,11 @@
 import Foundation
 import Network
 
-/// HTTPS vers l'IP WAN avec SNI = FQDN (contourne l'AAAA Freebox ::1 en 4G).
+/// Couche TCP IPv4+SNI pour PlexiIPv4URLProtocol — pas d'usage direct (cookies = URLSession).
 enum HomelabIPv4Transport {
     private static let wanIP = ServerSettings.wanIPv4
     private static let tlsHost = ServerSettings.canonicalHost
-
-    private static var cookieURL: URL {
-        URL(string: "https://\(tlsHost)/beer/")!
-    }
-
-    private static let timeoutSeconds: UInt64 = 8
+    private static let timeoutSeconds: UInt64 = 15
 
     static func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         try await withThrowingTaskGroup(of: (Data, HTTPURLResponse, URL).self) { group in
@@ -92,12 +87,9 @@ enum HomelabIPv4Transport {
         if !body.isEmpty {
             lines.append("Content-Length: \(body.count)")
         }
-        if let cookieLine = cookieHeader() {
-            lines.append("Cookie: \(cookieLine)")
-        }
         for (key, value) in request.allHTTPHeaderFields ?? [:] {
             let low = key.lowercased()
-            if low == "host" || low == "connection" || low == "accept-encoding" || low == "cookie" { continue }
+            if low == "host" || low == "connection" || low == "accept-encoding" { continue }
             lines.append("\(key): \(value)")
         }
         var payload = (lines.joined(separator: "\r\n") + "\r\n\r\n").data(using: .utf8) ?? Data()
@@ -106,53 +98,17 @@ enum HomelabIPv4Transport {
         try await send(conn: conn, data: payload)
         let raw = try await receive(conn: conn)
         let parsed = try parseHTTP(raw, url: url)
-        storeCookies(from: parsed.setCookieLines)
+        storeCookiesForURLSession(parsed.setCookieLines, url: url)
         return (parsed.body, parsed.response, url)
     }
 
-    private static func cookieHeader() -> String? {
-        let stored = HTTPCookieStorage.shared.cookies(for: cookieURL) ?? []
-        guard !stored.isEmpty else { return nil }
-        return stored.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
-    }
-
-    private static func storeCookies(from setCookieLines: [String]) {
-        for line in setCookieLines {
-            guard let cookie = makeCookie(from: line) else { continue }
-            HTTPCookieStorage.shared.setCookie(cookie)
+    /// Parse Set-Cookie comme URLSession (domaine FQDN de la requête).
+    private static func storeCookiesForURLSession(_ lines: [String], url: URL) {
+        for line in lines {
+            let fields = ["Set-Cookie": line]
+            let cookies = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
+            HTTPCookieStorage.shared.setCookies(cookies)
         }
-    }
-
-    /// Cookies reçus via IP WAN : forcer le domaine FQDN pour les requêtes suivantes.
-    private static func makeCookie(from line: String) -> HTTPCookie? {
-        let parts = line.split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }
-        guard let first = parts.first, let eq = first.firstIndex(of: "=") else { return nil }
-        let name = String(first[..<eq])
-        let value = String(first[first.index(after: eq)...])
-
-        var path = "/beer"
-        var maxAge: Int?
-        var secure = true
-        for attr in parts.dropFirst() {
-            let lower = attr.lowercased()
-            if lower.hasPrefix("path=") {
-                path = String(attr.dropFirst(5))
-            } else if lower.hasPrefix("max-age=") {
-                maxAge = Int(attr.dropFirst(8))
-            } else if lower == "secure" {
-                secure = true
-            }
-        }
-
-        var props: [HTTPCookiePropertyKey: Any] = [
-            .name: name,
-            .value: value,
-            .domain: tlsHost,
-            .path: path,
-            .secure: secure,
-        ]
-        if let maxAge { props[.maximumAge] = maxAge }
-        return HTTPCookie(properties: props)
     }
 
     private static func send(conn: NWConnection, data: Data) async throws {

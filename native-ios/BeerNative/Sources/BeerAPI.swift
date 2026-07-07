@@ -27,22 +27,35 @@ final class BeerAPI {
     private static let nativeUserAgent = "PlexiBeer/3.3.4 (iPhone; native)"
 
     private let session: URLSession
+    private let guestSession: URLSession
     private(set) var baseURL: URL
     private(set) var activeEndpoint: String = ""
 
     init(baseURL: URL = ServerSettings.apiBase) {
         self.baseURL = Self.canonicalBase(baseURL)
-        let config = URLSessionConfiguration.default
-        config.httpCookieStorage = HTTPCookieStorage.shared
-        config.httpShouldSetCookies = true
-        config.httpCookieAcceptPolicy = .always
-        config.timeoutIntervalForRequest = 8
-        config.timeoutIntervalForResource = 20
+
+        let sharedCookies = HTTPCookieStorage.shared
+        func baseConfig() -> URLSessionConfiguration {
+            let config = URLSessionConfiguration.default
+            config.httpCookieStorage = sharedCookies
+            config.httpShouldSetCookies = true
+            config.httpCookieAcceptPolicy = .always
+            config.timeoutIntervalForRequest = 15
+            config.timeoutIntervalForResource = 30
+            return config
+        }
+
+        // Admin / LAN : URLSession classique
         self.session = URLSession(
-            configuration: config,
+            configuration: baseConfig(),
             delegate: HomelabTLSDelegate.shared,
             delegateQueue: nil
         )
+
+        // Invités 5G : URLSession + cookies système (PWA), IPv4 via PlexiIPv4URLProtocol
+        let guestConfig = baseConfig()
+        guestConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
+        self.guestSession = URLSession(configuration: guestConfig)
     }
 
     func setBaseURL(_ url: URL) {
@@ -662,6 +675,11 @@ final class BeerAPI {
 
     func setGuestRouting(_ enabled: Bool) {
         guestRouting = enabled
+        PlexiIPv4URLProtocol.isEnabled = enabled
+        if enabled {
+            baseURL = Self.canonicalBase(ServerSettings.apiBase)
+            activeEndpoint = ServerSettings.apiBase.absoluteString
+        }
     }
 
     private func request(
@@ -680,7 +698,7 @@ final class BeerAPI {
         )
     }
 
-    /// Invitations 5G : FQDN + IPv4 forcé (guestRouting activé avant l'appel).
+    /// Invitations 5G : une URL FQDN, URLSession + cookies (comme fetch PWA).
     private func requestInvite(
         path: String,
         method: String,
@@ -688,8 +706,11 @@ final class BeerAPI {
         contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse, URL) {
         let prev = guestRouting
-        guestRouting = true
-        defer { guestRouting = prev }
+        setGuestRouting(true)
+        defer {
+            guestRouting = prev
+            PlexiIPv4URLProtocol.isEnabled = prev
+        }
         return try await requestEndpoints(
             [ServerSettings.apiBase],
             path: path,
@@ -740,18 +761,10 @@ final class BeerAPI {
     private func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         var req = request
         Self.applyCanonicalHostHeader(&req)
-
-        if req.url?.host == ServerSettings.wanIPv4 {
-            return try await HomelabIPv4Transport.perform(req)
-        }
-
-        // Invités 5G : FQDN → IPv4+SNI (AAAA Freebox morte, Safari bascule tout seul).
-        if guestRouting, let routed = Self.ipv4WanRequest(from: req) {
-            return try await HomelabIPv4Transport.perform(routed)
-        }
+        let httpSession = guestRouting ? guestSession : session
 
         do {
-            let (data, response) = try await session.data(for: req)
+            let (data, response) = try await httpSession.data(for: req)
             guard let http = response as? HTTPURLResponse, let url = response.url else {
                 throw BeerAPIError.decode
             }
@@ -759,22 +772,9 @@ final class BeerAPI {
         } catch let err as BeerAPIError {
             throw err
         } catch let err as URLError {
-            if guestRouting, let routed = Self.ipv4WanRequest(from: req), Self.isConnectivityError(err) {
-                return try await HomelabIPv4Transport.perform(routed)
-            }
             throw Self.mapURLError(err, host: baseURL.host)
         } catch {
             throw BeerAPIError.network(error)
-        }
-    }
-
-    private static func isConnectivityError(_ err: URLError) -> Bool {
-        switch err.code {
-        case .cannotConnectToHost, .networkConnectionLost, .timedOut,
-             .secureConnectionFailed, .serverCertificateUntrusted, .dnsLookupFailed:
-            return true
-        default:
-            return false
         }
     }
 
@@ -791,24 +791,6 @@ final class BeerAPI {
         default:
             return .network(err)
         }
-    }
-
-    /// FQDN WAN → IPv4 publique + Host/SNI FQDN (équivalent Safari / curl --resolve).
-    private static func ipv4WanRequest(from request: URLRequest) -> URLRequest? {
-        guard let url = request.url, let host = url.host else { return nil }
-        let isFqdn = host == ServerSettings.canonicalHost
-        let isWanIP = host == ServerSettings.wanIPv4
-        guard isFqdn || isWanIP else { return nil }
-        if isFqdn {
-            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-            components?.host = ServerSettings.wanIPv4
-            guard let wanURL = components?.url else { return nil }
-            var wanReq = request
-            wanReq.url = wanURL
-            applyCanonicalHostHeader(&wanReq)
-            return wanReq
-        }
-        return request
     }
 
     private static func applyCanonicalHostHeader(_ request: inout URLRequest) {
