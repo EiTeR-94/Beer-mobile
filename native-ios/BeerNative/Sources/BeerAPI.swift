@@ -925,7 +925,7 @@ final class BeerAPI {
                 }
             }
             if let lastError { throw lastError }
-            throw BeerAPIError.server("Serveur injoignable en 5G (IPv4). Vérifie ta connexion cellulaire.")
+            throw BeerAPIError.server("Serveur injoignable en 5G (IPv4). Premier chargement lent normal (latence WAN + handshakes). Réessaie ou utilise WiFi/VPN.")
         }
     }
 
@@ -1016,7 +1016,7 @@ final class BeerAPI {
                     throw BeerAPIError.server("SSL refusé sur \(host).")
                 }
             case .timedOut:
-                throw BeerAPIError.server("Timeout \(endpoint.host ?? "?"). Le serveur est lent ou injoignable.")
+                throw BeerAPIError.server("Timeout \(endpoint.host ?? "?"). Sur 5G le premier chargement peut prendre 10-20s (nouvelles connexions TCP+TLS à chaque appel).")
             case .notConnectedToInternet:
                 throw BeerAPIError.server("Pas de réseau")
             default:

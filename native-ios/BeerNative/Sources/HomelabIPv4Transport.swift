@@ -14,17 +14,17 @@ import Network
 enum HomelabIPv4Transport {
     private static let wanIP = ServerSettings.wanIPv4
     private static let tlsHost = ServerSettings.canonicalHost
-    private static let timeoutSeconds: UInt64 = 60  // longer for 5G cellular
+    private static let timeoutSeconds: UInt64 = 25  // cellular 5G: fail faster to avoid "ultra long loading" feel; WAN latency is higher than LAN
 
     static func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         try await withThrowingTaskGroup(of: (Data, HTTPURLResponse, URL).self) { group in
             group.addTask { try await performOnce(request) }
             group.addTask {
                 try await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
-                throw BeerAPIError.server("Timeout serveur")
+                throw BeerAPIError.server("Timeout 5G/WAN (connexion lente ou instable). Réessaie ou passe par WiFi/VPN.")
             }
             guard let result = try await group.next() else {
-                throw BeerAPIError.server("Timeout serveur")
+                throw BeerAPIError.server("Timeout 5G/WAN (connexion lente ou instable). Réessaie ou passe par WiFi/VPN.")
             }
             group.cancelAll()
             return result
