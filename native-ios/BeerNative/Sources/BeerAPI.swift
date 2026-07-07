@@ -50,9 +50,7 @@ final class BeerAPI {
             config.timeoutIntervalForResource = resourceTimeout
             return config
         }
-        // Admin + LAN réel : :8444 direct + :443 avec IPv4 forcé.
-        // La session "admin" (long timeout) est utilisée pour tous les appels LAN réels.
-        // httpShouldSetCookies=false car on injecte manuellement le cookie pour fiabilité sur IP.
+        // Local session (LAN accounts): custom IPv4 + TLS delegate for LAN IP certs and IPv6 bypass.
         let adminConfig = baseConfig(shouldSetCookies: false)
         adminConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
         self.session = URLSession(
@@ -70,13 +68,11 @@ final class BeerAPI {
             delegate: HomelabTLSDelegate.shared,
             delegateQueue: nil
         )
-        // Invités 5G : chemin STANDARD vers le domaine (comme le navigateur webapp).
-        // PAS de PlexiIPv4URLProtocol, PAS de HomelabTLSDelegate, PAS de transport custom.
-        // Ça permet d'utiliser la résolution DNS et connexion normale en 5G pur.
-        // (Le stack custom IPv4/TLS est réservé aux locaux LAN pour éviter les emmerdes IPv6/SSL sur IP.)
+        // Guest session (5G invités): plain standard URLSession to the domain.
+        // No custom protocol, no custom TLS delegate. Same as browser webapp.
+        // This allows normal DNS/TLS on 5G to eiter.freeboxos.fr .
         let guestConfig = baseConfig(requestTimeout: 60, resourceTimeout: 180)
-        // pas de protocolClasses, pas de delegate custom
-        self.passkeySession = URLSession(configuration: guestConfig)  // plain standard pour guests 5G
+        self.passkeySession = URLSession(configuration: guestConfig)
     }
 
     private func session(for endpoint: URL, guest: Bool, probe: Bool = false) -> URLSession {
@@ -901,7 +897,8 @@ final class BeerAPI {
         }
     }
 
-    /// 5G / passkey — :443 + IPv4 forcé (endpoints publics ou Bearer nginx-gate).
+    /// 5G / passkey guest path — standard connection to domain using plain guestSession.
+    /// No custom IPv4 protocol or TLS delegate (unlike local LAN path).
     private func wanRequest(
         path: String,
         method: String,
@@ -1035,8 +1032,8 @@ final class BeerAPI {
     }
 
     private func performWan(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
-        // Chemin guest 5G : on utilise la session plain (standard) via performOnEndpoint.
-        // Pas de custom transport ici (réservé aux locaux).
+        // Guest 5G path: use plain guestSession (standard networking to domain).
+        // No custom LAN IPv4 or TLS delegate.
         try await performOnEndpoint(ServerSettings.apiBase, request: request, guest: true)
     }
 
