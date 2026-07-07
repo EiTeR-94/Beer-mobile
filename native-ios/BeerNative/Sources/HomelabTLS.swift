@@ -40,20 +40,31 @@ final class HomelabTLSDelegate: NSObject, URLSessionDelegate {
                       host.hasPrefix("172.28.") || host.hasPrefix("172.29.") ||
                       host.hasPrefix("172.30.") || host.hasPrefix("172.31.")
 
+        // Try normal evaluation first (works for domain name connections)
+        var error: CFError?
+        if SecTrustEvaluateWithError(trust, &error) {
+            completionHandler(.useCredential, URLCredential(trust: trust))
+            return
+        }
+
+        // If normal eval failed and this is a LAN IP, retry with a policy that
+        // validates the certificate against the real domain name (eiter.freeboxos.fr).
+        // This is required because the LE cert's SAN matches the domain, not the IP address.
         if isLanIP {
-            // Validate that the certificate chain itself is valid (trusted root, not expired, etc.)
-            // but ignore hostname mismatch (expected when connecting by IP).
-            var error: CFError?
+            let domain = "eiter.freeboxos.fr" as CFString
+            let policy = SecPolicyCreateSSL(true, domain)
+            SecTrustSetPolicies(trust, [policy] as CFArray)
+
             if SecTrustEvaluateWithError(trust, &error) {
+                NSLog("HomelabTLS: accepted LAN IP %@ using domain policy", host)
                 completionHandler(.useCredential, URLCredential(trust: trust))
                 return
             } else {
-                // Chain validation failed — fall back to default (will likely reject)
-                NSLog("HomelabTLS: chain validation failed for LAN IP %@ - %@", host, (error as Error?)?.localizedDescription ?? "unknown")
+                NSLog("HomelabTLS: domain policy validation failed for LAN IP %@ - %@", host, (error as Error?)?.localizedDescription ?? "unknown")
             }
         }
 
-        // Default path for domain name and everything else.
+        // Default path for domain name and everything else (or failed LAN).
         completionHandler(.performDefaultHandling, nil)
     }
 }
