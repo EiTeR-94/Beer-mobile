@@ -29,20 +29,33 @@ final class BeerAPI {
     private static let nativeUserAgent = "PlexiBeer/3.3.4 (iPhone; native)"
 
     private let session: URLSession
+    private let passkeySession: URLSession
     private(set) var baseURL: URL
     private(set) var activeEndpoint: String = ""
 
     init(baseURL: URL = ServerSettings.apiBase) {
         self.baseURL = Self.canonicalBase(baseURL)
-        let config = URLSessionConfiguration.default
-        config.httpCookieStorage = HTTPCookieStorage.shared
-        config.httpShouldSetCookies = true
-        config.httpCookieAcceptPolicy = .always
-        config.timeoutIntervalForRequest = 15
-        config.timeoutIntervalForResource = 30
-        config.protocolClasses = [PlexiIPv4URLProtocol.self]
+        let sharedCookies = HTTPCookieStorage.shared
+        func baseConfig() -> URLSessionConfiguration {
+            let config = URLSessionConfiguration.default
+            config.httpCookieStorage = sharedCookies
+            config.httpShouldSetCookies = true
+            config.httpCookieAcceptPolicy = .always
+            config.timeoutIntervalForRequest = 15
+            config.timeoutIntervalForResource = 30
+            return config
+        }
+        // Comptes locaux : URLSession normale + :8444 LAN (cookies domain OK).
         self.session = URLSession(
-            configuration: config,
+            configuration: baseConfig(),
+            delegate: HomelabTLSDelegate.shared,
+            delegateQueue: nil
+        )
+        // Face ID / passkey seulement : IPv4 forcé sur :443 (AAAA morte).
+        let passkeyConfig = baseConfig()
+        passkeyConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
+        self.passkeySession = URLSession(
+            configuration: passkeyConfig,
             delegate: HomelabTLSDelegate.shared,
             delegateQueue: nil
         )
@@ -100,7 +113,7 @@ final class BeerAPI {
         let clean = inviteToken.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { throw BeerAPIError.server("Lien d'invitation invalide") }
         let body = try JSONEncoder().encode(["invite_token": clean])
-        let (data, http, _) = try await request(
+        let (data, http, _) = try await passkeyRequest(
             path: "/api/passkey/register/options",
             method: "POST",
             body: body,
@@ -126,7 +139,7 @@ final class BeerAPI {
         guard !clean.isEmpty else { throw BeerAPIError.server("Lien d'invitation invalide") }
         let payload: [String: Any] = ["invite_token": clean, "credential": credential]
         let body = try JSONSerialization.data(withJSONObject: payload)
-        let (data, http, _) = try await request(
+        let (data, http, _) = try await passkeyRequest(
             path: "/api/passkey/register/verify",
             method: "POST",
             body: body,
@@ -148,7 +161,7 @@ final class BeerAPI {
         let clean = username.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { throw BeerAPIError.server("Compte invité inconnu") }
         let body = try JSONEncoder().encode(["username": clean])
-        let (data, http, _) = try await request(
+        let (data, http, _) = try await passkeyRequest(
             path: "/api/passkey/login/options",
             method: "POST",
             body: body,
@@ -166,7 +179,7 @@ final class BeerAPI {
 
     func passkeyLoginVerify(credential: [String: Any]) async throws -> PasskeyVerifyResponse {
         let body = try JSONSerialization.data(withJSONObject: ["credential": credential])
-        let (data, http, _) = try await request(
+        let (data, http, _) = try await passkeyRequest(
             path: "/api/passkey/login/verify",
             method: "POST",
             body: body,
@@ -759,6 +772,31 @@ final class BeerAPI {
         }
     }
 
+    private func passkeyRequest(
+        path: String,
+        method: String,
+        body: Data?,
+        contentType: String? = nil
+    ) async throws -> (Data, HTTPURLResponse, URL) {
+        var lastError: Error?
+        for candidate in ServerSettings.passkeyBaseURLs {
+            baseURL = Self.canonicalBase(candidate)
+            var req = URLRequest(url: try url(path))
+            req.httpMethod = method
+            if let contentType { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
+            applyCommonHeaders(to: &req)
+            req.httpBody = body
+            do {
+                let result = try await performPasskey(req)
+                return result
+            } catch {
+                lastError = error
+            }
+        }
+        if let lastError { throw lastError }
+        throw BeerAPIError.server("Passkey injoignable (IPv4)")
+    }
+
     private func request(
         path: String,
         method: String,
@@ -786,6 +824,35 @@ final class BeerAPI {
         throw BeerAPIError.allEndpointsFailed(
             "Aucun serveur joignable (\(tried)). Active « Réseau local » pour Beer Log dans Réglages iPhone."
         )
+    }
+
+    private func performPasskey(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
+        var req = request
+        applyCommonHeaders(to: &req)
+        do {
+            let (data, response) = try await passkeySession.data(for: req)
+            guard let http = response as? HTTPURLResponse, let url = response.url else {
+                throw BeerAPIError.decode
+            }
+            return (data, http, url)
+        } catch let err as BeerAPIError {
+            throw err
+        } catch let err as URLError {
+            switch err.code {
+            case .cannotConnectToHost, .networkConnectionLost:
+                throw BeerAPIError.server("Injoignable : \(baseURL.host ?? "?")")
+            case .secureConnectionFailed, .serverCertificateUntrusted:
+                throw BeerAPIError.server("SSL refusé sur \(baseURL.host ?? "?")")
+            case .timedOut:
+                throw BeerAPIError.server("Timeout \(baseURL.host ?? "?")")
+            case .notConnectedToInternet:
+                throw BeerAPIError.server("Pas de réseau")
+            default:
+                throw BeerAPIError.network(err)
+            }
+        } catch {
+            throw BeerAPIError.network(error)
+        }
     }
 
     private func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {

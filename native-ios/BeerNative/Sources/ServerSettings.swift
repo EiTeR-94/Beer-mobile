@@ -12,7 +12,16 @@ enum ServerSettings {
         URL(string: apiBaseString)!
     }
 
+    /// Hub LAN :8444 — cookies admin OK (FQDN). :443 = fallback IPv4 (passkey / 4G).
+    static var lanApiBase: URL {
+        URL(string: "https://\(canonicalHost):8444/beer/")!
+    }
+
     static var candidateURLs: [URL] {
+        [lanApiBase, apiBase]
+    }
+
+    static var passkeyBaseURLs: [URL] {
         [apiBase]
     }
 

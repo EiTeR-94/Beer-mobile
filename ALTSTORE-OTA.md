@@ -16,7 +16,9 @@ https://eiter.freeboxos.fr/mobile/beer/altstore.json
 
 > **Important :** n’utilise **jamais** `releases/latest/download/altstore.json` ni `raw.githubusercontent.com` — ça provoque l’erreur AltStore **3840**. Une seule URL : ci-dessus.
 
-> **N’utilise pas** `192.168.1.50` ni `:8444` — certificat / accès → échec ou 404.
+> **N’utilise pas** `192.168.1.50` ni `:8444` dans AltStore — certificat / accès → échec.
+>
+> **Wi‑Fi maison :** le DHCP Freebox doit utiliser le DNS Plexi (`192.168.1.50`) en premier. Sinon l’iPhone résout le domaine en **IPv6 cassée** → erreurs **2005** puis **3840**. Après correction serveur : **couper/reconnecter le Wi‑Fi** sur l’iPhone.
 
 ## Installer ou mettre à jour
 
