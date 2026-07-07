@@ -28,7 +28,7 @@ const WAN_BASE = (
 const LAN_BASE = (
   process.env.MOBILE_DIST_LAN_BASE_URL || "https://192.168.1.50:8444/mobile/beer"
 ).replace(/\/$/, "");
-const CANONICAL_SOURCE_URL = `${LAN_BASE}/altstore.json`;
+const CANONICAL_SOURCE_URL = `${WAN_BASE}/altstore.json`;
 
 /** AltStore / NSCocoa 3840 : JSON 100 % ASCII (pas d'accents). */
 function ascii(s) {
@@ -94,7 +94,7 @@ const assetBase =
           /\/$/,
           ""
         )
-      : LAN_BASE;
+      : WAN_BASE;
 
 const appLongDescription = ascii(
   "Beer Log, c'est ton journal de bieres sur le serveur Plexi d'EiTeR - 100% natif iPhone, zero WebView. " +
