@@ -3,7 +3,7 @@ import Foundation
 /// Invités 5G : URLSession + cookies système (comme PWA), TCP forcé en IPv4 (AAAA Freebox morte).
 /// URLSession pose/relit les cookies ; ce protocol ne fait que le transport IPv4+SNI.
 final class PlexiIPv4URLProtocol: URLProtocol {
-    private var task: Task<Void, Never>?
+    private var loadTask: Task<Void, Never>?
 
     static var isEnabled = false
 
@@ -17,7 +17,7 @@ final class PlexiIPv4URLProtocol: URLProtocol {
     }
 
     override func startLoading() {
-        task = Task {
+        loadTask = Task {
             do {
                 let (data, response, _) = try await HomelabIPv4Transport.perform(request)
                 client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -30,7 +30,7 @@ final class PlexiIPv4URLProtocol: URLProtocol {
     }
 
     override func stopLoading() {
-        task?.cancel()
-        task = nil
+        loadTask?.cancel()
+        loadTask = nil
     }
 }

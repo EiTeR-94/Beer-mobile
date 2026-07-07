@@ -107,7 +107,9 @@ enum HomelabIPv4Transport {
         for line in lines {
             let fields = ["Set-Cookie": line]
             let cookies = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
-            HTTPCookieStorage.shared.setCookies(cookies)
+            for cookie in cookies {
+                HTTPCookieStorage.shared.setCookie(cookie)
+            }
         }
     }
 
