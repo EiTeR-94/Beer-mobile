@@ -13,13 +13,13 @@ enum ServerSettings {
         URL(string: "https://\(wanIPv4)/beer/")!
     }
 
-    /// Invités 5G : IP WAN (IPv4 direct, pas de DNS/AAAA). Comptes normaux : LAN d'abord.
+    /// Invités 5G : IP WAN + token. Comptes normaux : LAN puis IP WAN (jamais FQDN — AAAA morte).
     static func candidateURLs(guestMode: Bool = false) -> [URL] {
         if guestMode {
             return [wanApiBase]
         }
         let lan = URL(string: "https://192.168.1.50:8444/beer/")!
-        return [lan, apiBase]
+        return [lan, wanApiBase]
     }
 
     static func serverOrigin(from base: URL = apiBase) -> String {

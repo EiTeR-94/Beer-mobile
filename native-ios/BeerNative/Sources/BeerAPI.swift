@@ -110,7 +110,9 @@ final class BeerAPI {
             contentType: "application/json"
         )
         if http.statusCode == 403 {
-            throw BeerAPIError.server("Accès refusé — Wi‑Fi maison ou VPN Plexi requis")
+            throw BeerAPIError.server(
+                "Compte perso : connecte-toi en Wi‑Fi maison (192.168.1.x) ou VPN Plexi — pas en 4G/5G."
+            )
         }
         guard let decoded = try? JSONDecoder().decode(LoginResponse.self, from: data) else {
             let hint = http.statusCode == 404

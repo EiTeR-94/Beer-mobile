@@ -24,7 +24,14 @@ struct LoginView: View {
                             .font(.system(size: Theme.Font.sub))
                             .foregroundStyle(Theme.muted)
                     }
-                    .padding(.bottom, 20)
+                    .padding(.bottom, 12)
+
+                    Text("Comptes perso (admin) : Wi‑Fi maison ou VPN Plexi — pas la 4G.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.muted)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 12)
 
                     VStack(spacing: 0) {
                         BeerField(label: "Identifiant", text: $username, placeholder: "")

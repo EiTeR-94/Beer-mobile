@@ -176,6 +176,7 @@ final class AppModel: ObservableObject {
     }
 
     func login(username: String, password: String) async throws {
+        GuestAccessToken.clear()
         api.setGuestRouting(false)
         _ = try await api.login(username: username, password: password)
         let me = try await api.me()

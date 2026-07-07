@@ -74,7 +74,7 @@ function versionReleaseNotes(ver, buildNum) {
   }
   if (ver === "3.3.4") {
     return ascii(
-      "Invites 5G: token Bearer natif (Keychain) + IPv4 direct. Fini les cookies casses. Historique, galerie, recherche hors LAN."
+      "Invites 5G: token Bearer + IPv4. Comptes perso: LAN/VPN (fix fallback IPv4 admin)."
     );
   }
   return ascii(`Build ${buildNum} - Beer Log native`);
