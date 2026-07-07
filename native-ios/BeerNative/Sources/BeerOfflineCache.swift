@@ -1,5 +1,19 @@
 import Foundation
 
+private struct CacheEnvelopeEnc<P: Encodable>: Encodable {
+    let savedAt: Date
+    let payload: P
+}
+
+private struct CacheEnvelopeDec<P: Decodable>: Decodable {
+    let savedAt: Date
+    let payload: P
+}
+
+private struct CacheSavedAtEnvelope: Decodable {
+    let savedAt: Date
+}
+
 /// Snapshots JSON des listes consultées en ligne (lecture HL).
 @MainActor
 final class BeerOfflineCache {
@@ -18,28 +32,19 @@ final class BeerOfflineCache {
     }
 
     func save<T: Encodable>(_ value: T, name: String) {
-        struct Envelope<P: Encodable>: Encodable {
-            let savedAt: Date
-            let payload: P
-        }
-        guard let data = try? encoder.encode(Envelope(savedAt: Date(), payload: value)) else { return }
+        guard let data = try? encoder.encode(CacheEnvelopeEnc(savedAt: Date(), payload: value)) else { return }
         try? data.write(to: file(name), options: Data.WritingOptions.atomic)
     }
 
     func load<T: Decodable>(_ type: T.Type, name: String) -> T? {
-        struct Envelope<P: Decodable>: Decodable {
-            let savedAt: Date
-            let payload: P
-        }
         guard let data = try? Data(contentsOf: file(name)),
-              let env = try? decoder.decode(Envelope<T>.self, from: data) else { return nil }
+              let env = try? decoder.decode(CacheEnvelopeDec<T>.self, from: data) else { return nil }
         return env.payload
     }
 
     func savedAt(name: String) -> Date? {
-        struct AnyEnvelope: Decodable { let savedAt: Date }
         guard let data = try? Data(contentsOf: file(name)),
-              let env = try? decoder.decode(AnyEnvelope.self, from: data) else { return nil }
+              let env = try? decoder.decode(CacheSavedAtEnvelope.self, from: data) else { return nil }
         return env.savedAt
     }
 
