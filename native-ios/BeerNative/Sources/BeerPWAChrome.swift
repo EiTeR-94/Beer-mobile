@@ -124,7 +124,7 @@ struct BeerSelectField: View {
                 .padding(.horizontal, 6)
                 .padding(.vertical, 7)
                 .frame(maxWidth: .infinity)
-                .background(Theme.card)
+                .background(Theme.fieldBg)
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
@@ -205,7 +205,7 @@ struct BeerGiftsFiltersRow: View {
                     .font(.system(size: 12.5))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 7)
-                    .background(Theme.card)
+                    .background(Theme.fieldBg)
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .foregroundStyle(Theme.text)
@@ -232,12 +232,159 @@ struct BeerHistorySearchField: View {
                 .font(.system(size: 12.5))
                 .padding(.horizontal, 6)
                 .padding(.vertical, 7)
-                .background(Theme.card)
+                .background(Theme.fieldBg)
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .foregroundStyle(Theme.text)
         }
         .padding(.bottom, 10)
+    }
+}
+
+// MARK: - Admin référentiels (admin-ref-card PWA)
+
+struct BeerAdminReferentialsCard: View {
+    @Binding var tab: Int
+    let styles: [ReferentialEntry]
+    let hops: [ReferentialEntry]
+    let flavors: [ReferentialEntry]
+    @Binding var filter: String
+    @Binding var newName: String
+    let onAdd: () -> Void
+    let onDelete: (String) -> Void
+
+    private var activeList: [ReferentialEntry] {
+        let list: [ReferentialEntry]
+        switch tab {
+        case 1: list = hops
+        case 2: list = flavors
+        default: list = styles
+        }
+        guard !filter.isEmpty else { return list }
+        let q = BeerFormatters.normalizeSearch(filter)
+        return list.filter { BeerFormatters.normalizeSearch($0.name).contains(q) }
+    }
+
+    private var addPlaceholder: String {
+        switch tab {
+        case 1: return "Nouveau houblon"
+        case 2: return "Nouvelle saveur"
+        default: return "Nouveau style"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                refTabButton("Styles (\(styles.count))", index: 0)
+                refTabButton("Houblons (\(hops.count))", index: 1)
+                refTabButton("Saveurs (\(flavors.count))", index: 2)
+            }
+
+            Text("Tout est supprimable. Les presets (badge gris) reviennent si tu les ré-ajoutes avec +.")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.muted)
+
+            HStack(spacing: 6) {
+                TextField(addPlaceholder, text: $newName)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.system(size: 12.5))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
+                    .background(Theme.fieldBg)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .foregroundStyle(Theme.text)
+                    .onSubmit(onAdd)
+                Button("+", action: onAdd)
+                    .font(.system(size: 16, weight: .bold))
+                    .frame(width: 36, height: 36)
+                    .background(Theme.card)
+                    .foregroundStyle(Theme.text)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+            }
+
+            TextField("Filtrer…", text: $filter)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.system(size: 12.5))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 7)
+                .background(Theme.fieldBg)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .foregroundStyle(Theme.text)
+
+            ScrollView {
+                LazyVStack(spacing: 2) {
+                    if activeList.isEmpty {
+                        Text("Aucun")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.muted)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 6)
+                    } else {
+                        ForEach(activeList) { entry in
+                            HStack(spacing: 8) {
+                                Text(entry.name)
+                                    .font(.system(size: 12.5))
+                                    .foregroundStyle(Theme.text)
+                                    .lineLimit(2)
+                                if entry.preset == true {
+                                    Text("preset")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(Theme.muted)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .overlay(Capsule().stroke(Theme.border))
+                                }
+                                Spacer(minLength: 4)
+                                Button("Suppr") { onDelete(entry.name) }
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(Theme.error)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                    }
+                }
+            }
+            .frame(maxHeight: 200)
+            .background(Theme.fieldBg)
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Theme.card)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.border))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func refTabButton(_ title: String, index: Int) -> some View {
+        Button {
+            tab = index
+            filter = ""
+            newName = ""
+        } label: {
+            Text(title)
+                .font(.system(size: 11.5, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 7)
+                .background(tab == index ? Theme.accent.opacity(0.12) : Theme.fieldBg)
+                .foregroundStyle(tab == index ? Theme.text : Theme.muted)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(tab == index ? Theme.accent : Theme.border)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
     }
 }
 

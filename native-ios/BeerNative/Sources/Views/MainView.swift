@@ -43,20 +43,19 @@ struct MainView: View {
         .environmentObject(app)
     }
 
-    /// Même structure que `header.top` + `div.top-actions` (PWA).
+    /// Titre + recherche + boutons en grille (évite le wrap brouillon du FlowLayout sur iPhone).
     private var header: some View {
-        HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Beer Log")
-                    .font(.system(size: Theme.Font.h1, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                Text(app.serverVersion.isEmpty ? "scan · photo · note" : "v\(app.serverVersion) · scan · photo · note")
-                    .font(.system(size: Theme.Font.sub))
-                    .foregroundStyle(Theme.muted)
-            }
-            .layoutPriority(1)
-
-            FlowLayout(spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Beer Log")
+                        .font(.system(size: Theme.Font.h1, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                    Text(app.serverVersion.isEmpty ? "scan · photo · note" : "v\(app.serverVersion) · scan · photo · note")
+                        .font(.system(size: Theme.Font.sub))
+                        .foregroundStyle(Theme.muted)
+                }
+                Spacer(minLength: 4)
                 if let user = app.user {
                     Text(user)
                         .font(.system(size: Theme.Font.pill))
@@ -65,42 +64,71 @@ struct MainView: View {
                         .padding(.vertical, 4)
                         .overlay(Capsule().stroke(Theme.border))
                 }
+            }
 
-                TextField("Rechercher...", text: $globalSearch)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .font(.system(size: Theme.Font.search))
-                    .frame(width: 130)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 6)
-                    .background(Theme.card)
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .onSubmit {
-                        historySearchSeed = globalSearch
-                        sheet = .history
+            TextField("Rechercher...", text: $globalSearch)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.system(size: Theme.Font.search))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 7)
+                .background(Theme.fieldBg)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .onSubmit {
+                    historySearchSeed = globalSearch
+                    sheet = .history
+                }
+
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3),
+                spacing: 6
+            ) {
+                ForEach(headerButtons, id: \.title) { btn in
+                    Button(action: btn.action) {
+                        Text(btn.title)
+                            .font(.system(size: Theme.Font.ghost, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(Color.clear)
+                            .foregroundStyle(Theme.text)
+                            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.btn).stroke(Theme.border))
                     }
-
-                if app.isAdmin {
-                    BeerGhostButton("Patch notes") { sheet = .patchnotes }
-                    BeerGhostButton("Admin") { sheet = .admin }
-                }
-                if !app.isInvite {
-                    BeerGhostButton("À boire") { sheet = .wishlist }
-                }
-                BeerGhostButton("Historique") { sheet = .history }
-                if !app.isInvite {
-                    BeerGhostButton("Idées cadeaux") { sheet = .gifts }
-                }
-                if !app.isInvite {
-                    BeerGhostButton("Déconnexion") { Task { await app.logout() } }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
         .padding(.bottom, 14)
         .background(Theme.bg)
+    }
+
+    private struct HeaderButton {
+        let title: String
+        let action: () -> Void
+    }
+
+    private var headerButtons: [HeaderButton] {
+        var buttons: [HeaderButton] = []
+        if app.isAdmin {
+            buttons.append(HeaderButton(title: "Patch notes") { sheet = .patchnotes })
+            buttons.append(HeaderButton(title: "Admin") { sheet = .admin })
+        }
+        if !app.isInvite {
+            buttons.append(HeaderButton(title: "À boire") { sheet = .wishlist })
+        }
+        buttons.append(HeaderButton(title: "Historique") {
+            historySearchSeed = globalSearch
+            sheet = .history
+        })
+        if !app.isInvite {
+            buttons.append(HeaderButton(title: "Idées cadeaux") { sheet = .gifts })
+        }
+        if !app.isInvite {
+            buttons.append(HeaderButton(title: "Déconnexion") { Task { await app.logout() } })
+        }
+        return buttons
     }
 }

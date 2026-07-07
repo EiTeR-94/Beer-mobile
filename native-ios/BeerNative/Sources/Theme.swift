@@ -23,6 +23,7 @@ enum Theme {
     }
 
     static let bg = Color(hex: 0x0f1419)
+    static let fieldBg = Color(hex: 0x0f1419)
     static let card = Color(hex: 0x1a222c)
     static let text = Color(hex: 0xf1f5f9)
     static let muted = Color(hex: 0x94a3b8)

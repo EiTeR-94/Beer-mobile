@@ -96,18 +96,22 @@ struct GiftsSheetView: View {
                 .frame(width: 88, height: 88)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(g.beerName)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                    if (g.rating ?? 0) >= 4.99 {
-                        Text("♥").foregroundStyle(Theme.error)
+            VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(alignment: .top, spacing: 4) {
+                        Text(g.beerName)
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(Theme.text)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if (g.rating ?? 0) >= 4.99 {
+                            Text("♥").foregroundStyle(Theme.error)
+                        }
                     }
+                    Text("\(g.brewery ?? "—") · \(g.style ?? "?")")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("\(g.brewery ?? "—") · \(g.style ?? "?")")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.muted)
                 HStack(spacing: 4) {
                     Text("★★★★★").font(.system(size: 11)).foregroundStyle(Theme.starOff)
                         .overlay(alignment: .leading) {
@@ -127,13 +131,30 @@ struct GiftsSheetView: View {
                         .foregroundStyle(Theme.muted)
                 }
                 if let c = g.comment, !c.isEmpty {
-                    Text("« \(c) »")
-                        .font(.system(size: 13))
-                        .italic()
-                        .foregroundStyle(Theme.text)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Ce qu'elle en a dit :")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.muted)
+                        Text("« \(c) »")
+                            .font(.system(size: 13))
+                            .italic()
+                            .foregroundStyle(Theme.text)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                    .background(Theme.bg.opacity(0.55))
+                    .overlay(alignment: .leading) {
+                        Rectangle().fill(Theme.accent).frame(width: 3)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                } else {
+                    Color.clear.frame(height: 52)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(minHeight: 148)
         .padding(12)
         .background(Theme.card)
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.border))

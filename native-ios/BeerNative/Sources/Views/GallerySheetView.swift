@@ -44,24 +44,12 @@ struct GallerySheetView: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 108), spacing: 8)], spacing: 8) {
                         ForEach(withPhotos) { item in
                             Button { selected = item } label: {
-                                BeerImage(path: item.photoURL)
-                                    .frame(minHeight: 110)
-                                    .scaledToFill()
-                                    .frame(maxWidth: .infinity)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                                    .overlay(alignment: .bottom) {
-                                        Text(item.beerName)
-                                            .font(.system(size: 10))
-                                            .lineLimit(1)
-                                            .padding(4)
-                                            .frame(maxWidth: .infinity)
-                                            .background(.black.opacity(0.55))
-                                            .foregroundStyle(.white)
-                                    }
-                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
+                                GalleryCell(item: item)
                             }
+                            .buttonStyle(.plain)
                         }
                     }
+
                 }
             }
         }
@@ -112,5 +100,32 @@ struct GallerySheetView: View {
             if batch.count < 50 { break }
         }
         items = all
+    }
+}
+
+private struct GalleryCell: View {
+    let item: CheckinItem
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            BeerImage(path: item.photoURL)
+                .frame(maxWidth: .infinity)
+                .frame(height: 118)
+                .clipped()
+            Text(item.beerName)
+                .font(.system(size: 10))
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .minimumScaleFactor(0.85)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity)
+                .background(.black.opacity(0.58))
+                .foregroundStyle(.white)
+        }
+        .frame(height: 118)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
+        .contentShape(RoundedRectangle(cornerRadius: 10))
     }
 }

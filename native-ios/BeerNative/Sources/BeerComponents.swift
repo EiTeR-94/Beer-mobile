@@ -177,7 +177,7 @@ struct BeerField: View {
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .padding(12)
-            .background(Theme.card)
+            .background(Theme.fieldBg)
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .foregroundStyle(Theme.text)
@@ -344,10 +344,13 @@ struct UntappdRatingSlider: View {
                 .onAppear { lastHapticRating = rating }
             }
             .frame(height: 28)
-            Text("\(BeerFormatters.ratingLabel(rating))/5")
+            Text(BeerFormatters.ratingSliderText(rating))
                 .font(.system(size: 15, weight: .medium, design: .monospaced))
+                .monospacedDigit()
                 .foregroundStyle(Theme.star)
-                .frame(width: 52, alignment: .trailing)
+                .frame(width: 56, alignment: .trailing)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
     }
 }
@@ -367,7 +370,7 @@ struct CustomTagInput: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .padding(10)
-                .background(Theme.card)
+                .background(Theme.fieldBg)
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .foregroundStyle(Theme.text)

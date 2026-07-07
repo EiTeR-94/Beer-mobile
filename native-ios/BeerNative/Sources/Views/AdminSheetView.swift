@@ -125,30 +125,16 @@ struct AdminSheetView: View {
                 }
 
                 BeerAdminSub(title: "Référentiels")
-                    Picker("Onglet", selection: $refTab) {
-                        Text("Styles (\(referentials?.styles?.count ?? 0))").tag(0)
-                        Text("Houblons (\(referentials?.hops?.count ?? 0))").tag(1)
-                        Text("Saveurs (\(referentials?.flavors?.count ?? 0))").tag(2)
-                    }
-                    .pickerStyle(.segmented)
-                    BeerField(label: "Filtrer…", text: $refFilter)
-                    HStack {
-                        BeerField(label: refAddLabel, text: $refNewName)
-                        Button("+") { Task { await addReferential() } }
-                            .buttonStyle(.borderedProminent).tint(Theme.accent)
-                    }
-                    ForEach(filteredReferentials) { entry in
-                        HStack {
-                            Text(entry.name)
-                            if entry.preset == true {
-                                Text("preset").font(.caption2).foregroundStyle(Theme.muted)
-                            }
-                            Spacer()
-                            Button("Suppr") { Task { await deleteReferential(entry.name) } }
-                                .font(.caption).foregroundStyle(Theme.error)
-                        }
-                        .padding(8).background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
+                BeerAdminReferentialsCard(
+                    tab: $refTab,
+                    styles: referentials?.styles ?? [],
+                    hops: referentials?.hops ?? [],
+                    flavors: referentials?.flavors ?? [],
+                    filter: $refFilter,
+                    newName: $refNewName,
+                    onAdd: { Task { await addReferential() } },
+                    onDelete: { name in Task { await deleteReferential(name) } }
+                )
             }
         }
         .task { await reload() }
@@ -156,26 +142,6 @@ struct AdminSheetView: View {
             InviteIPsSheetView(title: ipTitle, entries: ipEntries)
                 .beerSheetChrome()
         }
-    }
-
-    private var refAddLabel: String {
-        switch refTab {
-        case 1: return "Nouveau houblon"
-        case 2: return "Nouvelle saveur"
-        default: return "Nouveau style"
-        }
-    }
-
-    private var filteredReferentials: [ReferentialEntry] {
-        let list: [ReferentialEntry]
-        switch refTab {
-        case 1: list = referentials?.hops ?? []
-        case 2: list = referentials?.flavors ?? []
-        default: list = referentials?.styles ?? []
-        }
-        guard !refFilter.isEmpty else { return list }
-        let q = BeerFormatters.normalizeSearch(refFilter)
-        return list.filter { BeerFormatters.normalizeSearch($0.name).contains(q) }
     }
 
     @ViewBuilder
@@ -188,7 +154,16 @@ struct AdminSheetView: View {
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Theme.accent.opacity(0.2)).foregroundStyle(Theme.accent).clipShape(Capsule())
             }
-            Text("\(inv.username ?? "—") · \(inv.checkins ?? 0) dégustation(s)").font(.caption).foregroundStyle(Theme.muted)
+            Text("\(inv.username ?? "—") · \(inv.checkins ?? 0) dégustation(s)")
+                .font(.caption)
+                .foregroundStyle(Theme.muted)
+
+            if inv.redeemedAt != nil {
+                inviteActivityLine(inv)
+            }
+
+            inviteDetailLines(inv)
+
             if let validity = inv.validityLabel, validity != "—" {
                 Text("Type : \(validity)").font(.caption2).foregroundStyle(Theme.muted)
             }
@@ -217,6 +192,78 @@ struct AdminSheetView: View {
             }
         }
         .padding(10).background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    @ViewBuilder
+    private func inviteActivityLine(_ inv: InviteItem) -> some View {
+        let when = inv.lastUsedAt ?? inv.redeemedAt
+        let ip = (inv.lastUsedAt != nil ? inv.lastUsedIp : inv.redeemIp) ?? ""
+        HStack(alignment: .top, spacing: 6) {
+            Text("Dernière activité · \(BeerFormatters.formatActivityAgo(when))\(ip.isEmpty ? "" : " · IP \(ip)")")
+                .font(.system(size: 11.5))
+                .foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private func inviteDetailLines(_ inv: InviteItem) -> some View {
+        if inv.redeemedAt == nil {
+            Text("En attente du 1er clic")
+                .font(.caption2)
+                .foregroundStyle(Theme.muted)
+        } else {
+            VStack(alignment: .leading, spacing: 3) {
+                if let redeemed = inv.redeemedAt {
+                    let ipPart = inv.redeemIp.map { " · IP \($0)" } ?? ""
+                    inviteDetailRow("1er accès", "\(BeerFormatters.formatDate(redeemed))\(ipPart)")
+                }
+                if let rc = inv.redeemClient, rc.isKnown {
+                    inviteDetailRow(
+                        "Navigateur",
+                        "\(rc.browser ?? "—") · \(rc.os ?? "—") · \(rc.device ?? "—")"
+                    )
+                }
+                if let device = inv.deviceShort, !device.isEmpty {
+                    inviteDetailRow("Appareil lié", device)
+                }
+                if let last = inv.lastUsedAt,
+                   let redeemed = inv.redeemedAt,
+                   last != redeemed,
+                   let lc = inv.lastClient, lc.isKnown,
+                   lc.browser != inv.redeemClient?.browser {
+                    inviteDetailRow(
+                        "Nav. récent",
+                        "\(lc.browser ?? "—") · \(lc.os ?? "—")"
+                    )
+                }
+                if inv.reactivationPending == true, let linkExp = inv.linkExpiresAt {
+                    inviteDetailRow(
+                        "Lien réactivation",
+                        "expire \(BeerFormatters.formatDate(linkExp)) (10 min)"
+                    )
+                }
+                if inv.permanent == true {
+                    inviteDetailRow("Validité compte", "permanente")
+                } else if let exp = inv.expiresAt, inv.reactivationPending != true {
+                    inviteDetailRow("Validité compte", "jusqu'au \(BeerFormatters.formatDate(exp))")
+                }
+            }
+        }
+    }
+
+    private func inviteDetailRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 4) {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.text)
+            Text(value)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func inviteAction(_ title: String, destructive: Bool = false, action: @escaping () -> Void) -> some View {
@@ -359,13 +406,17 @@ private struct AdminUserCard: View {
                 Text("\(user.checkins) dégust.").font(.caption).foregroundStyle(Theme.muted)
             }
             BeerField(label: "Nouveau mot de passe", text: $password, secure: true)
-            HStack {
-                Button("MDP", action: onSetPassword).font(.caption)
+            HStack(spacing: 6) {
+                BeerCompactButton(title: "MDP", action: onSetPassword)
                 if !isSelf {
-                    Button(user.isAdmin ? "Retirer admin" : "Promouvoir", action: onToggleAdmin).font(.caption)
-                    Button("Suppr.", role: .destructive, action: onDelete).font(.caption)
+                    BeerCompactButton(
+                        title: user.isAdmin ? "Retirer admin" : "Promouvoir",
+                        action: onToggleAdmin
+                    )
+                    BeerCompactButton(title: "Suppr.", destructive: true, action: onDelete)
                 }
             }
+            .padding(.top, 2)
         }
         .padding(10).background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 10))
     }

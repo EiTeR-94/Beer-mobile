@@ -1,4 +1,3 @@
-import PhotosUI
 import SwiftUI
 
 struct BeerWizardView: View {
@@ -25,8 +24,8 @@ struct BeerWizardView: View {
     @State private var manualStyle = ""
     @State private var customStyle = ""
 
-    @State private var scanPhotoItem: PhotosPickerItem?
-    @State private var photoItem: PhotosPickerItem?
+    @State private var showScanCamera = false
+    @State private var showTastingCamera = false
     @State private var photoData: Data?
     @State private var photoPreview: UIImage?
 
@@ -66,8 +65,12 @@ struct BeerWizardView: View {
         }
         .background(Theme.bg)
         .scrollDismissesKeyboard(.interactively)
-        .onChange(of: photoItem, perform: { item in Task { await loadPhoto(item, tasting: true) } })
-        .onChange(of: scanPhotoItem, perform: { item in Task { await decodeScanPhoto(item) } })
+        .fullScreenCover(isPresented: $showScanCamera) {
+            CameraPicker { image in Task { await processScanPhoto(image) } }
+        }
+        .fullScreenCover(isPresented: $showTastingCamera) {
+            CameraPicker { image in Task { await processTastingPhoto(image) } }
+        }
         .onAppear {
             applyPrefillIfNeeded()
             Task { styleOptions = (try? await app.api.styles()) ?? [] }
@@ -107,7 +110,7 @@ struct BeerWizardView: View {
                         ScanViewfinderOverlay()
                     }
 
-                    PhotosPicker(selection: $scanPhotoItem, matching: .images) {
+                    Button { showScanCamera = true } label: {
                         Text("Prendre photo")
                             .font(.system(size: Theme.Font.ghost, weight: .semibold))
                             .foregroundStyle(Theme.text)
@@ -220,7 +223,7 @@ struct BeerWizardView: View {
         Group {
             BeerLead(text: "Photo du verre avec la canette à côté (optionnel).")
 
-            PhotosPicker(selection: $photoItem, matching: .images) {
+            Button { showTastingCamera = true } label: {
                 ZStack {
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(Theme.border, style: StrokeStyle(lineWidth: 2, dash: [6]))
@@ -234,12 +237,13 @@ struct BeerWizardView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                             .padding(8)
                     } else {
-                        Text("📷 Prendre ou choisir une photo")
+                        Text("📷 Prendre une photo")
                             .font(.system(size: 16))
                             .foregroundStyle(Theme.muted)
                     }
                 }
             }
+            .buttonStyle(.plain)
 
             BeerSecondaryButton(title: "← Retour") { step = 1 }
             BeerPrimaryButton(title: "Continuer → note") {
@@ -321,7 +325,7 @@ struct BeerWizardView: View {
                         if v.count > 120 { comment = String(v.prefix(120)) }
                     })
                     .padding(12)
-                    .background(Theme.card)
+                    .background(Theme.fieldBg)
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .foregroundStyle(Theme.text)
@@ -378,8 +382,8 @@ struct BeerWizardView: View {
         }
     }
 
-    private func decodeScanPhoto(_ item: PhotosPickerItem?) async {
-        guard let item, let raw = try? await item.loadTransferable(type: Data.self) else { return }
+    private func processScanPhoto(_ image: UIImage) async {
+        guard let raw = image.jpegData(compressionQuality: 0.92) else { return }
         let jpeg = BeerImageUtils.compressJPEG(raw)
         busy = true
         scanStatus = "Décodage photo…"
@@ -483,13 +487,11 @@ struct BeerWizardView: View {
         }
     }
 
-    private func loadPhoto(_ item: PhotosPickerItem?, tasting: Bool) async {
-        guard let item else { return }
-        if let raw = try? await item.loadTransferable(type: Data.self) {
-            let jpeg = BeerImageUtils.compressJPEG(raw)
-            photoData = jpeg
-            photoPreview = UIImage(data: jpeg)
-        }
+    private func processTastingPhoto(_ image: UIImage) async {
+        guard let raw = image.jpegData(compressionQuality: 0.92) else { return }
+        let jpeg = BeerImageUtils.compressJPEG(raw)
+        photoData = jpeg
+        photoPreview = UIImage(data: jpeg)
     }
 
     private func loadNotation() async {
@@ -580,8 +582,6 @@ struct BeerWizardView: View {
         manualBrewery = ""
         manualStyle = ""
         customStyle = ""
-        photoItem = nil
-        scanPhotoItem = nil
         photoData = nil
         photoPreview = nil
         rating = 3.0

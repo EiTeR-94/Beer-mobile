@@ -236,15 +236,29 @@ struct AdminUser: Identifiable, Decodable {
     }
 }
 
+struct InviteClientProfile: Decodable {
+    let browser: String?
+    let os: String?
+    let device: String?
+
+    var isKnown: Bool {
+        guard let browser, browser != "—", !browser.isEmpty else { return false }
+        return true
+    }
+}
+
 struct InviteItem: Identifiable, Decodable {
     let id: Int
     let label: String?
     let username: String?
     let url: String?
+    let createdAt: String?
     let expiresAt: String?
+    let linkExpiresAt: String?
     let active: Bool?
     let revokedAt: String?
     let redeemedAt: String?
+    let lastUsedAt: String?
     let reactivationPending: Bool?
     let canExtend: Bool?
     let canReissue: Bool?
@@ -253,19 +267,28 @@ struct InviteItem: Identifiable, Decodable {
     let checkins: Int?
     let redeemIp: String?
     let lastUsedIp: String?
+    let deviceShort: String?
+    let redeemClient: InviteClientProfile?
+    let lastClient: InviteClientProfile?
     let ipLog: [InviteIpEntry]?
 
     enum CodingKeys: String, CodingKey {
         case id, label, username, url, active, permanent, checkins
+        case createdAt = "created_at"
         case expiresAt = "expires_at"
+        case linkExpiresAt = "link_expires_at"
         case revokedAt = "revoked_at"
         case redeemedAt = "redeemed_at"
+        case lastUsedAt = "last_used_at"
         case reactivationPending = "reactivation_pending"
         case canExtend = "can_extend"
         case canReissue = "can_reissue"
         case validityLabel = "validity_label"
         case redeemIp = "redeem_ip"
         case lastUsedIp = "last_used_ip"
+        case deviceShort = "device_short"
+        case redeemClient = "redeem_client"
+        case lastClient = "last_client"
         case ipLog = "ip_log"
     }
 
