@@ -72,13 +72,17 @@ jobs:
         run: |
           python3 -c "import json; json.load(open('dist/altstore.json'))"
           python3 -c "
-          import json
-          d=json.load(open('dist/altstore.json'))
+          import json, re
+          raw = open('dist/altstore.json', 'rb').read()
+          assert not re.search(rb'[^\\x00-\\x7F]', raw), 'manifest non-ASCII (AltStore 3840)'
+          d=json.loads(raw)
           v=d['apps'][0]['versions'][0]
-          assert v.get('downloadURL','').endswith('.ipa') or 'PlexiBeer.ipa' in v.get('downloadURL','')
+          url=v.get('downloadURL','')
+          assert 'PlexiBeer.ipa' in url
+          assert '/releases/download/ios-build-' in url, url
           import os
           assert os.path.getsize('build/PlexiBeer.ipa') == int(v['size'])
-          print('OK manifest', v['version'], v['buildVersion'], v['size'])
+          print('OK manifest', v['version'], v['buildVersion'], v['size'], url)
           "
 
       - name: Release GitHub (IPA + source)

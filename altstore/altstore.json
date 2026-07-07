@@ -1,7 +1,7 @@
 {
   "name": "Plexi Homelab",
   "subtitle": "Beer Log iOS - MAJ auto LAN/VPN",
-  "description": "Source privee Plexi. Ajoute cette URL une seule fois dans AltStore > Sources. Les nouvelles versions apparaissent apres sync GitHub vers serveur (.50).",
+  "description": "Source privee Plexi. Ajoute cette URL une fois dans AltStore > Sources. MAJ apres build GitHub vert.",
   "website": "https://eiter.freeboxos.fr/beer/",
   "tintColor": "#f59e0b",
   "featuredApps": [
@@ -12,8 +12,8 @@
       "name": "Beer Log",
       "bundleIdentifier": "fr.eiter.plexibeer",
       "developerName": "eiter",
-      "subtitle": "Journal de dégustation privé",
-      "localizedDescription": "Beer Log iOS - meme interface que la PWA (scan, Untappd, photo, note, historique). Wi-Fi ou VPN Plexi.",
+      "subtitle": "Journal de degustation prive",
+      "localizedDescription": "Beer Log iOS - scan, Untappd, photo, note, historique. Wi-Fi ou VPN Plexi.",
       "iconURL": "https://raw.githubusercontent.com/EiTeR-94/Beer-mobile/main/altstore/icon-180.png",
       "tintColor": "#f59e0b",
       "category": "lifestyle",
@@ -30,8 +30,8 @@
           "version": "3.2.7",
           "buildVersion": "44",
           "date": "2026-07-07",
-          "localizedDescription": "Build 44 - sync automatique homelab",
-          "downloadURL": "https://github.com/EiTeR-94/Beer-mobile/releases/latest/download/PlexiBeer.ipa",
+          "localizedDescription": "Build 44 - Beer Log native",
+          "downloadURL": "https://github.com/EiTeR-94/Beer-mobile/releases/download/ios-build-44/PlexiBeer.ipa",
           "size": 971267,
           "minOSVersion": "16.0"
         }
