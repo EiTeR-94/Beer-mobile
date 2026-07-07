@@ -4,16 +4,22 @@ import Foundation
 /// URLSession pose/relit les cookies ; ce protocol ne fait que le transport IPv4+SNI.
 final class PlexiIPv4URLProtocol: URLProtocol {
     private var loadTask: Task<Void, Never>?
+    private static let handledKey = "PlexiIPv4URLProtocolHandled"
 
     static var isEnabled = false
 
     override class func canInit(with request: URLRequest) -> Bool {
         guard isEnabled, let url = request.url else { return false }
+        if property(forKey: handledKey, in: request) != nil { return false }
         return url.scheme == "https" && url.host == ServerSettings.canonicalHost
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest {
-        request
+        guard let mutable = (request as NSURLRequest).mutableCopy() as? NSMutableURLRequest else {
+            return request
+        }
+        URLProtocol.setProperty(true, forKey: handledKey, in: mutable)
+        return mutable as URLRequest
     }
 
     override func startLoading() {

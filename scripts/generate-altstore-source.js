@@ -69,8 +69,13 @@ function versionReleaseNotes(ver, buildNum) {
       "v3.3.0 Stable - version figee Plexi. UI polish, mode hors ligne, admin invite, scan + toasts, AltStore OK."
     );
   }
-  if (ver === "3.3.1" || ver === "3.3.2" || ver === "3.3.3" || ver === "3.3.4") {
+  if (ver === "3.3.1" || ver === "3.3.2" || ver === "3.3.3") {
     return ascii("bugs fix");
+  }
+  if (ver === "3.3.4") {
+    return ascii(
+      "Invites 5G: cookies beer_session + beer_device envoyes sur toutes les requetes (comme PWA). Historique, galerie, recherche OK hors LAN."
+    );
   }
   return ascii(`Build ${buildNum} - Beer Log native`);
 }

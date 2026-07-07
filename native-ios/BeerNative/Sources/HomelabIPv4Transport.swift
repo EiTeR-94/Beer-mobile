@@ -87,9 +87,12 @@ enum HomelabIPv4Transport {
         if !body.isEmpty {
             lines.append("Content-Length: \(body.count)")
         }
+        if let cookieLine = mergedCookieHeader(for: request, url: url) {
+            lines.append("Cookie: \(cookieLine)")
+        }
         for (key, value) in request.allHTTPHeaderFields ?? [:] {
             let low = key.lowercased()
-            if low == "host" || low == "connection" || low == "accept-encoding" { continue }
+            if low == "host" || low == "connection" || low == "accept-encoding" || low == "cookie" { continue }
             lines.append("\(key): \(value)")
         }
         var payload = (lines.joined(separator: "\r\n") + "\r\n\r\n").data(using: .utf8) ?? Data()
@@ -102,15 +105,70 @@ enum HomelabIPv4Transport {
         return (parsed.body, parsed.response, url)
     }
 
-    /// Parse Set-Cookie comme URLSession (domaine FQDN de la requête).
+    /// Parse Set-Cookie comme URLSession (base /beer/ sur le FQDN Plexi).
     private static func storeCookiesForURLSession(_ lines: [String], url: URL) {
+        let storeURL = URL(string: "https://\(tlsHost)/beer/") ?? url
         for line in lines {
             let fields = ["Set-Cookie": line]
-            let cookies = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
+            let cookies = HTTPCookie.cookies(withResponseHeaderFields: fields, for: storeURL)
             for cookie in cookies {
                 HTTPCookieStorage.shared.setCookie(cookie)
             }
         }
+    }
+
+    /// URLSession ne garantit pas Cookie: sur URLProtocol custom — on lit HTTPCookieStorage (comme fetch credentials:include).
+    private static func mergedCookieHeader(for request: URLRequest, url: URL) -> String? {
+        var byName: [String: String] = [:]
+        func ingest(_ header: String) {
+            for part in header.split(separator: ";") {
+                let piece = part.trimmingCharacters(in: .whitespaces)
+                guard let eq = piece.firstIndex(of: "=") else { continue }
+                let name = String(piece[..<eq])
+                let value = String(piece[piece.index(after: eq)...])
+                if !name.isEmpty { byName[name] = value }
+            }
+        }
+        if let existing = request.value(forHTTPHeaderField: "Cookie") {
+            ingest(existing)
+        }
+        for cookie in cookiesMatching(url) {
+            byName[cookie.name] = cookie.value
+        }
+        guard !byName.isEmpty else { return nil }
+        return byName.map { "\($0.key)=\($0.value)" }.joined(separator: "; ")
+    }
+
+    private static func cookiesMatching(_ url: URL) -> [HTTPCookie] {
+        let storage = HTTPCookieStorage.shared
+        var seen = Set<String>()
+        var out: [HTTPCookie] = []
+        func add(_ list: [HTTPCookie]?) {
+            for cookie in list ?? [] {
+                let key = "\(cookie.name)|\(cookie.value)"
+                guard seen.insert(key).inserted else { continue }
+                out.append(cookie)
+            }
+        }
+        add(storage.cookies(for: url))
+        add(storage.cookies(for: ServerSettings.apiBase))
+        if let host = url.host {
+            add(storage.cookies(for: URL(string: "https://\(host)/beer/")!))
+            add(storage.cookies(for: URL(string: "https://\(host)/")!))
+        }
+        let host = url.host ?? tlsHost
+        for cookie in storage.cookies ?? [] {
+            let domain = cookie.domain
+            if host == domain || host.hasSuffix(domain.hasPrefix(".") ? String(domain.dropFirst()) : domain) {
+                add([cookie])
+            }
+        }
+        return out
+    }
+
+    static func guestAuthCookiesPresent() -> Bool {
+        let names = Set(cookiesMatching(ServerSettings.apiBase).map(\.name))
+        return names.contains("beer_session") && names.contains("beer_device")
     }
 
     private static func send(conn: NWConnection, data: Data) async throws {

@@ -145,6 +145,9 @@ final class BeerAPI {
             }
             throw BeerAPIError.server(msg)
         }
+        guard HomelabIPv4Transport.guestAuthCookiesPresent() else {
+            throw BeerAPIError.server("Session invité incomplète — réessaie l'activation.")
+        }
         return decoded
     }
 
@@ -705,12 +708,7 @@ final class BeerAPI {
         body: Data?,
         contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse, URL) {
-        let prev = guestRouting
         setGuestRouting(true)
-        defer {
-            guestRouting = prev
-            PlexiIPv4URLProtocol.isEnabled = prev
-        }
         return try await requestEndpoints(
             [ServerSettings.apiBase],
             path: path,
@@ -760,6 +758,7 @@ final class BeerAPI {
 
     private func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         var req = request
+        req.httpShouldHandleCookies = true
         Self.applyCanonicalHostHeader(&req)
         let httpSession = guestRouting ? guestSession : session
 
