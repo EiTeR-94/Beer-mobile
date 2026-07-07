@@ -21,18 +21,18 @@
         "entitlements": [],
         "privacy": {
           "NSCameraUsageDescription": "Scanner les codes-barres EAN des bouteilles de bière.",
-          "NSLocalNetworkUsageDescription": "Connexion au serveur Beer Log Plexi (eiter.freeboxos.fr).",
+          "NSLocalNetworkUsageDescription": "Connexion au serveur Beer Log sur ton réseau local Plexi (192.168.1.50).",
           "NSPhotoLibraryUsageDescription": "Joindre une photo à ta dégustation Beer Log."
         }
       },
       "versions": [
         {
-          "version": "3.0.0",
-          "buildVersion": "31",
-          "date": "2026-07-06",
-          "localizedDescription": "Build 31 — sync automatique homelab",
+          "version": "3.1.0",
+          "buildVersion": "32",
+          "date": "2026-07-07",
+          "localizedDescription": "Build 32 — sync automatique homelab",
           "downloadURL": "https://github.com/EiTeR-94/Beer-mobile/releases/latest/download/PlexiBeer.ipa",
-          "size": 877316,
+          "size": 80162,
           "minOSVersion": "16.0"
         }
       ]
