@@ -20,9 +20,9 @@ enum ServerSettings {
     }
 
     static var candidateURLs: [URL] {
-        // LAN IP first (fast, avoids hairpin/DNS issues), then domain as fallback
-        // for cases where direct IP has transient problems.
-        [lanApiBase, URL(string: "https://\(canonicalHost):8444/beer/")!]
+        // For local accounts: ONLY LAN IP. Domain fallback is dangerous because it can leave baseURL
+        // pointing to unreachable domain (IPv6 AAAA issue on Freebox) and break photo loads etc.
+        [lanApiBase]
     }
 
     static var passkeyBaseURLs: [URL] {

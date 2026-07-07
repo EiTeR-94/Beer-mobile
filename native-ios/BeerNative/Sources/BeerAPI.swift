@@ -103,10 +103,9 @@ final class BeerAPI {
             return await discoverGuestEndpoint()
         }
         // Local accounts: LAN IP only (WiFi/VPN). Direct IP to avoid domain issues.
+        // IMPORTANT: never set baseURL to a failing candidate, to avoid leaving it on unreachable domain.
         let originalBase = baseURL
         for candidate in ServerSettings.candidateURLs {
-            let tempBase = Self.canonicalBase(candidate)
-            baseURL = tempBase
             do {
                 var probe = URLRequest(url: try url("/api/health"))
                 probe.httpMethod = "GET"
@@ -117,14 +116,16 @@ final class BeerAPI {
                     probe: true
                 )
                 if http.statusCode == 200 {
+                    baseURL = Self.canonicalBase(candidate)
                     activeEndpoint = candidate.absoluteString
                     return candidate.absoluteString
                 }
             } catch {
-                baseURL = originalBase  // revert on failure, don't stick to bad base
+                // do NOT change baseURL on failure
                 continue
             }
         }
+        baseURL = originalBase  // restore if all failed
         return nil
     }
 
@@ -132,8 +133,6 @@ final class BeerAPI {
     private func discoverGuestEndpoint() async -> String? {
         let originalBase = baseURL
         for url in ServerSettings.passkeyBaseURLs {
-            let tempBase = Self.canonicalBase(url)
-            baseURL = tempBase
             do {
                 let (_, http, _) = try await wanRequest(
                     path: "/api/me",
@@ -141,14 +140,15 @@ final class BeerAPI {
                     body: nil
                 )
                 if http.statusCode == 200 {
+                    baseURL = Self.canonicalBase(url)
                     activeEndpoint = url.absoluteString
                     return url.absoluteString
                 }
             } catch {
-                baseURL = originalBase
                 continue
             }
         }
+        baseURL = originalBase
         return nil
     }
 
@@ -580,7 +580,12 @@ final class BeerAPI {
     }
 
     func downloadAsset(_ pathOrURL: String?) async throws -> Data {
-        guard let resolved = ServerSettings.resolveAssetURL(pathOrURL, base: baseURL) else {
+        var useBase = baseURL
+        // For local accounts, force LAN base for assets to avoid domain (eiter.freeboxos.fr) unreachable
+        if !shouldUsePasskeyBearer {
+            useBase = ServerSettings.lanApiBase
+        }
+        guard let resolved = ServerSettings.resolveAssetURL(pathOrURL, base: useBase) else {
             throw BeerAPIError.invalidURL
         }
         var req = URLRequest(url: resolved)
@@ -834,7 +839,7 @@ final class BeerAPI {
 
     // MARK: - HTTP
 
-    private var shouldUsePasskeyBearer: Bool {
+    var shouldUsePasskeyBearer: Bool {
         if PasskeySessionStore.accessToken != nil { return true }
         if let saved = BeerSessionStore.restore(), saved.isInvite { return true }
         return false
