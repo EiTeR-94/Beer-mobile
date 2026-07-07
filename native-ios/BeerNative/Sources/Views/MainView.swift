@@ -9,6 +9,7 @@ struct MainView: View {
     @EnvironmentObject private var app: AppModel
     @AppStorage("inviteHelpDismissed") private var inviteHelpDismissed = false
     @State private var sheet: BeerSheet?
+    @State private var showInviteLogoutConfirm = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -44,6 +45,17 @@ struct MainView: View {
             }
         }
         .environmentObject(app)
+        .alert("Se déconnecter ?", isPresented: $showInviteLogoutConfirm) {
+            Button("Annuler", role: .cancel) {}
+            Button("Déconnexion", role: .destructive) {
+                Task { await app.logout() }
+            }
+        } message: {
+            Text(
+                "En te déconnectant, tu perdras l'accès à Beer Log sur cet appareil. "
+                    + "Tu ne pourras pas revenir sans un nouveau lien d'invitation."
+            )
+        }
     }
 
     /// Titre + boutons en grille (évite le wrap brouillon du FlowLayout sur iPhone).
@@ -112,7 +124,9 @@ struct MainView: View {
         if !app.isInvite {
             buttons.append(HeaderButton(title: "Idées cadeaux") { sheet = .gifts })
         }
-        if !app.isInvite {
+        if app.isInvite {
+            buttons.append(HeaderButton(title: "Déconnexion") { showInviteLogoutConfirm = true })
+        } else {
             buttons.append(HeaderButton(title: "Déconnexion") { Task { await app.logout() } })
         }
         return buttons
