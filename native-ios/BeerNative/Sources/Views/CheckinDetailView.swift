@@ -50,10 +50,15 @@ struct CheckinDetailView: View {
                         }
                     }
 
-                    Text(item.beerName)
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(item.beerName)
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(Theme.text)
+                        if app.isAdmin, item.hiddenFromPartner == true {
+                            BeerPrivateBadge()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     Text("\(item.brewery ?? "—") · \(item.style ?? "?") · \(BeerFormatters.formatDate(item.createdAt))")
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.muted)

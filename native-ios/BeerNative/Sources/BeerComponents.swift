@@ -487,6 +487,22 @@ struct FlowLayout: Layout {
     }
 }
 
+// MARK: - Private checkin badge
+
+struct BeerPrivateBadge: View {
+    var body: some View {
+        Text("Privée")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(Theme.muted)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(Theme.bg.opacity(0.35))
+            .overlay(Capsule().stroke(Theme.border))
+            .clipShape(Capsule())
+            .accessibilityLabel("Masquée pour les autres")
+    }
+}
+
 // MARK: - History card
 
 struct HistoryCardView: View {

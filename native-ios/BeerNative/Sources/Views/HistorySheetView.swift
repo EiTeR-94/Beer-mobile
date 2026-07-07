@@ -153,10 +153,15 @@ struct HistorySheetView: View {
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(item.beerName)
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(Theme.text)
-                            .multilineTextAlignment(.leading)
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(item.beerName)
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(Theme.text)
+                                .multilineTextAlignment(.leading)
+                            if app.isAdmin, item.hiddenFromPartner == true {
+                                BeerPrivateBadge()
+                            }
+                        }
                         HStack(spacing: 4) {
                             Text("★★★★★").font(.system(size: 11)).foregroundStyle(Theme.starOff)
                                 .overlay(alignment: .leading) {
