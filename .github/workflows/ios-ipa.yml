@@ -28,7 +28,8 @@ jobs:
     env:
       BEER_SERVER_URL: https://eiter.freeboxos.fr/beer
       CI: "true"
-      MOBILE_DIST_MODE: github
+      MOBILE_DIST_MODE: wan
+      MOBILE_DIST_BASE_URL: https://eiter.freeboxos.fr/mobile/beer
 
     steps:
       - name: Checkout

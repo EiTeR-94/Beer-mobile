@@ -49,8 +49,8 @@ if (!url.endsWith("/PlexiBeer.ipa")) {
   process.exit(1);
 }
 
-if (url.includes("/releases/latest/download/")) {
-  console.error("ERREUR: downloadURL ne doit pas utiliser releases/latest/download");
+if (url.includes("/releases/latest/download/") || url.includes("/releases/download/")) {
+  console.error("ERREUR: downloadURL GitHub interdit (redirect AltStore) — utiliser eiter.freeboxos.fr/mobile/beer/");
   process.exit(1);
 }
 

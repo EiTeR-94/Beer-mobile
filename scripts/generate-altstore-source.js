@@ -11,7 +11,8 @@ const projectYml = path.join(ROOT, "native-ios", "project.yml");
 const ipaPath = process.argv[2] || path.join(ROOT, "build", "PlexiBeer.ipa");
 const buildOverride = process.argv[3];
 
-const distMode = process.env.MOBILE_DIST_MODE || "github"; // github | homelab
+// wan = eiter.freeboxos.fr/mobile/beer (recommande AltStore, zero redirect)
+const distMode = process.env.MOBILE_DIST_MODE || "wan"; // wan | github | homelab
 
 function ymlVal(key, fallback = "") {
   const raw = fs.readFileSync(projectYml, "utf8");
@@ -19,9 +20,11 @@ function ymlVal(key, fallback = "") {
   return m ? m[1].trim() : fallback;
 }
 
-/** URL source AltStore : HTTP 200 direct, zero redirection (latest/download = 3840). */
-const CANONICAL_SOURCE_URL =
-  "https://raw.githubusercontent.com/EiTeR-94/Beer-mobile/main/altstore/altstore.json";
+/** URL source AltStore : HTTP 200 direct sur Plexi (jamais latest/download GitHub = 3840). */
+const WAN_BASE = (
+  process.env.MOBILE_DIST_BASE_URL || "https://eiter.freeboxos.fr/mobile/beer"
+).replace(/\/$/, "");
+const CANONICAL_SOURCE_URL = `${WAN_BASE}/altstore.json`;
 
 /** AltStore / NSCocoa 3840 : JSON 100 % ASCII (pas d'accents). */
 function ascii(s) {
@@ -73,10 +76,15 @@ function versionReleaseNotes(ver, buildNum) {
 }
 
 const githubAssetBase = `https://github.com/EiTeR-94/Beer-mobile/releases/download/ios-build-${build}`;
-const homelabBase = (
-  process.env.MOBILE_DIST_BASE_URL || "https://eiter.freeboxos.fr:8444/mobile/beer"
-).replace(/\/$/, "");
-const assetBase = distMode === "homelab" ? homelabBase : githubAssetBase;
+const assetBase =
+  distMode === "github"
+    ? githubAssetBase
+    : distMode === "homelab"
+      ? (process.env.MOBILE_DIST_HOMELAB_URL || "https://eiter.freeboxos.fr:8444/mobile/beer").replace(
+          /\/$/,
+          ""
+        )
+      : WAN_BASE;
 
 const appLongDescription = ascii(
   "Beer Log, c'est ton journal de bieres sur le serveur Plexi d'EiTeR - 100% natif iPhone, zero WebView. " +
@@ -105,9 +113,9 @@ const manifest = {
       subtitle: ascii("Ton carnet de bieres sur Plexi"),
       localizedDescription: appLongDescription,
       iconURL:
-        distMode === "homelab"
-          ? `${homelabBase}/icon-180.png`
-          : "https://raw.githubusercontent.com/EiTeR-94/Beer-mobile/main/altstore/icon-180.png",
+        distMode === "github"
+          ? "https://raw.githubusercontent.com/EiTeR-94/Beer-mobile/main/altstore/icon-180.png"
+          : `${assetBase}/icon-180.png`,
       tintColor: "#f59e0b",
       category: "lifestyle",
       appPermissions: {
@@ -153,8 +161,4 @@ if (/[^\x00-\x7F]/.test(json)) {
 fs.writeFileSync(outFile, json);
 console.log(`OK ${outFile} — v${version} (build ${build}) size=${size}`);
 console.log(`IPA URL: ${assetBase}/${ipaName}`);
-if (distMode === "homelab") {
-  console.log(`Source iPhone (LAN/VPN): ${homelabBase}/altstore.json`);
-} else {
-  console.log(`Source iPhone (GitHub, sans redirect): ${CANONICAL_SOURCE_URL}`);
-}
+console.log(`Source AltStore (canonique): ${CANONICAL_SOURCE_URL}`);
