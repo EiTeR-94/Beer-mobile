@@ -14,7 +14,6 @@ struct GallerySheetView: View {
     @State private var editing: CheckinItem?
     @State private var loading = false
     @State private var errorMessage: String?
-    @State private var reloadTask: Task<Void, Never>?
 
     private var withPhotos: [CheckinItem] {
         items.filter { ($0.photoURL?.isEmpty == false) }
@@ -32,7 +31,7 @@ struct GallerySheetView: View {
                 BeerHistorySearchField(text: $search)
 
                 if let errorMessage {
-                    Text(errorMessage).font(.footnote).foregroundStyle(Theme.error)
+                    Text(errorMessage).font(.footnote).foregroundStyle(Theme.muted)
                 }
 
                 if loading && withPhotos.isEmpty {
@@ -58,12 +57,11 @@ struct GallerySheetView: View {
                 }
             }
         }
-        .onChange(of: search, perform: { _ in scheduleReload() })
-        .onChange(of: filterStyle, perform: { _ in scheduleReload() })
-        .onChange(of: filterRating, perform: { _ in scheduleReload() })
-        .onChange(of: filterPeriod, perform: { _ in scheduleReload() })
+        .onChange(of: search, perform: { _ in Task { await reload(force: false) } })
+        .onChange(of: filterStyle, perform: { _ in Task { await reload(force: false) } })
+        .onChange(of: filterRating, perform: { _ in Task { await reload(force: false) } })
+        .onChange(of: filterPeriod, perform: { _ in Task { await reload(force: false) } })
         .task { await bootstrap() }
-        .onDisappear { reloadTask?.cancel() }
         .fullScreenCover(item: $selected) { item in
             CheckinDetailView(
                 item: item,
@@ -77,19 +75,23 @@ struct GallerySheetView: View {
             .environmentObject(app)
         }
         .sheet(item: $editing) { item in
-            CheckinEditView(item: item) { scheduleReload() }
+            CheckinEditView(item: item) { Task { await reload(force: true) } }
                 .beerSheetChrome()
         }
     }
 
     private func bootstrap() async {
-        styles = (try? await app.api.styles()) ?? []
+        if let cached = app.cache.load([StyleOption].self, name: CacheKey.styles) {
+            styles = cached
+        }
+        if let live = try? await app.api.styles(), !live.isEmpty {
+            styles = live
+            app.cache.save(live, name: CacheKey.styles)
+        }
+        if items.isEmpty, let cached = app.cache.load([CheckinItem].self, name: CacheKey.historyCheckins) {
+            items = cached
+        }
         await reload(force: true)
-    }
-
-    private func scheduleReload() {
-        reloadTask?.cancel()
-        reloadTask = Task { await reload(force: false) }
     }
 
     private func reload(force: Bool) async {
@@ -101,7 +103,6 @@ struct GallerySheetView: View {
         var all: [CheckinItem] = []
         var failed = false
         for off in stride(from: 0, to: 150, by: 50) {
-            if Task.isCancelled { return }
             do {
                 let batch = try await app.api.checkins(
                     q: search.trimmingCharacters(in: .whitespaces),
@@ -115,16 +116,22 @@ struct GallerySheetView: View {
                 if batch.count < 50 { break }
             } catch let err {
                 failed = true
+                if let cached = app.cache.load([CheckinItem].self, name: CacheKey.historyCheckins), !cached.isEmpty {
+                    items = cached
+                    errorMessage = "Galerie en cache — \(app.networkStatus.label.lowercased())"
+                    return
+                }
                 if force || items.isEmpty {
                     errorMessage = err.localizedDescription
                 }
-                break
+                return
             }
         }
 
-        if Task.isCancelled { return }
         if !all.isEmpty || !failed {
             items = all
+            app.cache.save(all, name: CacheKey.historyCheckins)
+            errorMessage = nil
         }
     }
 }

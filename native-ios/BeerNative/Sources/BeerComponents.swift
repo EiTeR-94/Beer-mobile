@@ -655,18 +655,45 @@ struct InviteHelpBar: View {
     }
 }
 
+struct NetworkStatusBar: View {
+    let status: AppModel.NetworkStatus
+    var pending: Int = 0
+
+    private var tint: Color {
+        switch status {
+        case .online: return Theme.ok
+        case .serverUnreachable: return Theme.accent
+        case .offline: return Theme.error
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(tint).frame(width: 6, height: 6)
+            Text(status.label)
+                .font(.system(size: 11, weight: .semibold))
+            if pending > 0 {
+                Text("· \(pending) en attente")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            if status != .online {
+                Text("· cache local")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.muted)
+            }
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.1))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(tint.opacity(0.28)))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
 struct OfflineBadge: View {
     var body: some View {
-        HStack(spacing: 4) {
-            Circle().fill(Theme.accent).frame(width: 6, height: 6)
-            Text("Hors ligne")
-                .font(.system(size: 11, weight: .semibold))
-        }
-        .foregroundStyle(Theme.accent)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Theme.accent.opacity(0.12))
-        .overlay(Capsule().stroke(Theme.accent.opacity(0.3)))
-        .clipShape(Capsule())
+        NetworkStatusBar(status: .offline)
     }
 }

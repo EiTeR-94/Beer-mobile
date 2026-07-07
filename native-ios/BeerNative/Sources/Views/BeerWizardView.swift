@@ -370,7 +370,7 @@ struct BeerWizardView: View {
         scanStatus = "Recherche…"
         defer { busy = false }
 
-        if !app.isOnline {
+        if app.networkStatus != .online {
             scannedCode = digits
             scanStatus = "Hors ligne — saisie manuelle ou Untappd"
             return
@@ -420,7 +420,7 @@ struct BeerWizardView: View {
         let digits = manualEAN.filter(\.isNumber)
         busy = true
         defer { busy = false }
-        if digits.count >= 8, app.isOnline {
+        if digits.count >= 8, app.networkStatus == .online {
             do {
                 let res = try await app.api.saveProduct(
                     barcode: digits,
@@ -506,7 +506,7 @@ struct BeerWizardView: View {
     }
 
     private func loadNotation() async {
-        guard let product, app.isOnline else { return }
+        guard let product, app.networkStatus == .online else { return }
         do {
             let n = try await app.api.flavors(style: product.style, description: product.summary)
             flavorTags = n.flavors ?? []

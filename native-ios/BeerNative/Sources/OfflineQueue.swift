@@ -61,7 +61,17 @@ final class OfflineQueue: ObservableObject {
         try? data.write(to: fileURL, options: .atomic)
     }
 
+    func hasSimilar(_ item: PendingCheckin) -> Bool {
+        items.contains { existing in
+            existing.beerName == item.beerName
+                && existing.rating == item.rating
+                && existing.comment == item.comment
+                && abs(existing.createdAt.timeIntervalSince(item.createdAt)) < 180
+        }
+    }
+
     func enqueue(_ item: PendingCheckin) {
+        guard !hasSimilar(item) else { return }
         items.append(item)
         persist()
     }
@@ -73,7 +83,9 @@ final class OfflineQueue: ObservableObject {
 
     func flush(using api: BeerAPI) async -> Int {
         var synced = 0
-        for item in items {
+        let snapshot = items
+        for item in snapshot {
+            guard items.contains(where: { $0.id == item.id }) else { continue }
             do {
                 let photo = item.photoJPEGBase64.flatMap { Data(base64Encoded: $0) }
                 let result = try await api.createCheckin(
@@ -91,7 +103,7 @@ final class OfflineQueue: ObservableObject {
                     force: item.force,
                     photoJPEG: photo
                 )
-                if result.ok == true || result.id != nil {
+                if result.ok == true || result.id != nil || result.duplicate == true {
                     remove(id: item.id)
                     synced += 1
                 }

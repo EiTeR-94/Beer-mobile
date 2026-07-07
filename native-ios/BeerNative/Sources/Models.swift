@@ -110,7 +110,7 @@ struct LookupResponse: Decodable {
     }
 }
 
-struct CheckinItem: Identifiable, Decodable, Hashable {
+struct CheckinItem: Identifiable, Codable, Hashable {
     let id: Int
     let beerName: String
     let brewery: String?
@@ -135,7 +135,7 @@ struct CheckinItem: Identifiable, Decodable, Hashable {
     }
 }
 
-struct HistoryStats: Decodable {
+struct HistoryStats: Codable {
     let total: Int
     let avgRating: Double?
     let topStyles: [TopStyle]?
@@ -147,18 +147,18 @@ struct HistoryStats: Decodable {
         case topStyles = "top_styles"
     }
 
-    struct TopStyle: Decodable {
+    struct TopStyle: Codable {
         let style: String?
         let count: Int?
     }
 
-    struct LastCheckin: Decodable {
+    struct LastCheckin: Codable {
         let beerName: String?
         enum CodingKeys: String, CodingKey { case beerName = "beer_name" }
     }
 }
 
-struct StyleOption: Decodable, Identifiable {
+struct StyleOption: Codable, Identifiable {
     let value: String
     let label: String
     var id: String { value }
@@ -180,7 +180,7 @@ struct WishlistItem: Identifiable, Decodable {
     }
 }
 
-struct GiftIdea: Identifiable, Decodable {
+struct GiftIdea: Identifiable, Codable {
     let id: String
     let beerName: String
     let brewery: String?
@@ -214,9 +214,22 @@ struct GiftIdea: Identifiable, Decodable {
         forUser = try c.decodeIfPresent(String.self, forKey: .forUser)
         id = "\(beerName)-\(likedBy ?? "")-\(createdAt ?? "")"
     }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(beerName, forKey: .beerName)
+        try c.encodeIfPresent(brewery, forKey: .brewery)
+        try c.encodeIfPresent(style, forKey: .style)
+        try c.encodeIfPresent(rating, forKey: .rating)
+        try c.encodeIfPresent(comment, forKey: .comment)
+        try c.encodeIfPresent(photoPath, forKey: .photoPath)
+        try c.encodeIfPresent(createdAt, forKey: .createdAt)
+        try c.encodeIfPresent(likedBy, forKey: .likedBy)
+        try c.encodeIfPresent(forUser, forKey: .forUser)
+    }
 }
 
-struct CoupleStats: Decodable {
+struct CoupleStats: Codable {
     let users: [CoupleUser]?
     let giftIdeas: [GiftIdea]?
 
@@ -225,14 +238,14 @@ struct CoupleStats: Decodable {
         case giftIdeas = "gift_ideas"
     }
 
-    struct CoupleUser: Decodable, Identifiable {
+    struct CoupleUser: Codable, Identifiable {
         let username: String
         let total: Int
         var id: String { username }
     }
 }
 
-struct AdminUser: Identifiable, Decodable {
+struct AdminUser: Identifiable, Codable {
     let username: String
     let isAdmin: Bool
     let checkins: Int
@@ -247,7 +260,7 @@ struct AdminUser: Identifiable, Decodable {
     }
 }
 
-struct InviteClientProfile: Decodable {
+struct InviteClientProfile: Codable {
     let browser: String?
     let os: String?
     let device: String?
@@ -258,7 +271,7 @@ struct InviteClientProfile: Decodable {
     }
 }
 
-struct InviteItem: Identifiable, Decodable {
+struct InviteItem: Identifiable, Codable {
     let id: Int
     let label: String?
     let username: String?
@@ -372,20 +385,20 @@ struct DecodeBarcodeResponse: Decodable {
     let error: String?
 }
 
-struct ReferentialEntry: Decodable, Identifiable {
+struct ReferentialEntry: Codable, Identifiable {
     let name: String
     let preset: Bool?
     let deletable: Bool?
     var id: String { name }
 }
 
-struct ReferentialsResponse: Decodable {
+struct ReferentialsResponse: Codable {
     let styles: [ReferentialEntry]?
     let hops: [ReferentialEntry]?
     let flavors: [ReferentialEntry]?
 }
 
-struct InviteIpEntry: Decodable {
+struct InviteIpEntry: Codable {
     let ip: String?
     let firstSeen: String?
     let lastSeen: String?

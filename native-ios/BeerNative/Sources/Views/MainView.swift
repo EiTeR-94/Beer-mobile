@@ -20,6 +20,11 @@ struct MainView: View {
                     .padding(.horizontal, 12)
                     .padding(.top, 4)
             }
+            if app.isLoggedIn, app.networkStatus != .online || app.pendingCount > 0 {
+                NetworkStatusBar(status: app.networkStatus, pending: app.pendingCount)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+            }
             BeerStepNav(step: $app.wizardStep)
             BeerWizardView(step: $app.wizardStep)
         }

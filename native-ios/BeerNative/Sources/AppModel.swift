@@ -4,6 +4,20 @@ import Security
 
 @MainActor
 final class AppModel: ObservableObject {
+    enum NetworkStatus: Equatable {
+        case online
+        case serverUnreachable
+        case offline
+
+        var label: String {
+            switch self {
+            case .online: return "En ligne"
+            case .serverUnreachable: return "Serveur injoignable"
+            case .offline: return "Hors ligne"
+            }
+        }
+    }
+
     @Published var user: String?
     @Published var isAdmin = false
     @Published var isInvite = false
@@ -11,54 +25,127 @@ final class AppModel: ObservableObject {
     @Published var isLoading = true
     @Published var toast: ToastPayload?
     @Published var isOnline = true
+    @Published var networkStatus: NetworkStatus = .online
     @Published var serverVersion: String = ""
     @Published var wizardStep = 1
     @Published var wizardProduct: BeerProduct?
 
     let api = BeerAPI.shared
     let offline = OfflineQueue()
+    let cache = BeerOfflineCache.shared
+
+    var pendingCount: Int { offline.items.count }
+    var isOfflineMode: Bool { networkStatus != .online }
 
     private let monitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "beer.network")
     private var toastTask: Task<Void, Never>?
+    private var syncTask: Task<Void, Never>?
+    private var probeTask: Task<Void, Never>?
+    private var syncInProgress = false
 
     init() {
         api.setBaseURL(ServerSettings.apiBase)
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in
-                let online = path.status == .satisfied
-                self?.isOnline = online
-                if online { await self?.syncPending() }
+                self?.handlePathUpdate(path)
             }
         }
         monitor.start(queue: monitorQueue)
         Task { await bootstrap() }
     }
 
+    private func handlePathUpdate(_ path: NWPath) {
+        let pathUp = path.status == .satisfied
+        isOnline = pathUp
+        if !pathUp {
+            networkStatus = .offline
+            probeTask?.cancel()
+            return
+        }
+        scheduleServerProbe()
+        scheduleSyncDebounced()
+    }
+
+    private func scheduleServerProbe() {
+        probeTask?.cancel()
+        probeTask = Task {
+            await probeServerReachability()
+        }
+    }
+
+    private func scheduleSyncDebounced() {
+        syncTask?.cancel()
+        syncTask = Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            await syncPending()
+        }
+    }
+
+    private func probeServerReachability() async {
+        guard isOnline else {
+            networkStatus = .offline
+            return
+        }
+        if await api.discoverWorkingEndpoint() != nil {
+            networkStatus = .online
+            serverVersion = (try? await api.version()) ?? serverVersion
+        } else {
+            networkStatus = .serverUnreachable
+        }
+    }
+
+    func applySession(user: String?, isAdmin: Bool, isInvite: Bool, loggedIn: Bool) {
+        self.user = user
+        self.isAdmin = isAdmin
+        self.isInvite = isInvite
+        self.isLoggedIn = loggedIn
+        if loggedIn, let user {
+            BeerSessionStore.save(user: user, isAdmin: isAdmin, isInvite: isInvite)
+            KeychainStore.username = user
+        }
+    }
+
+    func restoreOfflineSessionIfNeeded() {
+        guard let saved = BeerSessionStore.restore() else { return }
+        applySession(user: saved.user, isAdmin: saved.isAdmin, isInvite: saved.isInvite, loggedIn: true)
+    }
+
     func bootstrap() async {
         isLoading = true
         defer { isLoading = false }
-        _ = await api.discoverWorkingEndpoint()
-        serverVersion = (try? await api.version()) ?? ""
+        restoreOfflineSessionIfNeeded()
+        await probeServerReachability()
+        guard networkStatus == .online else {
+            if isLoggedIn {
+                showToast("Mode hors ligne — données en cache", variant: .info, durationMs: 3200)
+            }
+            return
+        }
         do {
             let me = try await api.me()
             if me.auth && me.user == nil {
                 await logout()
                 return
             }
-            user = me.user
-            isAdmin = me.isAdmin
-            isInvite = me.isInvite
-            isLoggedIn = me.user != nil
+            applySession(
+                user: me.user,
+                isAdmin: me.isAdmin,
+                isInvite: me.isInvite,
+                loggedIn: me.user != nil
+            )
             if isLoggedIn { await syncPending() }
         } catch {
-            if let saved = KeychainStore.username {
-                user = saved
-                isLoggedIn = true
-                if isOnline {
-                    showToast("Session à vérifier", variant: .warn)
+            if !isLoggedIn, let saved = BeerSessionStore.restore() {
+                applySession(user: saved.user, isAdmin: saved.isAdmin, isInvite: saved.isInvite, loggedIn: true)
+            }
+            if isLoggedIn {
+                if networkStatus == .offline {
+                    showToast("Hors ligne · \(user ?? "")", variant: .info, durationMs: 4200)
                 } else {
-                    showToast("Hors ligne · \(saved)", variant: .info, durationMs: 4200)
+                    showToast("Session locale — serveur injoignable", variant: .warn, durationMs: 3600)
+                    networkStatus = .serverUnreachable
                 }
             }
         }
@@ -72,19 +159,23 @@ final class AppModel: ObservableObject {
     func testServer() async -> String {
         api.setBaseURL(ServerSettings.apiBase)
         if let ok = await api.discoverWorkingEndpoint() {
+            networkStatus = .online
             return "Serveur OK · \(ok)"
         }
+        networkStatus = isOnline ? .serverUnreachable : .offline
         return "Échec — vérifie ta connexion Wi‑Fi ou VPN Plexi."
     }
 
     func login(username: String, password: String) async throws {
         _ = try await api.login(username: username, password: password)
         let me = try await api.me()
-        user = me.user ?? username
-        isAdmin = me.isAdmin
-        isInvite = me.isInvite
-        isLoggedIn = me.user != nil
-        KeychainStore.username = user
+        applySession(
+            user: me.user ?? username,
+            isAdmin: me.isAdmin,
+            isInvite: me.isInvite,
+            loggedIn: me.user != nil
+        )
+        networkStatus = .online
         hideToast()
         await syncPending()
     }
@@ -100,11 +191,13 @@ final class AppModel: ObservableObject {
         do {
             let res = try await api.redeemInvite(token: token)
             let me = try await api.me()
-            user = me.user ?? res.user
-            isAdmin = me.isAdmin
-            isInvite = me.isInvite
-            isLoggedIn = me.user != nil
-            if let user { KeychainStore.username = user }
+            applySession(
+                user: me.user ?? res.user,
+                isAdmin: me.isAdmin,
+                isInvite: me.isInvite,
+                loggedIn: me.user != nil
+            )
+            networkStatus = .online
             hideToast()
             let label = res.label ?? user ?? "invité"
             showToast("Bienvenue \(label) !", variant: .success, durationMs: 3600)
@@ -131,6 +224,7 @@ final class AppModel: ObservableObject {
         isAdmin = false
         isInvite = false
         isLoggedIn = false
+        BeerSessionStore.clear()
         KeychainStore.username = nil
         hideToast()
     }
@@ -185,7 +279,10 @@ final class AppModel: ObservableObject {
     }
 
     func syncPending() async {
-        guard isLoggedIn, isOnline else { return }
+        guard isLoggedIn, isOnline, !syncInProgress else { return }
+        guard !offline.items.isEmpty else { return }
+        syncInProgress = true
+        defer { syncInProgress = false }
         let n = await offline.flush(using: api)
         if n > 0 {
             showToast("\(n) dégustation(s) synchronisée(s)", variant: .success)
@@ -219,7 +316,8 @@ final class AppModel: ObservableObject {
             photoJPEGBase64: photoJPEG?.base64EncodedString()
         )
 
-        if !isOnline {
+        let shouldQueueLocally = networkStatus != .online || !isOnline
+        if shouldQueueLocally {
             offline.enqueue(pending)
             return "Enregistré sur l'iPhone — sync au retour réseau"
         }
@@ -249,16 +347,26 @@ final class AppModel: ObservableObject {
             }
             throw BeerAPIError.server(result.error ?? "Échec")
         } catch {
-            if case BeerAPIError.network(_) = error {
+            if Self.isNetworkFailure(error) {
                 offline.enqueue(pending)
-                return "Enregistré sur l'iPhone — sync au retour réseau"
-            }
-            if (error as NSError).domain == NSURLErrorDomain {
-                offline.enqueue(pending)
+                networkStatus = .serverUnreachable
                 return "Enregistré sur l'iPhone — sync au retour réseau"
             }
             throw error
         }
+    }
+
+    private static func isNetworkFailure(_ error: Error) -> Bool {
+        if let apiErr = error as? BeerAPIError {
+            switch apiErr {
+            case .network, .allEndpointsFailed: return true
+            case .server(let msg):
+                return msg.contains("Timeout") || msg.contains("Injoignable") || msg.contains("Pas de réseau")
+            default: return false
+            }
+        }
+        let ns = error as NSError
+        return ns.domain == NSURLErrorDomain
     }
 }
 

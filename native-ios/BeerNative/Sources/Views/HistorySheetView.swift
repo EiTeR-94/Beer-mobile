@@ -222,16 +222,30 @@ struct HistorySheetView: View {
     }
 
     private func bootstrap() async {
-        styles = (try? await app.api.styles()) ?? []
+        if let cached = app.cache.load([StyleOption].self, name: CacheKey.styles) {
+            styles = cached
+        }
+        if let live = try? await app.api.styles(), !live.isEmpty {
+            styles = live
+            app.cache.save(live, name: CacheKey.styles)
+        }
+        if items.isEmpty, let cached = app.cache.load([CheckinItem].self, name: CacheKey.historyCheckins) {
+            items = cached
+            stats = app.cache.load(HistoryStats.self, name: CacheKey.historyStats)
+        }
         await reload()
     }
 
     private func reload() async {
         offset = 0
         hasMore = true
-        items = []
         await load(append: false)
-        stats = try? await app.api.stats()
+        if let live = try? await app.api.stats() {
+            stats = live
+            app.cache.save(live, name: CacheKey.historyStats)
+        } else if stats == nil {
+            stats = app.cache.load(HistoryStats.self, name: CacheKey.historyStats)
+        }
     }
 
     private func load(append: Bool) async {
@@ -248,11 +262,21 @@ struct HistorySheetView: View {
                 limit: pageSize,
                 offset: append ? offset : 0
             )
-            if append { items.append(contentsOf: batch) } else { items = batch }
+            if append {
+                items.append(contentsOf: batch)
+            } else {
+                items = batch
+                app.cache.save(batch, name: CacheKey.historyCheckins)
+            }
             offset = items.count
             hasMore = batch.count == pageSize
         } catch let err {
-            error = err.localizedDescription
+            if !append, let cached = app.cache.load([CheckinItem].self, name: CacheKey.historyCheckins) {
+                items = cached
+                error = "Données en cache — \(app.networkStatus.label.lowercased())"
+            } else {
+                error = err.localizedDescription
+            }
         }
     }
 

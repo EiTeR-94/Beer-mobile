@@ -161,16 +161,29 @@ struct GiftsSheetView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
+    private func applyGifts(_ data: CoupleStats) {
+        let me = app.user ?? ""
+        users = data.users ?? []
+        partner = data.users?.first { $0.username != me }?.username ?? ""
+        gifts = (data.giftIdeas ?? []).filter { $0.forUser == me || $0.forUser == nil }
+    }
+
     private func load() async {
+        if gifts.isEmpty, let cached = app.cache.load(CoupleStats.self, name: CacheKey.gifts) {
+            applyGifts(cached)
+        }
         do {
             let data = try await app.api.coupleStats()
-            let me = app.user ?? ""
-            users = data.users ?? []
-            partner = data.users?.first { $0.username != me }?.username ?? ""
-            gifts = (data.giftIdeas ?? []).filter { $0.forUser == me || $0.forUser == nil }
+            app.cache.save(data, name: CacheKey.gifts)
+            applyGifts(data)
             errorMessage = nil
         } catch let err {
-            errorMessage = err.localizedDescription
+            if let cached = app.cache.load(CoupleStats.self, name: CacheKey.gifts) {
+                applyGifts(cached)
+                errorMessage = "Données en cache — \(app.networkStatus.label.lowercased())"
+            } else {
+                errorMessage = err.localizedDescription
+            }
         }
     }
 }

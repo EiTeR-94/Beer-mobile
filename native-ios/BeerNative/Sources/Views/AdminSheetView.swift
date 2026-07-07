@@ -304,9 +304,36 @@ struct AdminSheetView: View {
     }
 
     private func reload() async {
-        users = (try? await app.api.adminUsers()) ?? []
-        invites = (try? await app.api.adminInvites()) ?? []
-        referentials = try? await app.api.adminReferentials()
+        var fromCache = false
+
+        if let live = try? await app.api.adminUsers() {
+            users = live
+            app.cache.save(live, name: CacheKey.adminUsers)
+        } else if let cached = app.cache.load([AdminUser].self, name: CacheKey.adminUsers) {
+            users = cached
+            fromCache = true
+        }
+
+        if let live = try? await app.api.adminInvites() {
+            invites = live
+            app.cache.save(live, name: CacheKey.adminInvites)
+        } else if let cached = app.cache.load([InviteItem].self, name: CacheKey.adminInvites) {
+            invites = cached
+            fromCache = true
+        }
+
+        if let live = try? await app.api.adminReferentials() {
+            referentials = live
+            app.cache.save(live, name: CacheKey.adminReferentials)
+        } else if referentials == nil, let cached = app.cache.load(ReferentialsResponse.self, name: CacheKey.adminReferentials) {
+            referentials = cached
+            fromCache = true
+        }
+
+        if fromCache {
+            errorMessage = nil
+            message = "Données en cache — \(app.networkStatus.label.lowercased())"
+        }
     }
 
     private func createUser() async {
