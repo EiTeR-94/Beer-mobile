@@ -5,9 +5,37 @@ import UIKit
 final class BeerImageCache {
     static let shared = BeerImageCache()
     private var store: [String: UIImage] = [:]
+    private let imageDir: URL
 
-    func image(for path: String) -> UIImage? { store[path] }
-    func store(_ image: UIImage, for path: String) { store[path] = image }
+    private init() {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        imageDir = base.appendingPathComponent("offline-images", isDirectory: true)
+        try? FileManager.default.createDirectory(at: imageDir, withIntermediateDirectories: true)
+    }
+
+    func image(for path: String) -> UIImage? {
+        if let mem = store[path] { return mem }
+        let file = imageFile(for: path)
+        if let data = try? Data(contentsOf: file), let img = UIImage(data: data) {
+            store[path] = img
+            return img
+        }
+        return nil
+    }
+
+    func store(_ image: UIImage, for path: String) {
+        store[path] = image
+        // persist to disk
+        if let data = image.jpegData(compressionQuality: 0.85) {
+            let file = imageFile(for: path)
+            try? data.write(to: file, options: .atomic)
+        }
+    }
+
+    private func imageFile(for path: String) -> URL {
+        let key = path.components(separatedBy: "/").last ?? path.replacingOccurrences(of: "/", with: "_")
+        return imageDir.appendingPathComponent(key)
+    }
 }
 
 @MainActor
@@ -69,7 +97,7 @@ struct BeerImage: View {
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
-            } else if loader.failed || path == nil || path?.isEmpty == true {
+            } else if loader.failed || path == nil || path?.isEmpty == true || (app.networkStatus == .offline && loader.image == nil) {
                 placeholder
             } else {
                 placeholder.overlay { ProgressView().tint(Theme.muted) }
