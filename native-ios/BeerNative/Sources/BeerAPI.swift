@@ -71,7 +71,8 @@ final class BeerAPI {
             delegateQueue: nil
         )
         // Invités 5G + passkey : IPv4 forcé sur :443 + Bearer nginx-gate.
-        let passkeyConfig = baseConfig()
+        // Longer timeouts for 5G/cellular connections which can be slower/unreliable.
+        let passkeyConfig = baseConfig(requestTimeout: 60, resourceTimeout: 180)
         passkeyConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
         self.passkeySession = URLSession(
             configuration: passkeyConfig,
@@ -907,22 +908,25 @@ final class BeerAPI {
         body: Data?,
         contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse, URL) {
-        var lastError: Error?
-        for candidate in ServerSettings.passkeyBaseURLs {
-            baseURL = Self.canonicalBase(candidate)
-            var req = URLRequest(url: try url(path))
-            req.httpMethod = method
-            if let contentType { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
-            applyCommonHeaders(to: &req)
-            req.httpBody = body
-            do {
-                return try await performWan(req)
-            } catch {
-                lastError = error
+        // Use retry for robustness on 5G cellular.
+        return try await NetworkManager.shared.withRetry(maxAttempts: 3, baseDelayMs: 500) {
+            var lastError: Error?
+            for candidate in ServerSettings.passkeyBaseURLs {
+                baseURL = Self.canonicalBase(candidate)
+                var req = URLRequest(url: try self.url(path))
+                req.httpMethod = method
+                if let contentType { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
+                self.applyCommonHeaders(to: &req)
+                req.httpBody = body
+                do {
+                    return try await self.performWan(req)
+                } catch {
+                    lastError = error
+                }
             }
+            if let lastError { throw lastError }
+            throw BeerAPIError.server("Serveur injoignable en 5G (IPv4). Vérifie ta connexion cellulaire.")
         }
-        if let lastError { throw lastError }
-        throw BeerAPIError.server("Serveur injoignable en 5G (IPv4). Vérifie ta connexion cellulaire.")
     }
 
     private func request(

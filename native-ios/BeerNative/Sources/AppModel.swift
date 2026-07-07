@@ -307,7 +307,10 @@ final class AppModel: ObservableObject {
             // Uses passkey registration for invite token (same as web invite system),
             // Bearer token (PasskeySessionStore), apiBase (domain), isInvite=true.
             // NEVER touches lanApiBase, cookies, or local LAN logic.
-            let result = try await PasskeyAuth.shared.register(inviteToken: token)
+            // Retry for 5G unreliability.
+            let result = try await NetworkManager.shared.withRetry(maxAttempts: 3, baseDelayMs: 1000) {
+                try await PasskeyAuth.shared.register(inviteToken: token)
+            }
             PasskeySessionStore.save(accessToken: result.accessToken)
             applySession(
                 user: result.user,
