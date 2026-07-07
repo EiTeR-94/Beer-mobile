@@ -119,7 +119,7 @@ const manifest = {
       tintColor: "#f59e0b",
       category: "lifestyle",
       appPermissions: {
-        entitlements: [],
+        entitlements: ["com.apple.developer.associated-domains"],
         privacy: {
           NSCameraUsageDescription: ascii(
             "Scanner les codes-barres et prendre des photos de tes degustations."
