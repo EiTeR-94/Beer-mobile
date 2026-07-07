@@ -104,10 +104,13 @@ final class BeerAPI {
         if http.statusCode == 429 {
             throw BeerAPIError.server("Trop de tentatives — réessaie dans une minute.")
         }
+        if http.statusCode == 403 {
+            throw BeerAPIError.server("Accès refusé — Wi‑Fi maison ou VPN Plexi requis")
+        }
         guard let decoded = try? JSONDecoder().decode(JoinInviteResponse.self, from: data) else {
             throw BeerAPIError.decode
         }
-        if http.statusCode == 403 || decoded.ok == false {
+        if decoded.ok == false {
             let msg: String
             switch decoded.error {
             case "wrong_device": msg = "Cette invitation est liée à un autre appareil."
@@ -687,7 +690,9 @@ final class BeerAPI {
             case .cannotConnectToHost, .networkConnectionLost:
                 throw BeerAPIError.server("Injoignable : \(baseURL.host ?? "?")")
             case .secureConnectionFailed, .serverCertificateUntrusted:
-                throw BeerAPIError.server("SSL refusé sur \(baseURL.host ?? "?")")
+                throw BeerAPIError.server(
+                    "Connexion SSL impossible — Wi‑Fi maison ou VPN Plexi requis (pas en 4G seule)."
+                )
             case .timedOut:
                 throw BeerAPIError.server("Timeout \(baseURL.host ?? "?")")
             case .notConnectedToInternet:

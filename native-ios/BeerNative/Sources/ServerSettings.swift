@@ -1,7 +1,7 @@
 import Foundation
 
 enum ServerSettings {
-    /// URL canonique — LAN, VPN et 4G (via VPN) via le FQDN Plexi.
+    /// URL canonique — Wi‑Fi maison ou VPN Plexi via le FQDN Plexi.
     static let apiBaseString = "https://eiter.freeboxos.fr/beer/"
 
     static var apiBase: URL {
