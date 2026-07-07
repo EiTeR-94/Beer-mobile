@@ -101,7 +101,7 @@ struct BeerWizardView: View {
                         manualEAN = code
                         Task { await lookupEAN(code) }
                     }
-                    .frame(height: min((UIScreen.main.bounds.width - 32) * 0.75, UIScreen.main.bounds.height * 0.48, 320))
+                    .frame(height: min(min((UIScreen.main.bounds.width - 32) * 0.75, UIScreen.main.bounds.height * 0.48), 320))
                     .background(Theme.photoBg)
                     .overlay {
                         ScanViewfinderOverlay()

@@ -32,31 +32,39 @@ struct GiftsSheetView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 12) {
-                    if let errorMessage {
-                        Text(errorMessage).font(.footnote).foregroundStyle(Theme.error)
-                    }
-                    coupleStatsRow
-                    filtersRow
-                    ForEach(filtered) { g in
-                        giftCard(g)
-                    }
-                    if filtered.isEmpty {
-                        Text("Aucune idée cadeau avec ces filtres.").foregroundStyle(Theme.muted)
+        BeerOverlayScreen(
+            title: partner.isEmpty ? "Idées cadeaux" : "Idées cadeaux — \(partner)",
+            onClose: { dismiss() }
+        ) {
+            VStack(spacing: 12) {
+                if let errorMessage {
+                    Text(errorMessage).font(.footnote).foregroundStyle(Theme.error)
+                }
+                coupleStatsRow
+                BeerGiftsFiltersRow(
+                    search: $search,
+                    filterStyle: $filterStyle,
+                    minRating: $minRating,
+                    styleOptions: styleOptions
+                )
+
+                if filtered.isEmpty {
+                    Text("Aucune idée cadeau avec ces filtres.")
+                        .font(.system(size: Theme.Font.lead * 0.94))
+                        .foregroundStyle(Theme.muted)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                } else {
+                    LazyVStack(spacing: 10) {
+                        ForEach(filtered) { g in
+                            giftCard(g)
+                        }
                     }
                 }
-                .padding(16)
             }
-            .background(Theme.bg)
-            .navigationTitle(partner.isEmpty ? "Idées cadeaux" : "Idées cadeaux — \(partner)")
-            .searchable(text: $search, prompt: "Recherche")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fermer") { dismiss() } } }
-            .task { await load() }
-            .refreshable { await load() }
         }
-        .preferredColorScheme(.dark)
+        .task { await load() }
+        .refreshable { await load() }
     }
 
     private var coupleStatsRow: some View {
@@ -64,71 +72,72 @@ struct GiftsSheetView: View {
             ForEach(users) { u in
                 VStack(spacing: 2) {
                     Text(u.username == app.user ? "Toi" : u.username)
-                        .font(.caption2).foregroundStyle(Theme.muted)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.muted)
                     Text("\(u.total)")
-                        .font(.title3.bold())
-                    Text("dégust.").font(.caption2).foregroundStyle(Theme.muted)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                    Text("dégust.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.muted)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(8)
+                .padding(9)
                 .background(Theme.card)
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             }
         }
-    }
-
-    private var filtersRow: some View {
-        HStack {
-            Picker("Style", selection: $filterStyle) {
-                Text("Tous").tag("")
-                ForEach(styleOptions, id: \.self) { s in
-                    Text(s).tag(s)
-                }
-            }
-            .pickerStyle(.menu)
-            Picker("Note min", selection: $minRating) {
-                Text("Toutes").tag(0.0)
-                Text("≥ 4 ★").tag(4.0)
-                Text("≥ 4.5 ★").tag(4.5)
-                Text("= 5 ★").tag(5.0)
-            }
-            .pickerStyle(.menu)
-        }
-        .tint(Theme.accent)
     }
 
     private func giftCard(_ g: GiftIdea) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: 12) {
             BeerImage(path: g.photoPath.map { "/beer/photos/\(($0 as NSString).lastPathComponent)" })
                 .frame(width: 88, height: 88)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(g.beerName).font(.headline)
+                    Text(g.beerName)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Theme.text)
                     if (g.rating ?? 0) >= 4.99 {
                         Text("♥").foregroundStyle(Theme.error)
                     }
                 }
-                Text("\(g.brewery ?? "—") · \(g.style ?? "?")").font(.caption).foregroundStyle(Theme.muted)
+                Text("\(g.brewery ?? "—") · \(g.style ?? "?")")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.muted)
                 HStack(spacing: 4) {
-                    Text("★★★★★").font(.caption).foregroundStyle(Theme.starOff)
+                    Text("★★★★★").font(.system(size: 11)).foregroundStyle(Theme.starOff)
                         .overlay(alignment: .leading) {
-                            Text("★★★★★").font(.caption).foregroundStyle(Theme.star)
+                            Text("★★★★★").font(.system(size: 11)).foregroundStyle(Theme.star)
                                 .mask { Rectangle().frame(width: BeerFormatters.starFillWidth(g.rating ?? 0)) }
                         }
-                    Text(BeerFormatters.ratingLabel(g.rating ?? 0)).font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
+                    Text(BeerFormatters.ratingLabel(g.rating ?? 0))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
                 }
                 Text("Notée par \(g.likedBy ?? "?")")
-                    .font(.caption).foregroundStyle(Theme.accent)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.accent)
                 if let d = g.createdAt {
-                    Text("Dégustée le \(BeerFormatters.formatDate(d))").font(.caption2).foregroundStyle(Theme.muted)
+                    Text("Dégustée le \(BeerFormatters.formatDate(d))")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.muted)
                 }
                 if let c = g.comment, !c.isEmpty {
-                    Text("« \(c) »").font(.caption).italic()
+                    Text("« \(c) »")
+                        .font(.system(size: 13))
+                        .italic()
+                        .foregroundStyle(Theme.text)
                 }
             }
         }
-        .padding(12).background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(12)
+        .background(Theme.card)
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.border))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
     private func load() async {

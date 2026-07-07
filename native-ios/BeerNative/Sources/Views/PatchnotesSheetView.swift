@@ -7,24 +7,20 @@ struct PatchnotesSheetView: View {
     @State private var version = ""
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                Text(text.isEmpty ? "Chargement…" : text)
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundStyle(Theme.text)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-            }
-            .background(Theme.bg)
-            .navigationTitle("Patch notes v\(version)")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fermer") { dismiss() } } }
-            .task {
-                if let p = try? await app.api.patchnotes() {
-                    version = p.version ?? app.serverVersion
-                    text = p.markdown ?? ""
-                }
+        BeerSidePanel(
+            title: "Patch notes \(version.isEmpty ? "" : "v\(version)")",
+            onClose: { dismiss() }
+        ) {
+            Text(text.isEmpty ? "Chargement…" : text)
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundStyle(Theme.text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .task {
+            if let p = try? await app.api.patchnotes() {
+                version = p.version ?? app.serverVersion
+                text = p.markdown ?? ""
             }
         }
-        .preferredColorScheme(.dark)
     }
 }

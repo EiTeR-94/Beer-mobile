@@ -34,65 +34,91 @@ struct CheckinEditView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 14) {
-                    Text(item.beerName).font(.headline)
-                    Text("\(item.brewery ?? "—") · \(item.style ?? "?") · \(BeerFormatters.formatDate(item.createdAt))")
-                        .font(.caption).foregroundStyle(Theme.muted)
-                    BeerImage(path: item.photoURL)
-                        .frame(height: 160)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    PhotosPicker("📷 Prendre ou choisir une photo", selection: $photoItem, matching: .images)
-                        .foregroundStyle(Theme.accent)
-                    if item.photoURL != nil {
-                        Button("Retirer la photo", role: .destructive) { removePhoto = true; newPhoto = nil }
-                            .font(.caption)
+        BeerOverlayScreen(title: "Modifier la dégustation", onClose: { dismiss() }) {
+            VStack(spacing: 14) {
+                Text("\(item.brewery ?? "—") · \(item.style ?? "?") · \(BeerFormatters.formatDate(item.createdAt))")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                PhotosPicker(selection: $photoItem, matching: .images) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Theme.border, style: StrokeStyle(lineWidth: 2, dash: [6]))
+                            .background(Theme.card)
+                            .frame(minHeight: 140)
+                        if let path = item.photoURL, !removePhoto, newPhoto == nil {
+                            BeerImage(path: path)
+                                .scaledToFit()
+                                .frame(maxHeight: 200)
+                                .padding(8)
+                        } else {
+                            Text("📷 Prendre ou choisir une photo")
+                                .font(.system(size: Theme.Font.lead))
+                                .foregroundStyle(Theme.muted)
+                        }
                     }
-                    UntappdRatingSlider(rating: $rating)
-                    if !flavorTags.isEmpty {
-                        FlavorTagGrid(title: "Goûts", tags: flavorTags, selected: $flavors, maxCount: 8)
-                    }
-                    CustomTagInput(placeholder: "Goût perso", input: $customFlavorInput, selected: $flavors, maxCount: 8)
-                    CustomTagChips(selected: $flavors, customOnly: flavors.subtracting(Set(flavorTags)))
-                    if !hopTags.isEmpty {
-                        FlavorTagGrid(title: "Houblons", tags: hopTags, selected: $hops, maxCount: 6)
-                    }
+                }
+                if item.photoURL != nil {
+                    BeerSecondaryButton(title: "Retirer la photo") { removePhoto = true; newPhoto = nil }
+                }
+
+                UntappdRatingSlider(rating: $rating)
+
+                if !flavorTags.isEmpty {
+                    FlavorTagGrid(title: "Goûts", tags: flavorTags, selected: $flavors, maxCount: 8)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Goûts perso")
+                        .font(.system(size: Theme.Font.tagTitle))
+                        .foregroundStyle(Theme.muted)
                     CustomTagInput(
-                        placeholder: "Houblon perso",
+                        placeholder: "ex. pneus, sucrée…",
+                        input: $customFlavorInput,
+                        selected: $flavors,
+                        maxCount: 8
+                    )
+                    CustomTagChips(selected: $flavors, customOnly: flavors.subtracting(Set(flavorTags)))
+                }
+
+                if !hopTags.isEmpty {
+                    FlavorTagGrid(title: "Houblons", tags: hopTags, selected: $hops, maxCount: 6)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Houblons perso")
+                        .font(.system(size: Theme.Font.tagTitle))
+                        .foregroundStyle(Theme.muted)
+                    CustomTagInput(
+                        placeholder: "ex. Citra, Mosaic…",
                         input: $customHopInput,
                         selected: $hops,
                         maxCount: 6,
                         onRegister: { name in Task { try? await app.api.addHop(name) } }
                     )
                     CustomTagChips(selected: $hops, customOnly: hops.subtracting(Set(hopTags)))
-                    BeerField(label: "Commentaire (120 car.)", text: $comment)
-                    if app.isAdmin {
-                        Toggle("Masquer cette dégustation pour les autres", isOn: $hidden).tint(Theme.accent)
-                    }
-                    if let message { Text(message).font(.footnote).foregroundStyle(Theme.error) }
-                    BeerPrimaryButton(title: busy ? "Enregistrement…" : "Enregistrer", busy: busy) {
-                        Task { await save() }
-                    }
                 }
-                .padding(16)
-            }
-            .background(Theme.bg)
-            .navigationTitle("Modifier la dégustation")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Annuler") { dismiss() } }
-            }
-            .task { await loadTags() }
-            .onChange(of: photoItem, perform: { p in
-                Task {
-                    if let raw = try? await p?.loadTransferable(type: Data.self) {
-                        newPhoto = BeerImageUtils.compressJPEG(raw)
-                        removePhoto = false
-                    }
+
+                if app.isAdmin {
+                    Toggle("Masquer cette dégustation pour les autres", isOn: $hidden)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Theme.muted)
+                        .tint(Theme.accent)
                 }
-            })
+
+                BeerField(label: "Commentaire", text: $comment)
+
+                if let message {
+                    Text(message).font(.footnote).foregroundStyle(Theme.error)
+                }
+
+                BeerSecondaryButton(title: "Annuler") { dismiss() }
+                BeerPrimaryButton(title: busy ? "Enregistrement…" : "Enregistrer", busy: busy) {
+                    Task { await save() }
+                }
+            }
         }
-        .preferredColorScheme(.dark)
+        .onChange(of: photoItem, perform: { p in Task { await loadPhoto(p) } })
+        .task { await loadTags() }
     }
 
     private func loadTags() async {
@@ -102,8 +128,17 @@ struct CheckinEditView: View {
         }
     }
 
+    private func loadPhoto(_ item: PhotosPickerItem?) async {
+        guard let item else { return }
+        if let raw = try? await item.loadTransferable(type: Data.self) {
+            newPhoto = BeerImageUtils.compressJPEG(raw)
+            removePhoto = false
+        }
+    }
+
     private func save() async {
         busy = true
+        message = nil
         defer { busy = false }
         do {
             try await app.api.updateCheckin(

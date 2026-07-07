@@ -24,26 +24,20 @@ struct MainView: View {
             BeerWizardView(step: $app.wizardStep)
         }
         .background(Theme.bg)
-        .sheet(item: $sheet) { s in
+        .fullScreenCover(item: $sheet) { s in
             switch s {
             case .history:
                 HistorySheetView(initialSearch: historySearchSeed, onOpenGallery: { sheet = .gallery })
-                    .beerSheetChrome()
             case .gallery:
                 GallerySheetView()
-                    .beerSheetChrome()
             case .wishlist:
                 WishlistSheetView()
-                    .beerSheetChrome()
             case .gifts:
                 GiftsSheetView()
-                    .beerSheetChrome()
             case .admin:
                 AdminSheetView()
-                    .beerSheetChrome()
             case .patchnotes:
                 PatchnotesSheetView()
-                    .beerSheetChrome()
             }
         }
         .environmentObject(app)

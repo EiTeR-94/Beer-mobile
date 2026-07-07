@@ -20,63 +20,85 @@ struct CheckinDetailView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            BeerDetailHead(
+                onClose: { dismiss() },
+                onRetaste: { onRetaste(); dismiss() },
+                onEdit: { dismiss(); onEdit() },
+                showHide: app.isAdmin,
+                onHide: app.isAdmin ? { Task { await toggleHidden() } } : nil
+            )
+
             ScrollView {
-                VStack(spacing: 16) {
-                    if item.photoURL != nil {
-                        BeerImage(path: item.photoURL)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 280)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                    } else {
-                        Text("Pas de photo")
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 120)
-                            .foregroundStyle(Theme.muted)
-                            .background(Theme.card)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                VStack(spacing: 14) {
+                    Group {
+                        if item.photoURL != nil {
+                            BeerImage(path: item.photoURL)
+                                .frame(maxWidth: .infinity)
+                                .frame(maxHeight: 320)
+                                .scaledToFit()
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.border))
+                        } else {
+                            Text("Pas de photo")
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 140)
+                                .foregroundStyle(Theme.muted)
+                                .background(Theme.card)
+                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.border))
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
                     }
 
-                    Text(item.beerName).font(.title2.bold())
+                    Text(item.beerName)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     Text("\(item.brewery ?? "—") · \(item.style ?? "?") · \(BeerFormatters.formatDate(item.createdAt))")
-                        .font(.subheadline).foregroundStyle(Theme.muted)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                    HStack {
+                    HStack(spacing: 6) {
                         Text("★★★★★").foregroundStyle(Theme.starOff)
                             .overlay(alignment: .leading) {
                                 Text("★★★★★").foregroundStyle(Theme.star)
                                     .mask { Rectangle().frame(width: BeerFormatters.starFillWidth(item.rating, totalWidth: 80)) }
                             }
-                        Text(BeerFormatters.ratingLabel(item.rating)).foregroundStyle(Theme.accent).fontWeight(.semibold)
+                        Text(BeerFormatters.ratingLabel(item.rating))
+                            .foregroundStyle(Theme.accent)
+                            .fontWeight(.semibold)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     if let flavors = item.flavors, !flavors.isEmpty {
-                        Text("Goûts : \(flavors.joined(separator: ", "))").font(.footnote)
+                        Text("Goûts : \(flavors.joined(separator: ", "))")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.text)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     if let hops = item.hops, !hops.isEmpty {
-                        Text("Houblons : \(hops.joined(separator: ", "))").font(.footnote).foregroundStyle(Theme.muted)
+                        Text("Houblons : \(hops.joined(separator: ", "))")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.muted)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     if let comment = item.comment, !comment.isEmpty {
-                        Text("« \(comment) »").italic().padding().beerCard()
+                        Text("« \(comment) »")
+                            .italic()
+                            .font(.system(size: 14))
+                            .foregroundStyle(Theme.text)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Theme.card)
+                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.border))
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
                     }
-
-                    if app.isAdmin {
-                        Button(toggling ? "…" : (hidden ? "Rendre visible" : "Masquer")) {
-                            Task { await toggleHidden() }
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(Theme.accent)
-                    }
-
-                    BeerPrimaryButton(title: "Noter à nouveau") { onRetaste(); dismiss() }
-                    BeerSecondaryButton(title: "Modifier") { onEdit() }
                 }
                 .padding(16)
             }
-            .background(Theme.bg)
-            .navigationTitle("Détail")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fermer") { dismiss() } } }
         }
+        .background(Theme.bg)
         .preferredColorScheme(.dark)
     }
 

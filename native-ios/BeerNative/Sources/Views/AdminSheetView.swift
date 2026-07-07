@@ -32,21 +32,33 @@ struct AdminSheetView: View {
     ]
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if let errorMessage { Text(errorMessage).font(.footnote).foregroundStyle(Theme.error) }
-                    if let message { Text(message).font(.footnote).foregroundStyle(Theme.ok) }
+        BeerOverlayScreen(
+            title: "Administration",
+            onClose: { dismiss() },
+            trailing: [.ghost("↻ Actualiser") { Task { await reload() } }]
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                if let errorMessage { Text(errorMessage).font(.footnote).foregroundStyle(Theme.error) }
+                if let message { Text(message).font(.footnote).foregroundStyle(Theme.ok) }
 
-                    Text("Nouveau compte").font(.headline)
-                    BeerField(label: "Identifiant", text: $newUser)
-                    BeerField(label: "Mot de passe", text: $newPass, secure: true)
-                    Toggle("Administrateur", isOn: $newAdmin).tint(Theme.accent)
-                    BeerPrimaryButton(title: "Créer le compte", disabled: newUser.isEmpty || newPass.count < 6) {
-                        Task { await createUser() }
+                BeerAdminSub(title: "Nouveau compte")
+                BeerAdminCard {
+                    VStack(spacing: 0) {
+                        BeerField(label: "Identifiant", text: $newUser, placeholder: "ex. ney")
+                        BeerField(label: "Mot de passe", text: $newPass, secure: true)
+                            .padding(.top, 10)
+                        Toggle("Administrateur", isOn: $newAdmin)
+                            .font(.system(size: 14))
+                            .foregroundStyle(Theme.muted)
+                            .tint(Theme.accent)
+                            .padding(.top, 8)
+                        BeerPrimaryButton(title: "Créer le compte", disabled: newUser.isEmpty || newPass.count < 6) {
+                            Task { await createUser() }
+                        }
                     }
+                }
 
-                    Text("Comptes").font(.headline).padding(.top, 8)
+                BeerAdminSub(title: "Comptes")
                     ForEach(users) { u in
                         AdminUserCard(
                             user: u,
@@ -62,23 +74,35 @@ struct AdminSheetView: View {
                         )
                     }
 
-                    HStack {
-                        Text("Invitations").font(.headline)
-                        Spacer()
-                        Button("IP") { openAllIPs() }.font(.caption)
-                    }
-                    .padding(.top, 8)
+                HStack(alignment: .center) {
+                    Text("Invitations")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.muted)
+                    Spacer()
+                    BeerGhostButton("IP", action: openAllIPs)
+                }
+                .padding(.top, 12)
 
-                    Text("Compte + lien en un seul endroit. Lié au 1er appareil.")
-                        .font(.caption).foregroundStyle(Theme.muted)
-                    BeerField(label: "Nom invité", text: $inviteLabel, placeholder: "ex. Paul")
-                    Picker("Validité", selection: $inviteValidity) {
-                        ForEach(validityOptions, id: \.0) { opt in Text(opt.1).tag(opt.0) }
+                Text("Compte + lien en un seul endroit. Lié au 1er appareil (4G OK ensuite). Cache vidé ? « Renvoyer l'accès » (lien 10 min). Révoquer = supprime le compte.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.muted)
+
+                BeerAdminCard {
+                    VStack(spacing: 0) {
+                        BeerField(label: "Nom de l'invité", text: $inviteLabel, placeholder: "ex. Paul")
+                        BeerFilterLabel(label: "Validité") {
+                            Picker("", selection: $inviteValidity) {
+                                ForEach(validityOptions, id: \.0) { opt in Text(opt.1).tag(opt.0) }
+                            }
+                            .pickerStyle(.menu)
+                            .tint(Theme.accent)
+                        }
+                        .padding(.top, 10)
+                        BeerPrimaryButton(title: "Créer le lien", disabled: inviteLabel.count < 2) {
+                            Task { await createInvite() }
+                        }
                     }
-                    .pickerStyle(.menu).tint(Theme.accent)
-                    BeerPrimaryButton(title: "Créer le lien", disabled: inviteLabel.count < 2) {
-                        Task { await createInvite() }
-                    }
+                }
                     if let createdInviteURL {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Lien à envoyer en privé :").font(.caption).foregroundStyle(Theme.muted)
@@ -92,14 +116,15 @@ struct AdminSheetView: View {
                     }
                     ForEach(invites) { inv in inviteCard(inv) }
 
-                    BeerSecondaryButton(title: "🧹 Nettoyer photos orphelines") {
-                        Task {
-                            do { message = try await app.api.adminCleanupPhotos(); errorMessage = nil }
-                            catch let err { errorMessage = err.localizedDescription }
-                        }
+                BeerAdminSub(title: "Maintenance")
+                BeerSecondaryButton(title: "🧹 Nettoyer photos orphelines") {
+                    Task {
+                        do { message = try await app.api.adminCleanupPhotos(); errorMessage = nil }
+                        catch let err { errorMessage = err.localizedDescription }
                     }
+                }
 
-                    Text("Référentiels").font(.headline).padding(.top, 8)
+                BeerAdminSub(title: "Référentiels")
                     Picker("Onglet", selection: $refTab) {
                         Text("Styles (\(referentials?.styles?.count ?? 0))").tag(0)
                         Text("Houblons (\(referentials?.hops?.count ?? 0))").tag(1)
@@ -124,21 +149,13 @@ struct AdminSheetView: View {
                         }
                         .padding(8).background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 8))
                     }
-                }
-                .padding(16)
-            }
-            .background(Theme.bg)
-            .navigationTitle("Administration")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Fermer") { dismiss() } }
-                ToolbarItem(placement: .primaryAction) { Button("↻ Actualiser") { Task { await reload() } } }
-            }
-            .task { await reload() }
-            .sheet(isPresented: $showIPs) {
-                InviteIPsSheetView(title: ipTitle, entries: ipEntries)
             }
         }
-        .preferredColorScheme(.dark)
+        .task { await reload() }
+        .sheet(isPresented: $showIPs) {
+            InviteIPsSheetView(title: ipTitle, entries: ipEntries)
+                .beerSheetChrome()
+        }
     }
 
     private var refAddLabel: String {

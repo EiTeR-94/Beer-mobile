@@ -7,66 +7,76 @@ struct WishlistSheetView: View {
     @State private var items: [WishlistItem] = []
     @State private var name = ""
     @State private var brewery = ""
-    @State private var loading = false
     @State private var error: String?
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 14) {
-                    Text("Tes souhaits personnels (bières à goûter).")
-                        .font(.footnote).foregroundStyle(Theme.muted).frame(maxWidth: .infinity, alignment: .leading)
+        BeerOverlayScreen(title: "À boire", onClose: { dismiss() }) {
+            VStack(spacing: 12) {
+                Text("Tes souhaits personnels (bières à goûter).")
+                    .font(.system(size: Theme.Font.lead * 0.94))
+                    .foregroundStyle(Theme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                    BeerField(label: "Nom", text: $name, placeholder: "ex. Mama Whipa")
-                    BeerField(label: "Brasserie", text: $brewery, placeholder: "optionnel")
-                    BeerPrimaryButton(title: "Ajouter", disabled: name.count < 2) {
-                        Task { await add() }
+                BeerAdminCard {
+                    VStack(spacing: 0) {
+                        BeerField(label: "Nom", text: $name, placeholder: "ex. Mama Whipa")
+                        BeerField(label: "Brasserie", text: $brewery, placeholder: "optionnel")
+                            .padding(.top, 10)
+                        BeerPrimaryButton(title: "Ajouter", disabled: name.count < 2) {
+                            Task { await add() }
+                        }
                     }
+                }
 
-                    if let error { Text(error).foregroundStyle(Theme.error).font(.footnote) }
+                if let error {
+                    Text(error).foregroundStyle(Theme.error).font(.footnote)
+                }
 
+                LazyVStack(spacing: 10) {
                     ForEach(items) { item in
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(item.beerName).font(.headline)
-                                Text(item.brewery ?? "—").font(.caption).foregroundStyle(Theme.muted)
+                        HStack(alignment: .center, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.beerName)
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(Theme.text)
+                                Text(item.brewery ?? "—")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Theme.muted)
                             }
                             Spacer()
-                            Button("Goûter") {
+                            BeerCompactButton(title: "Goûter", primary: true) {
                                 dismiss()
                                 app.startWishlistTaste(item)
                             }
-                            .buttonStyle(.borderedProminent).tint(Theme.accent).controlSize(.small)
-                            Button(role: .destructive) { Task { await remove(item) } } label: {
-                                Image(systemName: "trash")
+                            BeerCompactButton(title: "Suppr.", destructive: true) {
+                                Task { await remove(item) }
                             }
                         }
-                        .padding(12).background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 12))
+                        .padding(12)
+                        .background(Theme.card)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.border))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
                 }
-                .padding(16)
             }
-            .background(Theme.bg)
-            .navigationTitle("À boire")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fermer") { dismiss() } } }
-            .refreshable { await load() }
-            .task { await load() }
         }
-        .preferredColorScheme(.dark)
+        .refreshable { await load() }
+        .task { await load() }
     }
 
     private func load() async {
-        loading = true
-        defer { loading = false }
         items = (try? await app.api.wishlist()) ?? []
     }
 
     private func add() async {
         do {
             try await app.api.addWishlist(beerName: name, brewery: brewery)
-            name = ""; brewery = ""
+            name = ""
+            brewery = ""
             await load()
-        } catch let err { self.error = err.localizedDescription }
+        } catch let err {
+            error = err.localizedDescription
+        }
     }
 
     private func remove(_ item: WishlistItem) async {

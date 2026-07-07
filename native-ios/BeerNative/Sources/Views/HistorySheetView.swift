@@ -23,89 +23,94 @@ struct HistorySheetView: View {
     private let pageSize = 10
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 12) {
-                    if let stats, stats.total > 0 { statsRow(stats) }
-                    filtersRow
-                    if let error { Text(error).font(.footnote).foregroundStyle(Theme.error) }
-                    if loading && items.isEmpty {
-                        ProgressView("Chargement…")
-                            .tint(Theme.accent)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 40)
-                    } else if items.isEmpty {
-                        BeerEmptyState(
-                            icon: "🍺",
-                            title: "Aucune dégustation",
-                            subtitle: search.isEmpty
-                                ? "Note ta première bière depuis l'accueil."
-                                : "Aucun résultat pour « \(search) »."
-                        )
-                    } else {
-                        LazyVStack(spacing: 10) {
-                            ForEach(items) { item in
-                                historyCard(item)
-                                    .onAppear {
-                                        if item.id == items.last?.id, hasMore, !loading {
-                                            Task { await load(append: true) }
-                                        }
-                                    }
-                            }
-                        }
-                    }
-                    if hasMore && !items.isEmpty {
-                        Button(loading ? "Chargement…" : "Charger 10 de plus") {
-                            Task { await load(append: true) }
-                        }
-                        .buttonStyle(.bordered)
+        BeerOverlayScreen(
+            title: "Historique",
+            onClose: { dismiss() },
+            trailing: [
+                .ghost("📷 Galerie") {
+                    dismiss()
+                    onOpenGallery?()
+                },
+            ]
+        ) {
+            VStack(spacing: 10) {
+                if let stats, stats.total > 0 { statsRow(stats) }
+                BeerHistoryFiltersRow(
+                    filterStyle: $filterStyle,
+                    filterRating: $filterRating,
+                    filterPeriod: $filterPeriod,
+                    styles: styles
+                )
+                BeerHistorySearchField(text: $search)
+
+                if let error {
+                    Text(error).font(.footnote).foregroundStyle(Theme.error)
+                }
+                if loading && items.isEmpty {
+                    ProgressView("Chargement…")
                         .tint(Theme.accent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 40)
+                } else if items.isEmpty {
+                    BeerEmptyState(
+                        icon: "🍺",
+                        title: "Aucune dégustation",
+                        subtitle: search.isEmpty
+                            ? "Note ta première bière depuis l'accueil."
+                            : "Aucun résultat pour « \(search) »."
+                    )
+                } else {
+                    LazyVStack(spacing: 11) {
+                        ForEach(items) { item in
+                            historyCard(item)
+                                .onAppear {
+                                    if item.id == items.last?.id, hasMore, !loading {
+                                        Task { await load(append: true) }
+                                    }
+                                }
+                        }
                     }
                 }
-                .padding(16)
-            }
-            .background(Theme.bg)
-            .navigationTitle("Historique")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Fermer") { dismiss() } }
-                ToolbarItem(placement: .primaryAction) {
-                    Button("📷 Galerie") {
-                        dismiss()
-                        onOpenGallery?()
+                if hasMore && !items.isEmpty {
+                    BeerLoadMoreButton(title: loading ? "Chargement…" : "Charger 10 de plus") {
+                        Task { await load(append: true) }
                     }
+                    .disabled(loading)
+                    .opacity(loading ? 0.45 : 1)
                 }
             }
-            .searchable(text: $search, prompt: "nom, brasserie, style…")
-            .onChange(of: search, perform: { _ in Task { await reload() } })
-            .onChange(of: filterStyle, perform: { _ in Task { await reload() } })
-            .onChange(of: filterRating, perform: { _ in Task { await reload() } })
-            .onChange(of: filterPeriod, perform: { _ in Task { await reload() } })
-            .task {
-                if !initialSearch.isEmpty && search.isEmpty {
-                    search = initialSearch
-                }
-                await bootstrap()
-            }
-            .refreshable { await reload() }
-            .sheet(item: $selected) { item in
-                CheckinDetailView(item: item, onRetaste: {
+        }
+        .onChange(of: search, perform: { _ in Task { await reload() } })
+        .onChange(of: filterStyle, perform: { _ in Task { await reload() } })
+        .onChange(of: filterRating, perform: { _ in Task { await reload() } })
+        .onChange(of: filterPeriod, perform: { _ in Task { await reload() } })
+        .task {
+            if !initialSearch.isEmpty && search.isEmpty { search = initialSearch }
+            await bootstrap()
+        }
+        .refreshable { await reload() }
+        .fullScreenCover(item: $selected) { item in
+            CheckinDetailView(
+                item: item,
+                onRetaste: {
                     selected = nil
                     dismiss()
                     app.startRetaste(item)
-                }, onEdit: { editing = item; selected = nil })
-            }
-            .sheet(item: $editing) { item in
-                CheckinEditView(item: item) { Task { await reload() } }
-            }
+                },
+                onEdit: { editing = item; selected = nil }
+            )
         }
-        .scrollDismissesKeyboard(.interactively)
+        .sheet(item: $editing) { item in
+            CheckinEditView(item: item) { Task { await reload() } }
+                .beerSheetChrome()
+        }
     }
 
     private func statsRow(_ s: HistoryStats) -> some View {
         HStack(spacing: 8) {
             statCell("\(s.total)", "dégust.")
             statCell(BeerFormatters.ratingLabel(s.avgRating ?? 0), "moyenne")
-            statCell(s.topStyles?.first?.style ?? "—", "style")
+            statCell(s.topStyles?.first?.style ?? "—", "top style")
             statCell(s.last?.beerName ?? "—", "dernière", small: true)
         }
     }
@@ -116,95 +121,103 @@ struct HistorySheetView: View {
                 .font(.system(size: small ? 11 : 15, weight: .bold))
                 .lineLimit(2)
                 .minimumScaleFactor(0.7)
-            Text(label).font(.caption2).foregroundStyle(Theme.muted)
+                .foregroundStyle(Theme.text)
+            Text(label).font(.system(size: 11)).foregroundStyle(Theme.muted)
         }
         .frame(maxWidth: .infinity)
         .padding(8)
         .background(Theme.card)
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    private var filtersRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    FilterChip(title: "Tous styles", selected: filterStyle.isEmpty) { filterStyle = "" }
-                    ForEach(styles.filter { !$0.value.isEmpty }) { s in
-                        FilterChip(title: s.label, selected: filterStyle == s.value) { filterStyle = s.value }
-                    }
-                }
-            }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    FilterChip(title: "Toutes notes", selected: filterRating == 0) { filterRating = 0 }
-                    ForEach([3.0, 4.0, 5.0], id: \.self) { v in
-                        FilterChip(
-                            title: "\(BeerFormatters.ratingLabel(v)) ★+",
-                            selected: filterRating == v
-                        ) { filterRating = v }
-                    }
-                }
-            }
-            HStack(spacing: 6) {
-                FilterChip(title: "Tout", selected: filterPeriod.isEmpty) { filterPeriod = "" }
-                FilterChip(title: "7 j", selected: filterPeriod == "week") { filterPeriod = "week" }
-                FilterChip(title: "30 j", selected: filterPeriod == "month") { filterPeriod = "month" }
-                FilterChip(title: "1 an", selected: filterPeriod == "year") { filterPeriod = "year" }
-            }
-        }
-    }
-
     private func historyCard(_ item: CheckinItem) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 12) {
-                Button { selected = item } label: {
-                    BeerImage(path: item.photoURL)
-                        .frame(width: 88, height: 88)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(item.beerName).font(.headline).foregroundStyle(Theme.text)
-                        if app.isAdmin && (item.hiddenFromPartner == true) {
-                            Text("Privée").font(.caption2).padding(4).background(Theme.accent.opacity(0.2)).clipShape(Capsule())
+        VStack(alignment: .leading, spacing: 10) {
+            Button { selected = item } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    Group {
+                        if item.photoURL != nil {
+                            BeerImage(path: item.photoURL)
+                                .frame(width: 88, height: 88)
+                                .scaledToFill()
+                        } else {
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Theme.border, style: StrokeStyle(lineWidth: 1, dash: [4]))
+                                .background(Theme.bg)
+                                .frame(width: 88, height: 88)
+                                .overlay(Text("🍺").font(.title2))
                         }
                     }
-                    HStack(spacing: 4) {
-                        Text("★★★★★").font(.caption).foregroundStyle(Theme.starOff)
-                            .overlay(alignment: .leading) {
-                                Text("★★★★★").font(.caption).foregroundStyle(Theme.star)
-                                    .mask { Rectangle().frame(width: BeerFormatters.starFillWidth(item.rating)) }
-                            }
-                        Text(BeerFormatters.ratingLabel(item.rating)).font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
-                    }
-                    Text("\(item.brewery ?? "—") · \(item.style ?? "?") · \(BeerFormatters.formatDate(item.createdAt))")
-                        .font(.caption).foregroundStyle(Theme.muted)
-                    if let flavors = item.flavors, !flavors.isEmpty {
-                        Text(flavors.joined(separator: ", ")).font(.caption).foregroundStyle(Theme.muted)
-                    }
-                    if let comment = item.comment, !comment.isEmpty {
-                        Text("« \(comment) »").font(.caption).italic().padding(8)
-                            .background(Theme.bg.opacity(0.5))
-                            .overlay(alignment: .leading) { Rectangle().fill(Theme.accent).frame(width: 3) }
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.beerName)
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(Theme.text)
+                            .multilineTextAlignment(.leading)
+                        HStack(spacing: 4) {
+                            Text("★★★★★").font(.system(size: 11)).foregroundStyle(Theme.starOff)
+                                .overlay(alignment: .leading) {
+                                    Text("★★★★★").font(.system(size: 11)).foregroundStyle(Theme.star)
+                                        .mask { Rectangle().frame(width: BeerFormatters.starFillWidth(item.rating)) }
+                                }
+                            Text(BeerFormatters.ratingLabel(item.rating))
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Theme.accent)
+                        }
+                        Text("\(item.brewery ?? "—") · \(item.style ?? "Inconnu") · \(BeerFormatters.formatDate(item.createdAt))")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.muted)
+                        if let flavors = item.flavors, !flavors.isEmpty {
+                            Text(flavors.joined(separator: ", "))
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.muted)
+                        }
+                        if let hops = item.hops, !hops.isEmpty {
+                            Text("Houblons : \(hops.joined(separator: ", "))")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.muted)
+                        }
+                        if let comment = item.comment, !comment.isEmpty {
+                            Text("« \(comment) »")
+                                .font(.system(size: 13.5))
+                                .italic()
+                                .foregroundStyle(Theme.text)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 7)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Theme.bg.opacity(0.55))
+                                .overlay(alignment: .leading) {
+                                    Rectangle().fill(Theme.accent).frame(width: 3)
+                                }
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .padding(.top, 4)
+                        }
                     }
                 }
             }
-            HStack(spacing: 6) {
-                Button("Noter à nouveau") { dismiss(); app.startRetaste(item, step: 2) }
-                    .buttonStyle(.borderedProminent).tint(Theme.accent).controlSize(.small)
-                Button("Rapide") { dismiss(); app.startQuickRate(item) }
-                    .buttonStyle(.bordered).controlSize(.small)
-                Button("Modifier") { editing = item }.buttonStyle(.bordered).controlSize(.small)
-                Button("Supprimer", role: .destructive) { Task { await delete(item) } }
-                    .buttonStyle(.bordered).controlSize(.small)
+            .buttonStyle(.plain)
+
+            FlowLayout(spacing: 6) {
+                BeerCompactButton(title: "Noter à nouveau", primary: true) {
+                    dismiss()
+                    app.startRetaste(item, step: 2)
+                }
+                BeerCompactButton(title: "Rapide") {
+                    dismiss()
+                    app.startQuickRate(item)
+                }
+                BeerCompactButton(title: "Modifier") { editing = item }
+                BeerCompactButton(title: "Supprimer", destructive: true) {
+                    Task { await delete(item) }
+                }
             }
         }
         .padding(12)
         .background(Theme.card)
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.border))
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .beerShadow()
     }
 
     private func bootstrap() async {
@@ -248,7 +261,7 @@ struct HistorySheetView: View {
             items.removeAll { $0.id == item.id }
             app.showToast("Dégustation supprimée", variant: .success)
         } catch let err {
-            self.error = err.localizedDescription
+            error = err.localizedDescription
             app.showToast(err.localizedDescription, variant: .error)
         }
     }
