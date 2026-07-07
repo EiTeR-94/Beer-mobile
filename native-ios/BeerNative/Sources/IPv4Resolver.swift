@@ -10,15 +10,14 @@ enum IPv4Resolver {
         guard getaddrinfo(hostname, nil, &hints, &result) == 0, let result else { return nil }
         defer { freeaddrinfo(result) }
 
-        var addr = result.pointee.ai_addr.pointee
-        var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
-        return withUnsafePointer(to: &addr) { ptr in
-            ptr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { sin in
-                guard inet_ntop(AF_INET, &sin.pointee.sin_addr, &buffer, socklen_t(INET_ADDRSTRLEN)) != nil else {
-                    return nil
-                }
-                return String(cString: buffer)
+        guard let sa = result.pointee.ai_addr else { return nil }
+        return sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { sin in
+            var addr = sin.pointee.sin_addr
+            var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+            guard inet_ntop(AF_INET, &addr, &buffer, socklen_t(INET_ADDRSTRLEN)) != nil else {
+                return nil
             }
+            return String(cString: buffer)
         }
     }
 
