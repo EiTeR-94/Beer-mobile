@@ -58,8 +58,8 @@ final class BeerAPI {
     /// Probe direct (sans boucle multi-endpoints) — `/api/me` est public WAN pour les invités.
     func discoverWorkingEndpoint(guestMode: Bool = false) async -> String? {
         let candidates = ServerSettings.candidateURLs(guestMode: guestMode)
-        for url in candidates {
-            baseURL = Self.canonicalBase(url)
+        for candidate in candidates {
+            baseURL = Self.canonicalBase(candidate)
             do {
                 var req = URLRequest(url: try url("/api/me"))
                 req.httpMethod = "GET"
@@ -72,8 +72,8 @@ final class BeerAPI {
                         activeEndpoint = ServerSettings.apiBase.absoluteString
                         return activeEndpoint
                     }
-                    activeEndpoint = url.absoluteString
-                    return url.absoluteString
+                    activeEndpoint = candidate.absoluteString
+                    return candidate.absoluteString
                 }
             } catch {
                 continue
