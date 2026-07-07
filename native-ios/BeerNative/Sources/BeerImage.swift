@@ -82,6 +82,14 @@ final class BeerImageLoader: ObservableObject {
     }
 
     deinit { task?.cancel() }
+
+    static func prewarm(path: String?, api: BeerAPI) {
+        guard let path, !path.isEmpty else { return }
+        Task {
+            let loader = BeerImageLoader()
+            loader.load(path: path, api: api)
+        }
+    }
 }
 
 struct BeerImage: View {

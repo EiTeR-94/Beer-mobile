@@ -35,6 +35,12 @@ final class AppModel: ObservableObject {
     let offline = OfflineQueue()
     let cache = BeerOfflineCache.shared
 
+    var pendingItems: [PendingCheckin] { offline.items }
+
+    func removePending(id: UUID) {
+        offline.remove(id: id)
+    }
+
     var pendingCount: Int { offline.items.count }
     var isOfflineMode: Bool { networkStatus != .online }
 
@@ -395,6 +401,14 @@ final class AppModel: ObservableObject {
     func clearWizardPrefill() {
         wizardProduct = nil
         wizardStep = 1
+    }
+
+    func prewarmPhotos(_ items: [CheckinItem]) {
+        for item in items.prefix(25) {
+            if let p = item.photoURL {
+                BeerImageLoader.prewarm(path: p, api: self.api)
+            }
+        }
     }
 
     func syncPending() async {

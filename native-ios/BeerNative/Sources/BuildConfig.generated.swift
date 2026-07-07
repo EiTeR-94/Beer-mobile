@@ -1,4 +1,4 @@
-// URL fixe — identique PWA
+// Généré au build CI — NE PAS ÉDITER
 import Foundation
 
 enum BuildConfig {

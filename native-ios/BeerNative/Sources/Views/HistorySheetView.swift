@@ -266,6 +266,7 @@ struct HistorySheetView: View {
             }
             offset = items.count
             hasMore = batch.count == pageSize
+            app.prewarmPhotos(batch)
         } catch let err {
             if !append, let cached = app.cache.load([CheckinItem].self, name: CacheKey.historyCheckins) {
                 items = cached

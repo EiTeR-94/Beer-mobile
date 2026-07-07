@@ -32,6 +32,7 @@ jobs:
         with:
           arguments: assembleDebug --stacktrace -x test
           build-root-directory: native-android
+          cache-disabled: true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

@@ -151,6 +151,7 @@ struct GallerySheetView: View {
             items = all
             app.cache.save(all, name: CacheKey.historyCheckins)
             errorMessage = nil
+            app.prewarmPhotos(all)
         }
     }
 }
