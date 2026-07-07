@@ -40,6 +40,7 @@ final class BeerAPI {
         config.httpCookieAcceptPolicy = .always
         config.timeoutIntervalForRequest = 15
         config.timeoutIntervalForResource = 30
+        config.protocolClasses = [PlexiIPv4URLProtocol.self]
         self.session = URLSession(
             configuration: config,
             delegate: HomelabTLSDelegate.shared,
