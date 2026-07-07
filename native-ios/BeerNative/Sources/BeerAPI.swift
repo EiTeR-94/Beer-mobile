@@ -41,10 +41,10 @@ final class BeerAPI {
     init(baseURL: URL = ServerSettings.apiBase) {
         self.baseURL = Self.canonicalBase(baseURL)
         let sharedCookies = HTTPCookieStorage.shared
-        func baseConfig(requestTimeout: TimeInterval = 20, resourceTimeout: TimeInterval = 90) -> URLSessionConfiguration {
+        func baseConfig(requestTimeout: TimeInterval = 20, resourceTimeout: TimeInterval = 90, shouldSetCookies: Bool = true) -> URLSessionConfiguration {
             let config = URLSessionConfiguration.default
             config.httpCookieStorage = sharedCookies
-            config.httpShouldSetCookies = true
+            config.httpShouldSetCookies = shouldSetCookies
             config.httpCookieAcceptPolicy = .always
             config.timeoutIntervalForRequest = requestTimeout
             config.timeoutIntervalForResource = resourceTimeout
@@ -52,7 +52,8 @@ final class BeerAPI {
         }
         // Admin + LAN réel : :8444 direct + :443 avec IPv4 forcé.
         // La session "admin" (long timeout) est utilisée pour tous les appels LAN réels.
-        let adminConfig = baseConfig()
+        // httpShouldSetCookies=false car on injecte manuellement le cookie pour fiabilité sur IP.
+        let adminConfig = baseConfig(shouldSetCookies: false)
         adminConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
         self.session = URLSession(
             configuration: adminConfig,
@@ -61,7 +62,8 @@ final class BeerAPI {
         )
         let lanConfig = baseConfig(
             requestTimeout: ServerSettings.lanProbeTimeoutSec,
-            resourceTimeout: ServerSettings.lanProbeTimeoutSec + 4
+            resourceTimeout: ServerSettings.lanProbeTimeoutSec + 4,
+            shouldSetCookies: false
         )
         self.lanProbeSession = URLSession(
             configuration: lanConfig,
