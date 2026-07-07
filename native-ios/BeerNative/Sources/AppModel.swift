@@ -107,6 +107,9 @@ final class AppModel: ObservableObject {
             KeychainStore.username = user
             if !isInvite {
                 PasskeySessionStore.clear()
+                api.forceLocalConnection()  // Comptes locaux : forcer le chemin WiFi/VPN
+            } else {
+                api.forceGuest5GConnection()
             }
         }
     }
@@ -114,6 +117,9 @@ final class AppModel: ObservableObject {
     func restoreOfflineSessionIfNeeded() {
         guard let saved = BeerSessionStore.restore() else { return }
         applySession(user: saved.user, isAdmin: saved.isAdmin, isInvite: saved.isInvite, loggedIn: true)
+        if !saved.isInvite {
+            api.forceLocalConnection()  // Comptes locaux restaurés : rester sur le chemin WiFi/VPN
+        }
     }
 
     func bootstrap() async {
@@ -178,6 +184,7 @@ final class AppModel: ObservableObject {
 
     func login(username: String, password: String) async throws {
         PasskeySessionStore.clear()
+        api.forceLocalConnection()  // Bouton connexion = comptes locaux : force WiFi/VPN (LAN) uniquement
         _ = try await api.login(username: username, password: password)
         let me = try await api.me()
         applySession(
@@ -210,6 +217,7 @@ final class AppModel: ObservableObject {
             }
             let result = try await PasskeyAuth.shared.register(inviteToken: token)
             PasskeySessionStore.save(accessToken: result.accessToken)
+            api.forceGuest5GConnection()  // FaceID invité : forcer le chemin 5G
             let me = try await api.me()
             applySession(
                 user: me.user ?? result.user,

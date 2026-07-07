@@ -93,6 +93,28 @@ final class BeerAPI {
         if shouldUsePasskeyBearer {
             return await discoverGuestEndpoint()
         }
+        if localConnectionOnly {
+            // Pour comptes locaux (bouton connexion) : seulement le chemin WiFi/VPN
+            let lan = ServerSettings.lanApiBase
+            baseURL = Self.canonicalBase(lan)
+            do {
+                var probe = URLRequest(url: try url("/api/health"))
+                probe.httpMethod = "GET"
+                let (_, http, _) = try await performOnEndpoint(
+                    lan,
+                    request: probe,
+                    guest: false,
+                    probe: true
+                )
+                if http.statusCode == 200 {
+                    activeEndpoint = lan.absoluteString
+                    return lan.absoluteString
+                }
+            } catch {
+                throw BeerAPIError.server("Accès refusé — Wi‑Fi maison ou VPN Plexi requis")
+            }
+            return nil
+        }
         for candidate in ServerSettings.candidateURLs {
             baseURL = Self.canonicalBase(candidate)
             do {
@@ -803,6 +825,18 @@ final class BeerAPI {
         return false
     }
 
+    private var localConnectionOnly = false
+
+    func forceLocalConnection() {
+        localConnectionOnly = true
+        setBaseURL(ServerSettings.lanApiBase)
+    }
+
+    func forceGuest5GConnection() {
+        localConnectionOnly = false
+        setBaseURL(ServerSettings.apiBase)
+    }
+
     private func applyCommonHeaders(to req: inout URLRequest) {
         req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
         req.setValue(Self.nativeUserAgent, forHTTPHeaderField: "User-Agent")
@@ -858,6 +892,23 @@ final class BeerAPI {
         if shouldUsePasskeyBearer {
             return try await wanRequest(path: path, method: method, body: body, contentType: contentType)
         }
+        if localConnectionOnly {
+            // Bouton "Connexion" pour comptes locaux : force le chemin WiFi/VPN (LAN), pas de 5G.
+            let lan = ServerSettings.lanApiBase
+            baseURL = Self.canonicalBase(lan)
+            var req = URLRequest(url: try url(path))
+            req.httpMethod = method
+            if let contentType { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
+            applyCommonHeaders(to: &req)
+            req.httpBody = body
+            do {
+                let result = try await performOnEndpoint(lan, request: req, guest: false, probe: true)
+                activeEndpoint = lan.absoluteString
+                return result
+            } catch {
+                throw BeerAPIError.server("Accès refusé — Wi‑Fi maison ou VPN Plexi requis")
+            }
+        }
         var lastError: Error?
         for candidate in ServerSettings.candidateURLs {
             baseURL = Self.canonicalBase(candidate)
@@ -885,6 +936,10 @@ final class BeerAPI {
     private func performTransport(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         if shouldUsePasskeyBearer {
             return try await performWan(request)
+        }
+        if localConnectionOnly {
+            let lan = ServerSettings.lanApiBase
+            return try await performOnEndpoint(lan, request: request, guest: false, probe: true)
         }
         let isLan = ServerSettings.isLanEndpoint(baseURL)
         return try await performOnEndpoint(baseURL, request: request, guest: false, probe: isLan)
