@@ -46,7 +46,7 @@ final class AppModel: ObservableObject {
     private var syncInProgress = false
 
     init() {
-        api.setBaseURL(ServerSettings.lanApiBase)  // Local accounts only
+        api.setBaseURL(ServerSettings.apiBase)
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in
                 self?.handlePathUpdate(path)
@@ -163,11 +163,11 @@ final class AppModel: ObservableObject {
 
     func applyServerURL(_ raw: String) {
         _ = raw
-        api.setBaseURL(ServerSettings.lanApiBase)
+        api.setBaseURL(ServerSettings.apiBase)
     }
 
     func testServer() async -> String {
-        api.setBaseURL(ServerSettings.lanApiBase)  // Local only now
+        api.setBaseURL(ServerSettings.apiBase)
         if let ok = await api.discoverWorkingEndpoint() {
             networkStatus = .online
             return "Serveur OK · \(ok)"
@@ -178,15 +178,14 @@ final class AppModel: ObservableObject {
 
     func login(username: String, password: String) async throws {
         PasskeySessionStore.clear()
-        api.setBaseURL(ServerSettings.lanApiBase)  // Local accounts: force LAN path for WiFi/VPN
+        api.setBaseURL(ServerSettings.apiBase)
         let loginResp = try await api.login(username: username, password: password)
-        // Call me() but don't rely on it for login success, in case cookie from login not yet visible in immediate next request (storage timing).
         let me = try? await api.me()
         applySession(
             user: loginResp.user ?? me?.user ?? username,
             isAdmin: loginResp.isAdmin ?? me?.isAdmin ?? false,
             isInvite: me?.isInvite ?? false,
-            loggedIn: true   // login succeeded, force logged in (local account path)
+            loggedIn: true
         )
         networkStatus = .online
         hideToast()

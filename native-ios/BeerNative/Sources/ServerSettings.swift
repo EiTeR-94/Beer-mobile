@@ -19,7 +19,7 @@ enum ServerSettings {
     }
 
     static var candidateURLs: [URL] {
-        [lanApiBase]
+        [apiBase]
     }
 
     static var passkeyBaseURLs: [URL] {
