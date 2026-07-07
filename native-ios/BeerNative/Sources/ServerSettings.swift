@@ -13,15 +13,13 @@ enum ServerSettings {
         URL(string: "https://\(wanIPv4)/beer/")!
     }
 
-    /// preferWan : invités en 4G/5G — IP publique d'abord (évite IPv6 Freebox + timeout LAN).
-    static func candidateURLs(preferWan: Bool = false) -> [URL] {
-        let fqdn = apiBase
-        let lan = URL(string: "https://192.168.1.50:8444/beer/")!
-        let wan = wanApiBase
-        if preferWan {
-            return [wan, fqdn, lan]
+    /// Invités 4G/5G : FQDN uniquement (comme la PWA). Admin : FQDN → LAN → WAN.
+    static func candidateURLs(guestMode: Bool = false) -> [URL] {
+        if guestMode {
+            return [apiBase]
         }
-        return [fqdn, lan, wan]
+        let lan = URL(string: "https://192.168.1.50:8444/beer/")!
+        return [apiBase, lan, wanApiBase]
     }
 
     static func serverOrigin(from base: URL = apiBase) -> String {

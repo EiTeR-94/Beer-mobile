@@ -55,11 +55,23 @@ final class BeerAPI {
         return http.statusCode == 200
     }
 
-    func discoverWorkingEndpoint(preferWan: Bool = false) async -> String? {
-        for url in ServerSettings.candidateURLs(preferWan: preferWan) {
+    /// Probe direct (sans boucle multi-endpoints) — `/api/me` est public WAN pour les invités.
+    func discoverWorkingEndpoint(guestMode: Bool = false) async -> String? {
+        let candidates = ServerSettings.candidateURLs(guestMode: guestMode)
+        for url in candidates {
             baseURL = Self.canonicalBase(url)
             do {
-                if try await healthCheck() {
+                var req = URLRequest(url: try url("/api/me"))
+                req.httpMethod = "GET"
+                req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
+                req.setValue(Self.nativeUserAgent, forHTTPHeaderField: "User-Agent")
+                let (_, http, _) = try await perform(req)
+                if http.statusCode == 200 {
+                    if guestMode {
+                        baseURL = Self.canonicalBase(ServerSettings.apiBase)
+                        activeEndpoint = ServerSettings.apiBase.absoluteString
+                        return activeEndpoint
+                    }
                     activeEndpoint = url.absoluteString
                     return url.absoluteString
                 }
@@ -646,10 +658,10 @@ final class BeerAPI {
 
     // MARK: - HTTP
 
-    private var preferWanRouting: Bool = false
+    private var guestRouting: Bool = false
 
-    func setPreferWanRouting(_ enabled: Bool) {
-        preferWanRouting = enabled
+    func setGuestRouting(_ enabled: Bool) {
+        guestRouting = enabled
     }
 
     private func request(
@@ -659,7 +671,7 @@ final class BeerAPI {
         contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse, URL) {
         return try await requestEndpoints(
-            ServerSettings.candidateURLs(preferWan: preferWanRouting),
+            ServerSettings.candidateURLs(guestMode: guestRouting),
             path: path,
             method: method,
             body: body,
@@ -668,7 +680,7 @@ final class BeerAPI {
         )
     }
 
-    /// Invitations 4G/5G : IP WAN en premier (contourne AAAA Freebox), puis FQDN/LAN.
+    /// Invitations 4G/5G : FQDN uniquement (identique PWA Safari).
     private func requestInvite(
         path: String,
         method: String,
@@ -676,7 +688,7 @@ final class BeerAPI {
         contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse, URL) {
         return try await requestEndpoints(
-            ServerSettings.candidateURLs(preferWan: true),
+            [ServerSettings.apiBase],
             path: path,
             method: method,
             body: body,
@@ -737,21 +749,50 @@ final class BeerAPI {
         } catch let err as BeerAPIError {
             throw err
         } catch let err as URLError {
-            switch err.code {
-            case .cannotConnectToHost, .networkConnectionLost:
-                throw BeerAPIError.server("Injoignable : \(baseURL.host ?? "?")")
-            case .secureConnectionFailed, .serverCertificateUntrusted:
-                throw BeerAPIError.server("Connexion impossible — réessaie dans quelques secondes.")
-            case .timedOut:
-                throw BeerAPIError.server("Timeout \(baseURL.host ?? "?")")
-            case .notConnectedToInternet:
-                throw BeerAPIError.server("Pas de réseau")
-            default:
-                throw BeerAPIError.network(err)
+            if guestRouting, let wanReq = Self.wanFallbackRequest(from: req), Self.isConnectivityError(err) {
+                return try await HomelabIPv4Transport.perform(wanReq)
             }
+            throw Self.mapURLError(err, host: baseURL.host)
         } catch {
             throw BeerAPIError.network(error)
         }
+    }
+
+    private static func isConnectivityError(_ err: URLError) -> Bool {
+        switch err.code {
+        case .cannotConnectToHost, .networkConnectionLost, .timedOut,
+             .secureConnectionFailed, .serverCertificateUntrusted, .dnsLookupFailed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func mapURLError(_ err: URLError, host: String?) -> BeerAPIError {
+        switch err.code {
+        case .cannotConnectToHost, .networkConnectionLost:
+            return .server("Injoignable : \(host ?? "?")")
+        case .secureConnectionFailed, .serverCertificateUntrusted:
+            return .server("Connexion impossible — réessaie dans quelques secondes.")
+        case .timedOut:
+            return .server("Timeout \(host ?? "?")")
+        case .notConnectedToInternet:
+            return .server("Pas de réseau")
+        default:
+            return .network(err)
+        }
+    }
+
+    /// Dernier recours invité : IPv4 WAN + SNI FQDN si le FQDN échoue (AAAA Freebox).
+    private static func wanFallbackRequest(from request: URLRequest) -> URLRequest? {
+        guard let url = request.url, url.host == ServerSettings.canonicalHost else { return nil }
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.host = ServerSettings.wanIPv4
+        guard let wanURL = components?.url else { return nil }
+        var wanReq = request
+        wanReq.url = wanURL
+        applyCanonicalHostHeader(&wanReq)
+        return wanReq
     }
 
     private static func applyCanonicalHostHeader(_ request: inout URLRequest) {

@@ -89,9 +89,9 @@ final class AppModel: ObservableObject {
             networkStatus = .offline
             return
         }
-        let preferWan = isInvite || BeerSessionStore.restore()?.isInvite == true
-        api.setPreferWanRouting(preferWan)
-        if await api.discoverWorkingEndpoint(preferWan: preferWan) != nil {
+        let guestMode = isInvite || BeerSessionStore.restore()?.isInvite == true
+        api.setGuestRouting(guestMode)
+        if await api.discoverWorkingEndpoint(guestMode: guestMode) != nil {
             networkStatus = .online
             serverVersion = (try? await api.version()) ?? serverVersion
         } else {
@@ -119,11 +119,10 @@ final class AppModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         restoreOfflineSessionIfNeeded()
+        let guestMode = isInvite || BeerSessionStore.restore()?.isInvite == true
+        api.setGuestRouting(guestMode)
         await probeServerReachability()
-        guard networkStatus == .online else {
-            if isLoggedIn {
-                showToast("Mode hors ligne — données en cache", variant: .info, durationMs: 3200)
-            }
+        if networkStatus != .online && !isLoggedIn {
             return
         }
         do {
@@ -138,13 +137,14 @@ final class AppModel: ObservableObject {
                 isInvite: me.isInvite,
                 loggedIn: me.user != nil
             )
+            networkStatus = .online
             if isLoggedIn { await syncPending() }
         } catch {
             if !isLoggedIn, let saved = BeerSessionStore.restore() {
                 applySession(user: saved.user, isAdmin: saved.isAdmin, isInvite: saved.isInvite, loggedIn: true)
             }
             if isLoggedIn {
-                if networkStatus == .offline {
+                if networkStatus == .offline || !isOnline {
                     showToast("Hors ligne · \(user ?? "")", variant: .info, durationMs: 4200)
                 } else {
                     showToast("Session locale — serveur injoignable", variant: .warn, durationMs: 3600)
@@ -161,9 +161,9 @@ final class AppModel: ObservableObject {
 
     func testServer() async -> String {
         api.setBaseURL(ServerSettings.apiBase)
-        let preferWan = isInvite
-        api.setPreferWanRouting(preferWan)
-        if let ok = await api.discoverWorkingEndpoint(preferWan: preferWan) {
+        let guestMode = isInvite
+        api.setGuestRouting(guestMode)
+        if let ok = await api.discoverWorkingEndpoint(guestMode: guestMode) {
             networkStatus = .online
             return "Serveur OK · \(ok)"
         }
@@ -201,7 +201,7 @@ final class AppModel: ObservableObject {
                 isInvite: true,
                 loggedIn: res.user != nil
             )
-            api.setPreferWanRouting(true)
+            api.setGuestRouting(true)
             networkStatus = .online
             hideToast()
             let label = res.label ?? user ?? "invité"
