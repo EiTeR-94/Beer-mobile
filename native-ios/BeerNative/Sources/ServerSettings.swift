@@ -2,9 +2,12 @@ import Foundation
 
 enum ServerSettings {
     static let canonicalHost = "eiter.freeboxos.fr"
-    /// IPv4 WAN — AAAA Freebox injoignable (connexion refusée) ; utilisé par PlexiIPv4URLProtocol
-    /// pour forcer IPv4 + SNI correct sur le domaine (critique pour invités 5G).
+    /// IPv4 WAN fallback.
     static let wanIPv4 = "82.64.151.113"
+
+    /// IPv6 WAN for 5G guests. Exact stable global IPv6 of this server.
+    /// Bypasses broken Freebox AAAA (2a01:...::1 on the box, which doesn't forward 443 properly).
+    static let wanIPv6 = "2a01:e0a:3d0:de50:fab1:56ff:feaa:75d7"
 
     /// URL canonique pour invités 5G.
     static let apiBaseString = "https://\(canonicalHost)/beer/"

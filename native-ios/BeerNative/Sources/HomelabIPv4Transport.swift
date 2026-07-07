@@ -1,20 +1,22 @@
 import Foundation
 import Network
 
-/// Low-level IPv4 + SNI transport used for WAN (5G guests via passkey) and domain fallbacks.
+/// Low-level IP (v4 or v6) + SNI transport used for WAN (5G guests via passkey) and domain fallbacks.
 ///
-/// Used as a workaround when the system's IPv6 (AAAA) resolution for the Freebox domain
-/// leads to "Connexion refusée" (router ::1 not forwarded for 443) or SSL failures on iOS.
-/// We connect directly to the known IPv4 (82.64.151.113) while setting the correct SNI
-/// (eiter.freeboxos.fr) so the LE certificate validates.
+/// We connect directly to the known server IP (IPv4 or the real IPv6) + correct SNI (domain)
+/// so TLS cert validates, bypassing the broken Freebox AAAA (which points to the box ::1 instead of the server).
 ///
 /// Activated via PlexiIPv4URLProtocol for https://eiter.freeboxos.fr on 443.
 ///
 /// See also: PlexiIPv4URLProtocol and ServerSettings.wanIPv4
 enum HomelabIPv4Transport {
     private static let wanIP = ServerSettings.wanIPv4
+    private static let wanIPv6 = ServerSettings.wanIPv6
     private static let tlsHost = ServerSettings.canonicalHost
     private static let timeoutSeconds: UInt64 = 35  // 5G: un peu plus de marge pour latence + envoi POST (le connect a son propre timeout 12s)
+
+    // Use IPv6 for 5G guest path (bypass broken Freebox AAAA DNS pointing to box ::1)
+    static var useIPv6 = true
 
     static func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         try await withThrowingTaskGroup(of: (Data, HTTPURLResponse, URL).self) { group in
@@ -48,7 +50,8 @@ enum HomelabIPv4Transport {
         sec_protocol_options_set_tls_server_name(tls.securityProtocolOptions, tlsHost)
         let params = NWParameters(tls: tls, tcp: tcp)
 
-        let conn = NWConnection(host: NWEndpoint.Host(wanIP), port: 443, using: params)
+        let hostStr = Self.useIPv6 ? wanIPv6 : wanIP
+        let conn = NWConnection(host: NWEndpoint.Host(hostStr), port: 443, using: params)
         return try await withCheckedThrowingContinuation { cont in
             let queue = DispatchQueue(label: "fr.eiter.plexibeer.ipv4")
             var resumed = false

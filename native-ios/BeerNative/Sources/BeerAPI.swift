@@ -900,14 +900,14 @@ final class BeerAPI {
     }
 
     /// 5G / passkey guest path — connection to domain using guestSession.
-    /// IPv4 is forced via PlexiIPv4URLProtocol registered on the config (unlike
-    /// the LAN path which targets the IP directly).
+    /// Use IPv6 if wanIPv6 is set (to bypass broken Freebox AAAA), else IPv4.
     private func wanRequest(
         path: String,
         method: String,
         body: Data?,
         contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse, URL) {
+        HomelabIPv4Transport.useIPv6 = !ServerSettings.wanIPv6.isEmpty
         // Use retry for robustness on 5G cellular.
         return try await NetworkManager.shared.withRetry(maxAttempts: 3, baseDelayMs: 500) {
             var lastError: Error?
