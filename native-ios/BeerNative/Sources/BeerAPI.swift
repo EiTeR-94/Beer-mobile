@@ -96,7 +96,7 @@ final class BeerAPI {
     func redeemInvite(token: String) async throws -> JoinInviteResponse {
         let clean = token.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { throw BeerAPIError.server("Lien d'invitation invalide") }
-        let (data, http, _) = try await request(
+        let (data, http, _) = try await requestInvite(
             path: "/api/join/\(clean)",
             method: "POST",
             body: Data()
@@ -652,8 +652,51 @@ final class BeerAPI {
         body: Data?,
         contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse, URL) {
+        var candidates = ServerSettings.candidateURLs
+        if !candidates.contains(ServerSettings.wanApiBase) {
+            candidates.append(ServerSettings.wanApiBase)
+        }
+        return try await requestEndpoints(
+            candidates,
+            path: path,
+            method: method,
+            body: body,
+            contentType: contentType,
+            retry403ForLogin: path == "/api/login"
+        )
+    }
+
+    /// Invitations 4G : IP WAN en premier (contourne AAAA Freebox), puis FQDN/LAN.
+    private func requestInvite(
+        path: String,
+        method: String,
+        body: Data?,
+        contentType: String? = nil
+    ) async throws -> (Data, HTTPURLResponse, URL) {
+        var endpoints = [ServerSettings.wanApiBase]
+        for url in ServerSettings.candidateURLs where url != ServerSettings.wanApiBase {
+            endpoints.append(url)
+        }
+        return try await requestEndpoints(
+            endpoints,
+            path: path,
+            method: method,
+            body: body,
+            contentType: contentType,
+            retry403ForLogin: false
+        )
+    }
+
+    private func requestEndpoints(
+        _ candidates: [URL],
+        path: String,
+        method: String,
+        body: Data?,
+        contentType: String?,
+        retry403ForLogin: Bool
+    ) async throws -> (Data, HTTPURLResponse, URL) {
         var lastError: Error?
-        for candidate in ServerSettings.candidateURLs {
+        for (idx, candidate) in candidates.enumerated() {
             baseURL = Self.canonicalBase(candidate)
             var req = URLRequest(url: try url(path))
             req.httpMethod = method
@@ -663,13 +706,18 @@ final class BeerAPI {
             req.httpBody = body
             do {
                 let result = try await perform(req)
+                let http = result.1
+                if retry403ForLogin, http.statusCode == 403, idx + 1 < candidates.count {
+                    lastError = BeerAPIError.server("Accès refusé — Wi‑Fi maison ou VPN Plexi requis")
+                    continue
+                }
                 activeEndpoint = candidate.absoluteString
                 return result
             } catch {
                 lastError = error
             }
         }
-        let tried = ServerSettings.candidateURLs.map(\.absoluteString).joined(separator: ", ")
+        let tried = candidates.map(\.absoluteString).joined(separator: ", ")
         if let lastError { throw lastError }
         throw BeerAPIError.allEndpointsFailed(
             "Aucun serveur joignable (\(tried)). Active « Réseau local » pour Beer Log dans Réglages iPhone."
