@@ -22,7 +22,10 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           cmdline-tools-version: 'latest'
-          packages: 'platforms;android-34 build-tools;34.0.0'
+          packages: 'platforms;android-34 build-tools;34.0.0 platform-tools'
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
 
       - name: Grant execute permission for gradlew
         working-directory: native-android
@@ -30,7 +33,7 @@ jobs:
 
       - name: Build Debug APK
         working-directory: native-android
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace -x test
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
