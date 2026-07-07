@@ -167,7 +167,7 @@ struct PendingSheetView: View {
                                 Text(pending.comment)
                                     .font(.caption)
                             }
-                            Text(BeerFormatters.formatDate(pending.createdAt))
+                            Text(pending.createdAt.formatted(date: .abbreviated, time: .omitted))
                                 .font(.caption2)
                                 .foregroundStyle(Theme.muted)
                         }
@@ -217,7 +217,7 @@ struct SettingsSheetView: View {
                     HStack {
                         Text("Endpoint actif")
                         Spacer()
-                        Text(app.activeEndpoint.isEmpty ? "—" : app.activeEndpoint)
+                        Text(app.api.activeEndpoint.isEmpty ? "—" : app.api.activeEndpoint)
                             .font(.caption)
                             .foregroundStyle(Theme.muted)
                             .lineLimit(1)
@@ -298,7 +298,7 @@ struct SettingsSheetView: View {
     }
 }
 
-private extension BeerOfflineCache {
+extension BeerOfflineCache {
     func clearAll() {
         let fm = FileManager.default
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
