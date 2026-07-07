@@ -27,13 +27,11 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses || true
 
-      - name: Grant execute permission for gradlew
-        working-directory: native-android
-        run: chmod +x gradlew || true
-
       - name: Build Debug APK
-        working-directory: native-android
-        run: ./gradlew assembleDebug --stacktrace -x test
+        uses: gradle/gradle-build-action@v2
+        with:
+          arguments: assembleDebug --stacktrace -x test
+          build-root-directory: native-android
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
