@@ -83,7 +83,7 @@ enum HomelabIPv4Transport {
             if low == "host" || low == "connection" || low == "accept-encoding" || low == "cookie" { continue }
             lines.append("\(key): \(value)")
         }
-        var payload = (lines.joined(separator: "\r\n") + "\r\n\r\n").data(using: .utf8) ?? Data())
+        var payload = (lines.joined(separator: "\r\n") + "\r\n\r\n").data(using: .utf8) ?? Data()
         payload.append(body)
 
         try await send(conn: conn, data: payload)
