@@ -90,6 +90,33 @@ final class BeerAPI {
         return decoded
     }
 
+    func redeemInvite(token: String) async throws -> JoinInviteResponse {
+        let clean = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { throw BeerAPIError.server("Lien d'invitation invalide") }
+        let (data, http, _) = try await request(
+            path: "/api/join/\(clean)",
+            method: "POST",
+            body: Data()
+        )
+        if http.statusCode == 429 {
+            throw BeerAPIError.server("Trop de tentatives — réessaie dans une minute.")
+        }
+        guard let decoded = try? JSONDecoder().decode(JoinInviteResponse.self, from: data) else {
+            throw BeerAPIError.decode
+        }
+        if http.statusCode == 403 || decoded.ok == false {
+            let msg: String
+            switch decoded.error {
+            case "wrong_device": msg = "Cette invitation est liée à un autre appareil."
+            case "rate_limit": msg = "Trop de tentatives — réessaie dans une minute."
+            case "invalid": msg = "Cette invitation n'est pas valide ou a expiré."
+            default: msg = decoded.error ?? "Invitation refusée"
+            }
+            throw BeerAPIError.server(msg)
+        }
+        return decoded
+    }
+
     func me() async throws -> MeResponse {
         let (data, http, _) = try await request(path: "/api/me", method: "GET", body: nil)
         if http.statusCode == 401 { throw BeerAPIError.unauthorized }

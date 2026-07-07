@@ -13,13 +13,15 @@ struct GallerySheetView: View {
     @State private var selected: CheckinItem?
     @State private var editing: CheckinItem?
     @State private var loading = false
+    @State private var errorMessage: String?
+    @State private var reloadTask: Task<Void, Never>?
 
     private var withPhotos: [CheckinItem] {
         items.filter { ($0.photoURL?.isEmpty == false) }
     }
 
     var body: some View {
-        BeerOverlayScreen(title: "Galerie photos", onClose: { dismiss() }) {
+        BeerOverlayScreen(title: "Galerie photos", onClose: { dismiss() }, onRefresh: { await reload(force: true) }) {
             VStack(spacing: 10) {
                 BeerHistoryFiltersRow(
                     filterStyle: $filterStyle,
@@ -29,7 +31,11 @@ struct GallerySheetView: View {
                 )
                 BeerHistorySearchField(text: $search)
 
-                if loading && items.isEmpty {
+                if let errorMessage {
+                    Text(errorMessage).font(.footnote).foregroundStyle(Theme.error)
+                }
+
+                if loading && withPhotos.isEmpty {
                     ProgressView("Chargement…")
                         .tint(Theme.accent)
                         .frame(maxWidth: .infinity)
@@ -49,16 +55,15 @@ struct GallerySheetView: View {
                             .buttonStyle(.plain)
                         }
                     }
-
                 }
             }
         }
-        .onChange(of: search, perform: { _ in Task { await reload() } })
-        .onChange(of: filterStyle, perform: { _ in Task { await reload() } })
-        .onChange(of: filterRating, perform: { _ in Task { await reload() } })
-        .onChange(of: filterPeriod, perform: { _ in Task { await reload() } })
+        .onChange(of: search, perform: { _ in scheduleReload() })
+        .onChange(of: filterStyle, perform: { _ in scheduleReload() })
+        .onChange(of: filterRating, perform: { _ in scheduleReload() })
+        .onChange(of: filterPeriod, perform: { _ in scheduleReload() })
         .task { await bootstrap() }
-        .refreshable { await reload() }
+        .onDisappear { reloadTask?.cancel() }
         .fullScreenCover(item: $selected) { item in
             CheckinDetailView(
                 item: item,
@@ -72,34 +77,55 @@ struct GallerySheetView: View {
             .environmentObject(app)
         }
         .sheet(item: $editing) { item in
-            CheckinEditView(item: item) { Task { await reload() } }
+            CheckinEditView(item: item) { scheduleReload() }
                 .beerSheetChrome()
         }
     }
 
     private func bootstrap() async {
         styles = (try? await app.api.styles()) ?? []
-        await reload()
+        await reload(force: true)
     }
 
-    private func reload() async {
-        guard !loading else { return }
+    private func scheduleReload() {
+        reloadTask?.cancel()
+        reloadTask = Task { await reload(force: false) }
+    }
+
+    private func reload(force: Bool) async {
+        if loading, !force { return }
         loading = true
+        errorMessage = nil
         defer { loading = false }
+
         var all: [CheckinItem] = []
+        var failed = false
         for off in stride(from: 0, to: 150, by: 50) {
-            let batch = (try? await app.api.checkins(
-                q: search.trimmingCharacters(in: .whitespaces),
-                style: filterStyle,
-                minRating: filterRating,
-                period: filterPeriod,
-                limit: 50,
-                offset: off
-            )) ?? []
-            all.append(contentsOf: batch)
-            if batch.count < 50 { break }
+            if Task.isCancelled { return }
+            do {
+                let batch = try await app.api.checkins(
+                    q: search.trimmingCharacters(in: .whitespaces),
+                    style: filterStyle,
+                    minRating: filterRating,
+                    period: filterPeriod,
+                    limit: 50,
+                    offset: off
+                )
+                all.append(contentsOf: batch)
+                if batch.count < 50 { break }
+            } catch let err {
+                failed = true
+                if force || items.isEmpty {
+                    errorMessage = err.localizedDescription
+                }
+                break
+            }
         }
-        items = all
+
+        if Task.isCancelled { return }
+        if !all.isEmpty || !failed {
+            items = all
+        }
     }
 }
 

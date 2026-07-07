@@ -90,13 +90,12 @@ struct AdminSheetView: View {
                 BeerAdminCard {
                     VStack(spacing: 0) {
                         BeerField(label: "Nom de l'invité", text: $inviteLabel, placeholder: "ex. Paul")
-                        BeerFilterLabel(label: "Validité") {
-                            Picker("", selection: $inviteValidity) {
-                                ForEach(validityOptions, id: \.0) { opt in Text(opt.1).tag(opt.0) }
-                            }
-                            .pickerStyle(.menu)
-                            .tint(Theme.accent)
-                        }
+                        BeerSelectField(
+                            label: "Validité",
+                            value: inviteValidity,
+                            options: validityOptions,
+                            onSelect: { inviteValidity = $0 }
+                        )
                         .padding(.top, 10)
                         BeerPrimaryButton(title: "Créer le lien", disabled: inviteLabel.count < 2) {
                             Task { await createInvite() }

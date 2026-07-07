@@ -10,6 +10,9 @@ struct BeerNativeApp: App {
                 .environmentObject(app)
                 .preferredColorScheme(.dark)
                 .tint(Theme.accent)
+                .onOpenURL { url in
+                    Task { await app.handleOpenURL(url) }
+                }
         }
     }
 }

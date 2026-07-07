@@ -89,6 +89,42 @@ final class AppModel: ObservableObject {
         await syncPending()
     }
 
+    func handleOpenURL(_ url: URL) async {
+        guard let token = Self.parseJoinToken(from: url) else { return }
+        await redeemInviteToken(token)
+    }
+
+    func redeemInviteToken(_ token: String) async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let res = try await api.redeemInvite(token: token)
+            let me = try await api.me()
+            user = me.user ?? res.user
+            isAdmin = me.isAdmin
+            isInvite = me.isInvite
+            isLoggedIn = me.user != nil
+            if let user { KeychainStore.username = user }
+            hideToast()
+            let label = res.label ?? user ?? "invité"
+            showToast("Bienvenue \(label) !", variant: .success, durationMs: 3600)
+            await syncPending()
+        } catch let err {
+            showToast(err.localizedDescription, variant: .error, durationMs: 4800)
+        }
+    }
+
+    private static func parseJoinToken(from url: URL) -> String? {
+        if url.scheme?.lowercased() == "plexibeer", url.host == "join" {
+            let token = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            return token.isEmpty ? nil : token
+        }
+        let parts = url.path.split(separator: "/").map(String.init)
+        guard let idx = parts.firstIndex(of: "join"), idx + 1 < parts.count else { return nil }
+        let token = parts[idx + 1]
+        return token.isEmpty ? nil : token
+    }
+
     func logout() async {
         await api.logout()
         user = nil

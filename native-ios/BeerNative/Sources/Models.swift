@@ -13,6 +13,17 @@ struct MeResponse: Decodable {
     }
 }
 
+struct JoinInviteResponse: Decodable {
+    let ok: Bool
+    let user: String?
+    let label: String?
+    let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case ok, user, label, error
+    }
+}
+
 struct LoginResponse: Decodable {
     let ok: Bool
     let user: String?

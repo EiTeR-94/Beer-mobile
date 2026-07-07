@@ -270,17 +270,22 @@ struct BeerWizardView: View {
                 BeerLead(text: "Pas de bière identifiée — retourne à l'étape 1 ou cherche sur Untappd.")
             }
 
-            UntappdRatingSlider(rating: $rating)
-                .padding(.vertical, 8)
+            VStack(alignment: .leading, spacing: 10) {
+                UntappdRatingSlider(rating: $rating)
+            }
+            .beerCard()
 
             if showFlavors {
                 if !flavorTags.isEmpty {
-                    FlavorTagGrid(title: flavorTagsTitle, tags: flavorTags, selected: $flavors, maxCount: 8)
+                    VStack(alignment: .leading, spacing: 8) {
+                        FlavorTagGrid(title: flavorTagsTitle, tags: flavorTags, selected: $flavors, maxCount: 8)
+                    }
+                    .beerCard()
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Goûts perso")
-                        .font(.system(size: Theme.Font.tagTitle))
-                        .foregroundStyle(Theme.muted)
+                        .font(.system(size: Theme.Font.tagTitle, weight: .semibold))
+                        .foregroundStyle(Theme.text)
                     CustomTagInput(
                         placeholder: "ex. pneus, sucrée, vanille fumée…",
                         input: $customFlavorInput,
@@ -292,15 +297,19 @@ struct BeerWizardView: View {
                         .font(.system(size: Theme.Font.lead * 0.94))
                         .foregroundStyle(Theme.muted)
                 }
+                .beerCard()
             }
             if showHops {
                 if !hopTags.isEmpty {
-                    FlavorTagGrid(title: "Houblons", tags: hopTags, selected: $hops, maxCount: 6)
+                    VStack(alignment: .leading, spacing: 8) {
+                        FlavorTagGrid(title: "Houblons", tags: hopTags, selected: $hops, maxCount: 6)
+                    }
+                    .beerCard()
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Houblons perso")
-                        .font(.system(size: Theme.Font.tagTitle))
-                        .foregroundStyle(Theme.muted)
+                        .font(.system(size: Theme.Font.tagTitle, weight: .semibold))
+                        .foregroundStyle(Theme.text)
                     CustomTagInput(
                         placeholder: "ex. Citra, Mosaic, Galaxy…",
                         input: $customHopInput,
@@ -313,12 +322,13 @@ struct BeerWizardView: View {
                         .font(.system(size: Theme.Font.lead * 0.94))
                         .foregroundStyle(Theme.muted)
                 }
+                .beerCard()
             }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Commentaire (optionnel, 120 car.)")
-                    .font(.system(size: Theme.Font.field))
-                    .foregroundStyle(Theme.muted)
+                    .font(.system(size: Theme.Font.tagTitle, weight: .semibold))
+                    .foregroundStyle(Theme.text)
                 TextField("Terrasse, avec elle, à refaire…", text: $comment, axis: .vertical)
                     .lineLimit(2...4)
                     .onChange(of: comment, perform: { v in
@@ -334,6 +344,7 @@ struct BeerWizardView: View {
                     .foregroundStyle(Theme.muted)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
+            .beerCard()
 
             BeerSecondaryButton(title: "← Retour") { step = 2 }
             BeerPrimaryButton(

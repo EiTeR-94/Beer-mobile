@@ -6,6 +6,7 @@ struct BeerOverlayScreen<Content: View>: View {
     let title: String
     let onClose: () -> Void
     var trailing: [BeerHeadAction] = []
+    var onRefresh: (() async -> Void)?
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -17,6 +18,9 @@ struct BeerOverlayScreen<Content: View>: View {
                     .padding(.bottom, 20)
             }
             .scrollDismissesKeyboard(.interactively)
+            .refreshable {
+                if let onRefresh { await onRefresh() }
+            }
         }
         .background(Theme.bg)
         .preferredColorScheme(.dark)
