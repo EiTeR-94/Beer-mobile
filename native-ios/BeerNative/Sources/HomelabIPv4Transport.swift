@@ -13,7 +13,7 @@ enum HomelabIPv4Transport {
     private static let wanIP = ServerSettings.wanIPv4
     private static let wanIPv6 = ServerSettings.wanIPv6
     private static let tlsHost = ServerSettings.canonicalHost
-    private static let timeoutSeconds: UInt64 = 35  // 5G: un peu plus de marge pour latence + envoi POST (le connect a son propre timeout 12s)
+    private static let timeoutSeconds: UInt64 = 60  // 5G: plus long pour établissement lent sur cellulaire
 
     // Use IPv6 for 5G guest path (bypass broken Freebox AAAA DNS pointing to box ::1)
     static var useIPv6 = true
@@ -64,7 +64,7 @@ enum HomelabIPv4Transport {
 
             // Connect timeout spécifique pour 5G (le handshake TCP+TLS peut être lent sur cellulaire)
             let connectTimeoutTask = Task {
-                try? await Task.sleep(nanoseconds: 12_000_000_000) // 12s pour le .ready
+                try? await Task.sleep(nanoseconds: 20_000_000_000) // 20s pour le .ready sur 5G
                 if !resumed {
                     finish(.failure(BeerAPIError.server("Timeout connexion 5G (établissement lent). Réessaie ou passe en WiFi/VPN.")))
                 }
