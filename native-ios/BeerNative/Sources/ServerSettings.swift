@@ -2,7 +2,8 @@ import Foundation
 
 enum ServerSettings {
     static let canonicalHost = "eiter.freeboxos.fr"
-    /// IPv4 WAN — AAAA Freebox injoignable ; utilisé par PlexiIPv4URLProtocol.
+    /// IPv4 WAN — AAAA Freebox injoignable (connexion refusée) ; utilisé par PlexiIPv4URLProtocol
+    /// pour forcer IPv4 + SNI correct sur le domaine (critique pour invités 5G).
     static let wanIPv4 = "82.64.151.113"
 
     /// URL canonique pour invités 5G.

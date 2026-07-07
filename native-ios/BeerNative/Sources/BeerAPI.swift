@@ -68,16 +68,18 @@ final class BeerAPI {
             delegate: HomelabTLSDelegate.shared,
             delegateQueue: nil
         )
-        // Guest session (5G invités): plain standard URLSession to the domain.
-        // No custom protocol, no custom TLS delegate. Same as browser webapp.
-        // This allows normal DNS/TLS on 5G to eiter.freeboxos.fr .
+        // Guest session (5G invités): uses PlexiIPv4URLProtocol (via config) to force
+        // direct IPv4 + proper SNI to wanIPv4. This bypasses broken/unreachable
+        // Freebox AAAA for eiter.freeboxos.fr:443 which causes SSL/TLS failures on
+        // cellular (5G). No TLS delegate (low-level transport handles TLS).
         let guestConfig = baseConfig(requestTimeout: 60, resourceTimeout: 180)
+        guestConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
         self.passkeySession = URLSession(configuration: guestConfig)
     }
 
     private func session(for endpoint: URL, guest: Bool, probe: Bool = false) -> URLSession {
         if guest {
-            return passkeySession  // plain standard pour 5G invités (comme browser)
+            return passkeySession  // 5G invités: IPv4 forcé via PlexiIPv4URLProtocol + transport
         }
         // Only the explicit health probe in discover uses the short-timeout lanProbeSession.
         // All real LAN calls (login, API, etc) must use the normal long-timeout session.
@@ -126,7 +128,7 @@ final class BeerAPI {
         return nil
     }
 
-    /// Invités 5G — :443 IPv4 uniquement (pas :8444 LAN). /api/me public WAN.
+    /// Invités 5G — :443 IPv4 forcé (via PlexiIPv4URLProtocol). /api/me public WAN.
     private func discoverGuestEndpoint() async -> String? {
         let originalBase = baseURL
         for url in ServerSettings.passkeyBaseURLs {
@@ -584,7 +586,7 @@ final class BeerAPI {
         if p.hasPrefix("http://") || p.hasPrefix("https://") {
             // External asset (e.g. Untappd search result labels, or other third-party images).
             // Use plain system networking — do NOT go through homelab transport, cookie injection,
-            // custom IPv4 protocol or our TLS pinning delegate.
+            // (guest path uses protocolClasses for IPv4 forcing)
             guard let url = URL(string: p) else { throw BeerAPIError.invalidURL }
             // Theme 3: retry with backoff also for external photos (centralized)
             return try await NetworkManager.shared.withRetry(maxAttempts: 3, baseDelayMs: 400) {
@@ -897,8 +899,9 @@ final class BeerAPI {
         }
     }
 
-    /// 5G / passkey guest path — standard connection to domain using plain guestSession.
-    /// No custom IPv4 protocol or TLS delegate (unlike local LAN path).
+    /// 5G / passkey guest path — connection to domain using guestSession.
+    /// IPv4 is forced via PlexiIPv4URLProtocol registered on the config (unlike
+    /// the LAN path which targets the IP directly).
     private func wanRequest(
         path: String,
         method: String,

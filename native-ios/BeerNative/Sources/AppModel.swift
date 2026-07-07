@@ -303,9 +303,9 @@ final class AppModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         do {
-            // Vrai chemin 5G pour invités : on force le guest path standard (domaine + plain session).
-            // Pas de LAN, pas de custom IPv4 protocol, pas de cookies locaux.
-            // Même système que web (passkey + token invité).
+            // Vrai chemin 5G pour invités : guest path (domaine) avec forçage IPv4
+            // via PlexiIPv4URLProtocol (bypass AAAA Freebox cassé sur 443).
+            // Pas de LAN direct, passkey + token invité.
             let result = try await NetworkManager.shared.withRetry(maxAttempts: 3, baseDelayMs: 1000) {
                 try await PasskeyAuth.shared.register(inviteToken: token)
             }
