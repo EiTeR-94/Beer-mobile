@@ -1,30 +1,29 @@
 import Foundation
 
 enum ServerSettings {
-    /// URL canonique — invitations actives en 4G (session invité + appareil lié).
+    /// FQDN affiché (liens invitation, Host header).
     static let canonicalHost = "eiter.freeboxos.fr"
-    static let apiBaseString = "https://\(canonicalHost)/beer/"
+    /// IP WAN Freebox — évite l'AAAA IPv6 cassée en 4G.
+    static let wanIPv4 = "82.64.151.113"
+    static let apiBaseString = "https://\(wanIPv4)/beer/"
 
     static var apiBase: URL {
         URL(string: apiBaseString)!
     }
 
     static var candidateURLs: [URL] {
-        var urls = [apiBase]
-        if let ipv4 = IPv4Resolver.resolve(canonicalHost),
-           let fallback = URL(string: "https://\(ipv4)/beer/"),
-           fallback != apiBase {
-            urls.append(fallback)
+        var urls: [URL] = [apiBase]
+        if let fqdn = URL(string: "https://\(canonicalHost)/beer/") {
+            urls.append(fqdn)
+        }
+        if let lan = URL(string: "https://192.168.1.50:8444/beer/") {
+            urls.append(lan)
         }
         return urls
     }
 
     static func serverOrigin(from base: URL = apiBase) -> String {
-        var c = URLComponents(url: base, resolvingAgainstBaseURL: false) ?? URLComponents()
-        c.path = ""
-        c.query = nil
-        c.fragment = nil
-        return c.string ?? base.absoluteString
+        "https://\(canonicalHost)"
     }
 
     static func resolveAssetURL(_ path: String?, base: URL = apiBase) -> URL? {

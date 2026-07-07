@@ -679,6 +679,9 @@ final class BeerAPI {
     private func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         var req = request
         Self.applyCanonicalHostHeader(&req)
+        if req.url?.host == ServerSettings.wanIPv4 {
+            return try await HomelabIPv4Transport.perform(req)
+        }
         do {
             let (data, response) = try await session.data(for: req)
             guard let http = response as? HTTPURLResponse, let url = response.url else {
@@ -692,9 +695,7 @@ final class BeerAPI {
             case .cannotConnectToHost, .networkConnectionLost:
                 throw BeerAPIError.server("Injoignable : \(baseURL.host ?? "?")")
             case .secureConnectionFailed, .serverCertificateUntrusted:
-                throw BeerAPIError.server(
-                    "Connexion impossible (souvent IPv6 Freebox) — coupe/rallume le réseau ou réessaie en Wi‑Fi maison."
-                )
+                throw BeerAPIError.server("Connexion impossible — réessaie dans quelques secondes.")
             case .timedOut:
                 throw BeerAPIError.server("Timeout \(baseURL.host ?? "?")")
             case .notConnectedToInternet:
