@@ -42,17 +42,38 @@ const size = fs.statSync(ipaPath).size;
 const ipaName = path.basename(ipaPath);
 const today = new Date().toISOString().slice(0, 10);
 
+const STABLE_VERSION = "3.3.0";
+
+function versionReleaseNotes(ver, buildNum) {
+  if (ver === STABLE_VERSION) {
+    return ascii(
+      "v3.3.0 Stable — version figee Plexi. UI polish, mode hors ligne, admin invite, scan + toasts, AltStore OK."
+    );
+  }
+  return ascii(`Build ${buildNum} — Beer Log native`);
+}
+
 const githubAssetBase = `https://github.com/EiTeR-94/Beer-mobile/releases/download/ios-build-${build}`;
 const homelabBase = (
   process.env.MOBILE_DIST_BASE_URL || "https://eiter.freeboxos.fr:8444/mobile/beer"
 ).replace(/\/$/, "");
 const assetBase = distMode === "homelab" ? homelabBase : githubAssetBase;
 
+const appLongDescription = ascii(
+  "Beer Log, c'est ton journal de bieres sur le serveur Plexi d'EiTeR — 100% natif iPhone, zero WebView. " +
+    "Tu scannes un code-barres, tu cherches sur Untappd, tu poses la photo du verre, tu notes avec des demi-etoiles, " +
+    "saveurs et houblons. Historique, galerie, liste a boire, idees cadeaux : tout est la, pense pour le quotidien entre amis. " +
+    "Mode hors ligne : tes degustations restent sur l'iPhone et partent au serveur des que le Wi-Fi maison ou le VPN Plexi revient. " +
+    "Connexion : eiter.freeboxos.fr. Admin : comptes, invitations privees, referentiels. " +
+    "v3.3.0 Stable — la version de reference du homelab. Fait avec soin pour Plexi, pas pour l'App Store."
+);
+
 const source = {
   name: ascii("Plexi Homelab"),
-  subtitle: ascii("Beer Log iOS - MAJ auto LAN/VPN"),
+  subtitle: ascii("Apps perso EiTeR — homelab Freebox + Plexi"),
   description: ascii(
-    "Source privee Plexi. Ajoute cette URL une fois dans AltStore > Sources. MAJ apres build GitHub vert."
+    "Source privee pour installer et mettre a jour les apps iOS du homelab Plexi (serveur .50, LAN/VPN). " +
+      "Beer Log : carnet de degustation natif, sync sur ton serveur maison. MAJ auto apres build GitHub vert."
   ),
   website: "https://eiter.freeboxos.fr/beer/",
   tintColor: "#f59e0b",
@@ -62,10 +83,8 @@ const source = {
       name: ascii("Beer Log"),
       bundleIdentifier: bundleId,
       developerName: "eiter",
-      subtitle: ascii("Journal de degustation prive"),
-      localizedDescription: ascii(
-        "Beer Log iOS - scan, Untappd, photo, note, historique. Wi-Fi ou VPN Plexi."
-      ),
+      subtitle: ascii("Ton carnet de bieres sur Plexi"),
+      localizedDescription: appLongDescription,
       iconURL:
         distMode === "homelab"
           ? `${homelabBase}/icon-180.png`
@@ -91,7 +110,7 @@ const source = {
           version,
           buildVersion: String(build),
           date: today,
-          localizedDescription: ascii(`Build ${build} - Beer Log native`),
+          localizedDescription: versionReleaseNotes(version, build),
           downloadURL: `${assetBase}/${ipaName}`,
           size,
           minOSVersion: "16.0",

@@ -24,7 +24,7 @@ final class BeerAPI {
     static let shared = BeerAPI()
     private static let nativeClientHeader = "X-PlexiBeer-Client"
     private static let nativeClientValue = "native-ios"
-    private static let nativeUserAgent = "PlexiBeer/3.2.7 (iPhone; native)"
+    private static let nativeUserAgent = "PlexiBeer/3.3.0 (iPhone; native)"
 
     private let session: URLSession
     private(set) var baseURL: URL

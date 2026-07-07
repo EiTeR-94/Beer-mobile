@@ -12,7 +12,7 @@ Sur l’iPhone, dans **AltStore** :
 https://github.com/EiTeR-94/Beer-mobile/releases/latest/download/altstore.json
 ```
 
-4. Valide. Tu dois voir la source **Plexi Homelab** avec **Beer Log**.
+4. Valide. Tu dois voir la source **Plexi Homelab** avec **Beer Log** (v3.3.0 Stable).
 
 > **N’utilise pas** `192.168.1.50` — le certificat SSL ne correspond pas → AltStore affiche « inconnu / pas sécurisé ».
 
