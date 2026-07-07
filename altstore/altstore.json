@@ -28,11 +28,11 @@
       "versions": [
         {
           "version": "3.3.3",
-          "buildVersion": "50",
+          "buildVersion": "51",
           "date": "2026-07-07",
           "localizedDescription": "bugs fix",
           "downloadURL": "https://eiter.freeboxos.fr/mobile/beer/PlexiBeer.ipa",
-          "size": 967660,
+          "size": 967658,
           "minOSVersion": "16.0"
         }
       ]
