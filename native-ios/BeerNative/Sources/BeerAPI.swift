@@ -103,8 +103,10 @@ final class BeerAPI {
             return await discoverGuestEndpoint()
         }
         // Local accounts: LAN IP only (WiFi/VPN). Direct IP to avoid domain issues.
+        let originalBase = baseURL
         for candidate in ServerSettings.candidateURLs {
-            baseURL = Self.canonicalBase(candidate)
+            let tempBase = Self.canonicalBase(candidate)
+            baseURL = tempBase
             do {
                 var probe = URLRequest(url: try url("/api/health"))
                 probe.httpMethod = "GET"
@@ -119,6 +121,7 @@ final class BeerAPI {
                     return candidate.absoluteString
                 }
             } catch {
+                baseURL = originalBase  // revert on failure, don't stick to bad base
                 continue
             }
         }
@@ -127,8 +130,10 @@ final class BeerAPI {
 
     /// Invités 5G — :443 IPv4 uniquement (pas :8444 LAN). /api/me public WAN.
     private func discoverGuestEndpoint() async -> String? {
+        let originalBase = baseURL
         for url in ServerSettings.passkeyBaseURLs {
-            baseURL = Self.canonicalBase(url)
+            let tempBase = Self.canonicalBase(url)
+            baseURL = tempBase
             do {
                 let (_, http, _) = try await wanRequest(
                     path: "/api/me",
@@ -140,6 +145,7 @@ final class BeerAPI {
                     return url.absoluteString
                 }
             } catch {
+                baseURL = originalBase
                 continue
             }
         }
