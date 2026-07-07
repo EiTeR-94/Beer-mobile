@@ -46,7 +46,7 @@ final class AppModel: ObservableObject {
     private var syncInProgress = false
 
     init() {
-        api.setBaseURL(ServerSettings.apiBase)
+        api.setBaseURL(ServerSettings.lanApiBase)
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in
                 self?.handlePathUpdate(path)
@@ -167,7 +167,7 @@ final class AppModel: ObservableObject {
     }
 
     func testServer() async -> String {
-        api.setBaseURL(ServerSettings.apiBase)
+        api.setBaseURL(ServerSettings.lanApiBase)
         if let ok = await api.discoverWorkingEndpoint() {
             networkStatus = .online
             return "Serveur OK · \(ok)"
@@ -178,7 +178,7 @@ final class AppModel: ObservableObject {
 
     func login(username: String, password: String) async throws {
         PasskeySessionStore.clear()
-        api.setBaseURL(ServerSettings.apiBase)
+        api.setBaseURL(ServerSettings.lanApiBase)
         let loginResp = try await api.login(username: username, password: password)
         let me = try? await api.me()
         applySession(

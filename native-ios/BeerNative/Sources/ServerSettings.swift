@@ -5,7 +5,7 @@ enum ServerSettings {
     /// IPv4 WAN — AAAA Freebox injoignable ; utilisé par PlexiIPv4URLProtocol.
     static let wanIPv4 = "82.64.151.113"
 
-    /// URL canonique — LAN, VPN et 4G via le FQDN Plexi (:443, TCP forcé IPv4).
+    /// URL canonique pour invités 5G.
     static let apiBaseString = "https://\(canonicalHost)/beer/"
 
     static var apiBase: URL {
@@ -14,12 +14,13 @@ enum ServerSettings {
 
     /// Direct LAN IP for local accounts (WiFi/VPN) — avoids DNS/hairpin issues.
     /// Uses 192.168.1.50:8444, TLS delegate accepts it.
+    /// This is the main path for local accounts.
     static var lanApiBase: URL {
         URL(string: "https://192.168.1.50:8444/beer/")!
     }
 
     static var candidateURLs: [URL] {
-        [apiBase]
+        [lanApiBase]
     }
 
     static var passkeyBaseURLs: [URL] {
