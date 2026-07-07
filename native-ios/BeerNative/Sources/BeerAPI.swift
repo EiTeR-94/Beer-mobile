@@ -680,13 +680,16 @@ final class BeerAPI {
         )
     }
 
-    /// Invitations 4G/5G : FQDN uniquement (identique PWA Safari).
+    /// Invitations 5G : FQDN + IPv4 forcé (guestRouting activé avant l'appel).
     private func requestInvite(
         path: String,
         method: String,
         body: Data?,
         contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse, URL) {
+        let prev = guestRouting
+        guestRouting = true
+        defer { guestRouting = prev }
         return try await requestEndpoints(
             [ServerSettings.apiBase],
             path: path,
@@ -738,9 +741,12 @@ final class BeerAPI {
         var req = request
         Self.applyCanonicalHostHeader(&req)
 
-        // PWA : fetch same-origin sur eiter.freeboxos.fr. Safari bascule IPv6→IPv4 tout seul ;
-        // URLSession iOS tente l'AAAA Freebox (::1) → secureConnectionFailed. On force IPv4+SNI.
-        if let routed = Self.ipv4WanRequest(from: req) {
+        if req.url?.host == ServerSettings.wanIPv4 {
+            return try await HomelabIPv4Transport.perform(req)
+        }
+
+        // Invités 5G : FQDN → IPv4+SNI (AAAA Freebox morte, Safari bascule tout seul).
+        if guestRouting, let routed = Self.ipv4WanRequest(from: req) {
             return try await HomelabIPv4Transport.perform(routed)
         }
 
@@ -753,9 +759,22 @@ final class BeerAPI {
         } catch let err as BeerAPIError {
             throw err
         } catch let err as URLError {
+            if guestRouting, let routed = Self.ipv4WanRequest(from: req), Self.isConnectivityError(err) {
+                return try await HomelabIPv4Transport.perform(routed)
+            }
             throw Self.mapURLError(err, host: baseURL.host)
         } catch {
             throw BeerAPIError.network(error)
+        }
+    }
+
+    private static func isConnectivityError(_ err: URLError) -> Bool {
+        switch err.code {
+        case .cannotConnectToHost, .networkConnectionLost, .timedOut,
+             .secureConnectionFailed, .serverCertificateUntrusted, .dnsLookupFailed:
+            return true
+        default:
+            return false
         }
     }
 
