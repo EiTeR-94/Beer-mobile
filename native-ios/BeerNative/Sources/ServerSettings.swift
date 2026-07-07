@@ -27,7 +27,8 @@ enum ServerSettings {
     }
 
     /// :8444 hub/LAN — probe court (hors LAN = fail fast, pas 15s de timeout).
-    static let lanProbeTimeoutSec: TimeInterval = 4
+    /// Augmenté un peu pour VPN (latence + handshake).
+    static let lanProbeTimeoutSec: TimeInterval = 8
 
     static func isLanEndpoint(_ url: URL) -> Bool {
         url.port == 8444

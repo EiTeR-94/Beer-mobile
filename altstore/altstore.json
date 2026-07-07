@@ -30,10 +30,10 @@
       },
       "versions": [
         {
-          "version": "3.3.4",
-          "buildVersion": "52",
+          "version": "3.3.5",
+          "buildVersion": "53",
           "date": "2026-07-07",
-          "localizedDescription": "Face ID invites 5G (passkey Bearer IPv4). Comptes perso :8444 LAN + :443 fallback. Probe LAN 4s (plus de timeout).",
+          "localizedDescription": "CORRECTION MAJEURE: plus de timeout 4s sur toutes les requêtes LAN/WiFi/VPN (le probe court était utilisé pour tout → injoignable). Maintenant timeout normal 20s+ pour les appels réels, probe santé seulement en 8s. Rebuild IPA requis avec ce source. Test /api/health + login via 192.168.1.50:8444. Active Réseau local dans Réglages iPhone !",
           "downloadURL": "https://eiter.freeboxos.fr/mobile/beer/PlexiBeer.ipa",
           "size": 967731,
           "minOSVersion": "16.0"

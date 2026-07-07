@@ -26,7 +26,7 @@ final class BeerAPI {
     static let shared = BeerAPI()
     private static let nativeClientHeader = "X-PlexiBeer-Client"
     private static let nativeClientValue = "native-ios"
-    private static let nativeUserAgent = "PlexiBeer/3.3.4 (iPhone; native)"
+    private static let nativeUserAgent = "PlexiBeer/3.3.5 (iPhone; native) [timeout-fix-lan]"
 
     private let session: URLSession
     private let lanProbeSession: URLSession
@@ -46,7 +46,8 @@ final class BeerAPI {
             config.timeoutIntervalForResource = resourceTimeout
             return config
         }
-        // Admin : :8444 direct + :443 avec IPv4 (fallback VPN/5G — AAAA morte).
+        // Admin + LAN réel : :8444 direct + :443 avec IPv4 forcé.
+        // La session "admin" (long timeout) est utilisée pour tous les appels LAN réels.
         let adminConfig = baseConfig()
         adminConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
         self.session = URLSession(
@@ -75,6 +76,8 @@ final class BeerAPI {
 
     private func session(for endpoint: URL, guest: Bool, probe: Bool = false) -> URLSession {
         if guest { return passkeySession }
+        // Only the explicit health probe in discover uses the short-timeout lanProbeSession.
+        // All real LAN calls (login, API, etc) must use the normal long-timeout session.
         if probe && ServerSettings.isLanEndpoint(endpoint) { return lanProbeSession }
         return session
     }
@@ -93,7 +96,7 @@ final class BeerAPI {
         if shouldUsePasskeyBearer {
             return await discoverGuestEndpoint()
         }
-        // Local accounts: try LAN first then WAN (normal discover)
+        // Local accounts: only LAN IP endpoint (main accounts forbidden on WAN / 443)
         for candidate in ServerSettings.candidateURLs {
             baseURL = Self.canonicalBase(candidate)
             do {
@@ -859,7 +862,7 @@ final class BeerAPI {
         if shouldUsePasskeyBearer {
             return try await wanRequest(path: path, method: method, body: body, contentType: contentType)
         }
-        // Local accounts: simple candidate loop, LAN first (WiFi/VPN)
+        // Local accounts: LAN IP only (WiFi/VPN). Main accounts have no WAN fallback.
         var lastError: Error?
         for candidate in ServerSettings.candidateURLs {
             baseURL = Self.canonicalBase(candidate)
@@ -869,8 +872,8 @@ final class BeerAPI {
             applyCommonHeaders(to: &req)
             req.httpBody = body
             do {
-                let isLan = ServerSettings.isLanEndpoint(candidate)
-                let result = try await performOnEndpoint(candidate, request: req, guest: false, probe: isLan)
+                // probe: false → use full timeout session even on LAN (only discover health uses short probe timeout)
+                let result = try await performOnEndpoint(candidate, request: req, guest: false, probe: false)
                 activeEndpoint = candidate.absoluteString
                 return result
             } catch {
@@ -889,8 +892,8 @@ final class BeerAPI {
             return try await performWan(request)
         }
         // Local accounts: use current base (LAN preferred via discover or previous set)
-        let isLan = ServerSettings.isLanEndpoint(baseURL)
-        return try await performOnEndpoint(baseURL, request: request, guest: false, probe: isLan)
+        // probe: false to use normal (long) timeout; short timeout only for explicit health probe in discover
+        return try await performOnEndpoint(baseURL, request: request, guest: false, probe: false)
     }
 
     private func performOnEndpoint(
