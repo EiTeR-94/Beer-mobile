@@ -13,6 +13,10 @@ struct BeerNativeApp: App {
                 .onOpenURL { url in
                     Task { await app.handleOpenURL(url) }
                 }
+                .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+                    guard let url = activity.webpageURL else { return }
+                    Task { await app.handleOpenURL(url) }
+                }
         }
     }
 }
