@@ -11,6 +11,7 @@ import Security
 ///
 /// This is a pragmatic compromise for a private homelab. Do NOT use in production
 /// internet-facing services without proper certificate pinning.
+/// Fix for "SSL refusé sur 192.168.1.50" - domain policy for IP connections (2026-07-07)
 final class HomelabTLSDelegate: NSObject, URLSessionDelegate {
     static let shared = HomelabTLSDelegate()
 
