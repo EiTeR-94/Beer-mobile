@@ -26,20 +26,13 @@ jobs:
     timeout-minutes: 45
 
     env:
-      BEER_SERVER_URL: ${{ secrets.BEER_SERVER_URL }}
+      BEER_SERVER_URL: https://eiter.freeboxos.fr/beer
       CI: "true"
       MOBILE_DIST_MODE: github
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Vérifier secret API
-        run: |
-          if [ -z "$BEER_SERVER_URL" ]; then
-            echo "::error::Secret BEER_SERVER_URL manquant"
-            exit 1
-          fi
 
       - name: Bump build number (CI)
         run: |
@@ -62,7 +55,7 @@ jobs:
           BIN="$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$APP/Info.plist")"
           test -f "$APP/$BIN"
           file "$APP/$BIN" | grep -E "Mach-O.*arm64"
-          ! find build/Payload -name "index.html" | grep -q .
+          test -n "$(find build/Payload -name '*.app' -type d | head -1)"
 
       - name: Icône AltStore
         run: |

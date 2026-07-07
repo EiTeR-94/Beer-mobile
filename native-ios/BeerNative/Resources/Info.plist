@@ -29,7 +29,7 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Joindre une photo à ta dégustation Beer Log.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Connexion au serveur Beer Log sur ton réseau local Plexi (192.168.1.50).</string>
+	<string>Connexion au serveur Beer Log Plexi (eiter.freeboxos.fr).</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

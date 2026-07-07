@@ -58,7 +58,6 @@ final class BeerAPI {
             do {
                 if try await healthCheck() {
                     activeEndpoint = url.absoluteString
-                    ServerSettings.save(url.absoluteString)
                     return url.absoluteString
                 }
             } catch {

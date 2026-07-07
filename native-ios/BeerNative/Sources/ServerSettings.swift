@@ -1,31 +1,15 @@
 import Foundation
 
 enum ServerSettings {
-    private static let key = "beer_api_base_override"
-
-    static var candidateURLs: [URL] {
-        var raw: [String] = []
-        if let saved = UserDefaults.standard.string(forKey: key)?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !saved.isEmpty {
-            raw.append(normalizeInput(saved))
-        }
-        raw.append(BuildConfig.apiBaseString)
-        raw.append(contentsOf: BuildConfig.apiFallbacks)
-        var seen = Set<String>()
-        return raw.compactMap { s -> URL? in
-            let n = normalizeInput(s)
-            guard !seen.contains(n), let u = URL(string: n) else { return nil }
-            seen.insert(n)
-            return u
-        }
-    }
+    /// URL canonique — LAN, VPN et 4G (via VPN) via le FQDN Plexi.
+    static let apiBaseString = "https://eiter.freeboxos.fr/beer/"
 
     static var apiBase: URL {
-        candidateURLs.first ?? BuildConfig.apiBase
+        URL(string: apiBaseString)!
     }
 
-    static var apiBaseString: String {
-        apiBase.absoluteString
+    static var candidateURLs: [URL] {
+        [apiBase]
     }
 
     static func serverOrigin(from base: URL = apiBase) -> String {
@@ -44,15 +28,9 @@ enum ServerSettings {
         return URL(string: origin + p)
     }
 
-    static func save(_ raw: String) {
-        UserDefaults.standard.set(normalizeInput(raw), forKey: key)
-    }
-
-    /// Base API avec slash final — requis pour `URL(string:relativeTo:)` (sinon `/beer` est remplacé par `api/...`).
     static func normalizeInput(_ raw: String) -> String {
         var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         while s.hasSuffix("/") { s.removeLast() }
-        if s.contains(":8443") { s = s.replacingOccurrences(of: ":8443", with: ":8444") }
         return s + "/"
     }
 }

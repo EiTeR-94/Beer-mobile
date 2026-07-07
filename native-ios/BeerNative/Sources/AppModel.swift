@@ -64,18 +64,16 @@ final class AppModel: ObservableObject {
     }
 
     func applyServerURL(_ raw: String) {
-        let normalized = ServerSettings.normalizeInput(raw)
-        ServerSettings.save(normalized)
-        if let url = URL(string: normalized) {
-            api.setBaseURL(url)
-        }
+        _ = raw
+        api.setBaseURL(ServerSettings.apiBase)
     }
 
     func testServer() async -> String {
+        api.setBaseURL(ServerSettings.apiBase)
         if let ok = await api.discoverWorkingEndpoint() {
             return "Serveur OK · \(ok)"
         }
-        return "Échec — autorise « Réseau local » pour Beer Log dans Réglages iPhone, puis réessaie."
+        return "Échec — vérifie ta connexion Wi‑Fi ou VPN Plexi."
     }
 
     func login(username: String, password: String) async throws {

@@ -43,7 +43,7 @@ const source = {
   description:
     "Source privée Plexi. Ajoute cette URL une seule fois dans AltStore → Sources. " +
     "Les nouvelles versions apparaissent après sync GitHub → serveur (.50).",
-  website: "https://192.168.1.50:8444/beer/",
+  website: "https://eiter.freeboxos.fr/beer/",
   tintColor: "#f59e0b",
   featuredApps: [bundleId],
   apps: [
@@ -53,7 +53,7 @@ const source = {
       developerName: "eiter",
       subtitle: "Journal de dégustation privé",
       localizedDescription:
-        "App native Beer Log : scan EAN, Untappd, photo, note, historique. Wi‑Fi maison ou VPN Plexi.",
+        "Beer Log iOS — même interface que la PWA (scan, Untappd, photo, note, historique). Wi‑Fi ou VPN Plexi.",
       iconURL:
         distMode === "homelab"
           ? `${baseURL}/icon-180.png`

@@ -5,10 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-if [[ -z "${BEER_SERVER_URL:-}" ]]; then
-  echo "BEER_SERVER_URL manquant" >&2
-  exit 1
-fi
+export BEER_SERVER_URL="${BEER_SERVER_URL:-https://eiter.freeboxos.fr/beer}"
 
 node scripts/write-native-config.js
 
