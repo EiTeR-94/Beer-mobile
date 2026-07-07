@@ -53,6 +53,19 @@ final class AppModel: ObservableObject {
             }
         }
         monitor.start(queue: monitorQueue)
+        NotificationCenter.default.addObserver(
+            forName: .beerAuthExpired,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                if self.isLoggedIn {
+                    await self.clearSessionState()
+                    self.showToast("Session expirée — reconnecte-toi", variant: .error, durationMs: 3500)
+                }
+            }
+        }
         Task { await bootstrap() }
     }
 
@@ -141,12 +154,21 @@ final class AppModel: ObservableObject {
             )
             if isLoggedIn { await syncPending() }
         } catch BeerAPIError.forbidden {
+            await clearSessionState()
+            BeerSessionStore.clear()
+            KeychainStore.username = nil
             showToast(
                 "Invitation invalide ou expirée — demande un nouveau lien à l'admin.",
                 variant: .error,
                 durationMs: 5200
             )
+        } catch BeerAPIError.unauthorized {
+            await clearSessionState()
+            if networkStatus == .online {
+                showToast("Session expirée — reconnecte-toi", variant: .error, durationMs: 4000)
+            }
         } catch {
+            // Erreurs réseau / injoignable : on peut garder l'état offline depuis la session locale
             if !isLoggedIn, let saved = BeerSessionStore.restore() {
                 applySession(user: saved.user, isAdmin: saved.isAdmin, isInvite: saved.isInvite, loggedIn: true)
             }
@@ -178,6 +200,7 @@ final class AppModel: ObservableObject {
 
     func login(username: String, password: String) async throws {
         PasskeySessionStore.clear()
+        BeerSessionStore.clear()
         api.setBaseURL(ServerSettings.lanApiBase)
         let loginResp = try await api.login(username: username, password: password)
         let me = try? await api.me()
@@ -208,7 +231,9 @@ final class AppModel: ObservableObject {
         do {
             return try await api.me()
         } catch BeerAPIError.forbidden where shouldRefreshPasskeySession {
-            await clearInviteSession()
+            await clearSessionState()
+            BeerSessionStore.clear()
+            KeychainStore.username = nil
             throw BeerAPIError.forbidden
         } catch BeerAPIError.unauthorized where shouldRefreshPasskeySession {
             guard let username = KeychainStore.username ?? BeerSessionStore.restore()?.user else {
@@ -220,20 +245,25 @@ final class AppModel: ObservableObject {
                 PasskeySessionStore.save(accessToken: token)
                 return try await api.me()
             } catch {
-                await clearInviteSession()
+                await clearSessionState()
+                BeerSessionStore.clear()
+                KeychainStore.username = nil
                 throw error
             }
         }
     }
 
-    private func clearInviteSession() async {
+    private func clearSessionState() async {
+        // Tue uniquement le matériel d'auth vivant (token passkey / état live).
+        // On garde BeerSessionStore + username keychain pour permettre:
+        // - le mode offline "session locale"
+        // - le refresh passkey auto au prochain bootstrap (via shouldRefresh + restore)
         PasskeySessionStore.clear()
-        BeerSessionStore.clear()
         user = nil
         isAdmin = false
         isInvite = false
         isLoggedIn = false
-        KeychainStore.username = nil
+        // username conservé pour hint re-auth passkey / pré-remplissage éventuel
     }
 
     private var shouldRefreshPasskeySession: Bool {
@@ -281,12 +311,9 @@ final class AppModel: ObservableObject {
 
     func logout() async {
         await api.logout()
-        user = nil
-        isAdmin = false
-        isInvite = false
-        isLoggedIn = false
+        await clearSessionState()
+        // Logout explicite : on oublie aussi l'identité locale (plus de restore offline ni refresh auto)
         BeerSessionStore.clear()
-        PasskeySessionStore.clear()
         KeychainStore.username = nil
         hideToast()
     }

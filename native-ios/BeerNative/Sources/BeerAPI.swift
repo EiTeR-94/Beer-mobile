@@ -22,6 +22,10 @@ enum BeerAPIError: LocalizedError {
     }
 }
 
+extension Notification.Name {
+    static let beerAuthExpired = Notification.Name("beerAuthExpired")
+}
+
 final class BeerAPI {
     static let shared = BeerAPI()
     private static let nativeClientHeader = "X-PlexiBeer-Client"
@@ -285,7 +289,7 @@ final class BeerAPI {
 
     func me() async throws -> MeResponse {
         let (data, http, _) = try await request(path: "/api/me", method: "GET", body: nil)
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         if http.statusCode == 403 { throw BeerAPIError.forbidden }
         guard let decoded = try? JSONDecoder().decode(MeResponse.self, from: data) else {
             throw BeerAPIError.decode
@@ -308,7 +312,7 @@ final class BeerAPI {
             body: body,
             contentType: "application/json"
         )
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         guard let decoded = try? JSONDecoder().decode(LookupResponse.self, from: data) else {
             throw BeerAPIError.decode
         }
@@ -335,7 +339,7 @@ final class BeerAPI {
         components.queryItems = items
         var req = URLRequest(url: components.url!)
         let (data, http, _) = try await performTransport(req)
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         guard let decoded = try? JSONDecoder().decode([CheckinItem].self, from: data) else {
             throw BeerAPIError.decode
         }
@@ -344,7 +348,7 @@ final class BeerAPI {
 
     func stats() async throws -> HistoryStats {
         let (data, http, _) = try await request(path: "/api/stats", method: "GET", body: nil)
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         guard let decoded = try? JSONDecoder().decode(HistoryStats.self, from: data) else {
             throw BeerAPIError.decode
         }
@@ -353,7 +357,7 @@ final class BeerAPI {
 
     func coupleStats() async throws -> CoupleStats {
         let (data, http, _) = try await request(path: "/api/stats/couple", method: "GET", body: nil)
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         guard let decoded = try? JSONDecoder().decode(CoupleStats.self, from: data) else {
             throw BeerAPIError.decode
         }
@@ -362,7 +366,7 @@ final class BeerAPI {
 
     func styles() async throws -> [StyleOption] {
         let (data, http, _) = try await request(path: "/api/styles", method: "GET", body: nil)
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         return (try? JSONDecoder().decode([StyleOption].self, from: data)) ?? []
     }
 
@@ -374,7 +378,10 @@ final class BeerAPI {
 
     func patchnotes() async throws -> PatchnotesResponse {
         let (data, http, _) = try await request(path: "/api/admin/patchnotes", method: "GET", body: nil)
-        if http.statusCode == 401 || http.statusCode == 403 { throw BeerAPIError.unauthorized }
+        if http.statusCode == 401 || http.statusCode == 403 {
+            if http.statusCode == 401 { NotificationCenter.default.post(name: .beerAuthExpired, object: nil) }
+            throw BeerAPIError.unauthorized
+        }
         guard let decoded = try? JSONDecoder().decode(PatchnotesResponse.self, from: data) else {
             throw BeerAPIError.decode
         }
@@ -383,7 +390,7 @@ final class BeerAPI {
 
     func wishlist() async throws -> [WishlistItem] {
         let (data, http, _) = try await request(path: "/api/wishlist", method: "GET", body: nil)
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         return (try? JSONDecoder().decode([WishlistItem].self, from: data)) ?? []
     }
 
@@ -396,7 +403,7 @@ final class BeerAPI {
         ]
         let body = try JSONSerialization.data(withJSONObject: payload)
         let (data, http, _) = try await request(path: "/api/wishlist", method: "POST", body: body, contentType: "application/json")
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         if http.statusCode >= 400 {
             let err = (try? JSONDecoder().decode(OKResponse.self, from: data))?.error
             throw BeerAPIError.server(err ?? "Échec wishlist")
@@ -405,13 +412,13 @@ final class BeerAPI {
 
     func deleteWishlist(id: Int) async throws {
         let (_, http, _) = try await request(path: "/api/wishlist/\(id)", method: "DELETE", body: nil)
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         if http.statusCode >= 400 { throw BeerAPIError.server("Suppression impossible") }
     }
 
     func deleteCheckin(id: Int) async throws {
         let (_, http, _) = try await request(path: "/api/checkins/\(id)", method: "DELETE", body: nil)
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         if http.statusCode >= 400 { throw BeerAPIError.server("Suppression impossible") }
     }
 
@@ -436,7 +443,7 @@ final class BeerAPI {
             body: body,
             contentType: "application/json"
         )
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         if http.statusCode >= 400 {
             let err = (try? JSONDecoder().decode(OKResponse.self, from: data))?.error
             throw BeerAPIError.server(err ?? "Modification impossible")
@@ -454,19 +461,22 @@ final class BeerAPI {
             file: ("photo", "photo.jpg", "image/jpeg", jpeg)
         )
         let (_, http, _) = try await performTransport(req)
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         if http.statusCode == 403 { throw BeerAPIError.forbidden }
         if http.statusCode >= 400 { throw BeerAPIError.server("Photo impossible") }
     }
 
     func removeCheckinPhoto(id: Int) async throws {
         let (_, http, _) = try await request(path: "/api/checkins/\(id)/photo", method: "DELETE", body: nil)
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
     }
 
     func adminUsers() async throws -> [AdminUser] {
         let (data, http, _) = try await request(path: "/api/admin/users", method: "GET", body: nil)
-        if http.statusCode == 401 || http.statusCode == 403 { throw BeerAPIError.unauthorized }
+        if http.statusCode == 401 || http.statusCode == 403 {
+            if http.statusCode == 401 { NotificationCenter.default.post(name: .beerAuthExpired, object: nil) }
+            throw BeerAPIError.unauthorized
+        }
         return (try? JSONDecoder().decode([AdminUser].self, from: data)) ?? []
     }
 
@@ -504,7 +514,10 @@ final class BeerAPI {
 
     func adminInvites() async throws -> [InviteItem] {
         let (data, http, _) = try await request(path: "/api/invites", method: "GET", body: nil)
-        if http.statusCode == 401 || http.statusCode == 403 { throw BeerAPIError.unauthorized }
+        if http.statusCode == 401 || http.statusCode == 403 {
+            if http.statusCode == 401 { NotificationCenter.default.post(name: .beerAuthExpired, object: nil) }
+            throw BeerAPIError.unauthorized
+        }
         return (try? JSONDecoder().decode([InviteItem].self, from: data)) ?? []
     }
 
@@ -563,7 +576,7 @@ final class BeerAPI {
         }
         var req = URLRequest(url: resolved)
         let (data, http, _) = try await performTransport(req)
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         if http.statusCode != 200 { throw BeerAPIError.server("Fichier HTTP \(http.statusCode)") }
         return data
     }
@@ -576,7 +589,7 @@ final class BeerAPI {
         ]
         var req = URLRequest(url: components.url!)
         let (data, http, _) = try await performTransport(req)
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         guard let decoded = try? JSONDecoder().decode(UntappdSearchResponse.self, from: data) else {
             throw BeerAPIError.decode
         }
@@ -592,7 +605,7 @@ final class BeerAPI {
         ]
         let json = try JSONSerialization.data(withJSONObject: payload)
         let (data, http, _) = try await request(path: "/api/products/save", method: "POST", body: json, contentType: "application/json")
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         guard let decoded = try? JSONDecoder().decode(LookupResponse.self, from: data) else {
             throw BeerAPIError.decode
         }
@@ -611,7 +624,7 @@ final class BeerAPI {
         ]
         let json = try JSONSerialization.data(withJSONObject: payload)
         let (data, http, _) = try await request(path: "/api/products/link", method: "POST", body: json, contentType: "application/json")
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         guard let decoded = try? JSONDecoder().decode(LookupResponse.self, from: data) else {
             throw BeerAPIError.decode
         }
@@ -632,7 +645,7 @@ final class BeerAPI {
             file: ("image", "scan.jpg", "image/jpeg", jpeg)
         )
         let (data, http, _) = try await performTransport(req)
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         guard let decoded = try? JSONDecoder().decode(DecodeBarcodeResponse.self, from: data) else {
             throw BeerAPIError.decode
         }
@@ -650,7 +663,7 @@ final class BeerAPI {
             file: ("image", "scan.jpg", "image/jpeg", jpeg)
         )
         let (data, http, _) = try await performTransport(req)
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         guard let decoded = try? JSONDecoder().decode(LookupResponse.self, from: data) else {
             throw BeerAPIError.decode
         }
@@ -665,7 +678,10 @@ final class BeerAPI {
 
     func adminReferentials() async throws -> ReferentialsResponse {
         let (data, http, _) = try await request(path: "/api/admin/referentials", method: "GET", body: nil)
-        if http.statusCode == 401 || http.statusCode == 403 { throw BeerAPIError.unauthorized }
+        if http.statusCode == 401 || http.statusCode == 403 {
+            if http.statusCode == 401 { NotificationCenter.default.post(name: .beerAuthExpired, object: nil) }
+            throw BeerAPIError.unauthorized
+        }
         guard let decoded = try? JSONDecoder().decode(ReferentialsResponse.self, from: data) else {
             throw BeerAPIError.decode
         }
@@ -733,7 +749,7 @@ final class BeerAPI {
             body: json,
             contentType: "application/json"
         )
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         guard let decoded = try? JSONDecoder().decode(LookupResponse.self, from: data) else {
             throw BeerAPIError.decode
         }
@@ -748,7 +764,7 @@ final class BeerAPI {
         ]
         var req = URLRequest(url: components.url!)
         let (data, http, _) = try await performTransport(req)
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         guard let decoded = try? JSONDecoder().decode(FlavorsResponse.self, from: data) else {
             throw BeerAPIError.decode
         }
@@ -795,7 +811,7 @@ final class BeerAPI {
             file: photoJPEG.map { ("photo", "photo.jpg", "image/jpeg", $0) }
         )
         let (data, http, _) = try await performTransport(req)
-        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        try throwIfUnauthorized(http.statusCode)
         if http.statusCode == 403 { throw BeerAPIError.forbidden }
         guard let decoded = try? JSONDecoder().decode(CreateCheckinResult.self, from: data) else {
             throw BeerAPIError.decode
@@ -947,6 +963,13 @@ final class BeerAPI {
             }
         } catch {
             throw BeerAPIError.network(error)
+        }
+    }
+
+    private func throwIfUnauthorized(_ status: Int) throws {
+        if status == 401 {
+            NotificationCenter.default.post(name: .beerAuthExpired, object: nil)
+            throw BeerAPIError.unauthorized
         }
     }
 
