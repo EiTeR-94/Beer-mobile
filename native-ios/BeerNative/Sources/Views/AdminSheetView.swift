@@ -26,6 +26,7 @@ struct AdminSheetView: View {
     @State private var showIPs = false
     @State private var ipTitle = "IP invités"
     @State private var ipEntries: [InviteIpEntry] = []
+    @State private var inviteToRevoke: InviteItem?
 
     private let validityOptions: [(String, String)] = [
         ("24h", "24 heures"), ("48h", "48 heures"), ("7d", "7 jours"),
@@ -107,16 +108,12 @@ struct AdminSheetView: View {
                         }
                     }
                 }
-                    if let createdInviteURL {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Lien à envoyer en privé :").font(.caption).foregroundStyle(Theme.muted)
-                            Text(createdInviteURL).font(.caption2).textSelection(.enabled)
-                            BeerSecondaryButton(title: "Copier le lien") {
-                                UIPasteboard.general.string = createdInviteURL
-                                message = "Lien copié"
-                            }
-                        }
-                        .padding(10).background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 10))
+                    if let url = createdInviteURL {
+                        InviteLinkResultCard(
+                            url: url,
+                            onCopy: { copyCreatedInviteLink() },
+                            onClose: { createdInviteURL = nil }
+                        )
                     }
                     ForEach(invites) { inv in inviteCard(inv) }
 
@@ -145,6 +142,21 @@ struct AdminSheetView: View {
         .sheet(isPresented: $showIPs) {
             InviteIPsSheetView(title: ipTitle, entries: ipEntries)
                 .beerSheetChrome()
+        }
+        .alert(
+            "Révoquer l'invitation ?",
+            isPresented: Binding(
+                get: { inviteToRevoke != nil },
+                set: { if !$0 { inviteToRevoke = nil } }
+            ),
+            presenting: inviteToRevoke
+        ) { inv in
+            Button("Annuler", role: .cancel) { inviteToRevoke = nil }
+            Button("Révoquer", role: .destructive) {
+                Task { await revokeInvite(inv) }
+            }
+        } message: { inv in
+            Text("Le compte « \(inv.label ?? inv.username ?? "invité") » et ses dégustations seront supprimés.")
         }
     }
 
@@ -176,7 +188,9 @@ struct AdminSheetView: View {
                     if let log = inv.ipLog, !log.isEmpty {
                         inviteAction("IP") { openInviteIPs(inv) }
                     }
-                    if let url = inv.url, inv.revokedAt == nil { inviteAction("Copier") { copyURL(url) } }
+                    if let url = inv.url, inv.revokedAt == nil {
+                        inviteAction("Copier") { copyInviteURL(url) }
+                    }
                     if inv.canExtend == true {
                         inviteAction("+24h") { Task { await extend(inv, "24h") } }
                         inviteAction("+48h") { Task { await extend(inv, "48h") } }
@@ -189,7 +203,7 @@ struct AdminSheetView: View {
                     }
                     if inv.revokedAt == nil {
                         inviteAction("Révoquer", destructive: true) {
-                            Task { try? await app.api.adminRevokeInvite(id: inv.id); await reload() }
+                            inviteToRevoke = inv
                         }
                     }
                 }
@@ -303,9 +317,17 @@ struct AdminSheetView: View {
         )
     }
 
-    private func copyURL(_ url: String) {
+    private func copyCreatedInviteLink() {
+        guard let url = createdInviteURL else { return }
         UIPasteboard.general.string = url
-        message = "Lien copié"
+        createdInviteURL = nil
+        app.showToast("Lien copié", variant: .success, durationMs: 2800)
+    }
+
+    private func copyInviteURL(_ url: String) {
+        UIPasteboard.general.string = url
+        if createdInviteURL == url { createdInviteURL = nil }
+        app.showToast("Lien copié", variant: .success, durationMs: 2800)
     }
 
     private func reload() async {
@@ -383,9 +405,13 @@ struct AdminSheetView: View {
             inviteLabel = ""
             message = nil
             errorMessage = nil
-            if let url = res.url { UIPasteboard.general.string = url }
-            app.showToast("Lien créé — copie-le maintenant", variant: .success, durationMs: 3800)
             await reload()
+            app.showToast(
+                "Lien créé — copie-le maintenant",
+                variant: .success,
+                label: "Invitation",
+                durationMs: 4200
+            )
         } catch let err {
             app.hideToast()
             errorMessage = err.localizedDescription
@@ -401,15 +427,33 @@ struct AdminSheetView: View {
         } catch let err { errorMessage = err.localizedDescription }
     }
 
+    private func revokeInvite(_ inv: InviteItem) async {
+        inviteToRevoke = nil
+        do {
+            try await app.api.adminRevokeInvite(id: inv.id)
+            if createdInviteURL == inv.url { createdInviteURL = nil }
+            await reload()
+            app.showToast("Invitation révoquée", variant: .success, durationMs: 3200)
+        } catch let err {
+            app.showToast(err.localizedDescription, variant: .error, durationMs: 4200)
+        }
+    }
+
     private func reissue(_ inv: InviteItem) async {
         do {
             if let url = try await app.api.adminReissueInvite(id: inv.id) {
-                UIPasteboard.general.string = url
                 createdInviteURL = url
-                message = "Lien de réactivation copié (10 min)"
+                await reload()
+                app.showToast(
+                    "Lien de réactivation prêt (10 min)",
+                    variant: .success,
+                    label: "Invitation",
+                    durationMs: 4200
+                )
             }
-            await reload()
-        } catch let err { errorMessage = err.localizedDescription }
+        } catch let err {
+            app.showToast(err.localizedDescription, variant: .error, durationMs: 4200)
+        }
     }
 
     private func addReferential() async {
@@ -435,6 +479,44 @@ struct AdminSheetView: View {
             }
             await reload()
         } catch let err { errorMessage = err.localizedDescription }
+    }
+}
+
+private struct InviteLinkResultCard: View {
+    let url: String
+    let onCopy: () -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
+                Text("Lien à envoyer en privé :")
+                    .font(.caption)
+                    .foregroundStyle(Theme.muted)
+                Spacer(minLength: 4)
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Theme.muted)
+                        .frame(width: 26, height: 26)
+                        .background(Theme.bg)
+                        .overlay(Circle().stroke(Theme.border))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Fermer")
+            }
+            Text(url)
+                .font(.caption2)
+                .foregroundStyle(Theme.text)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            BeerSecondaryButton(title: "Copier le lien", action: onCopy)
+        }
+        .padding(12)
+        .background(Theme.card)
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.accent.opacity(0.35)))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 

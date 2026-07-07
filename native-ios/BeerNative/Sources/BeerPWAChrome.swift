@@ -3,6 +3,8 @@ import SwiftUI
 // MARK: - Overlay shell (history-head, wishlist-head, admin-head…)
 
 struct BeerOverlayScreen<Content: View>: View {
+    @EnvironmentObject private var app: AppModel
+
     let title: String
     let onClose: () -> Void
     var trailing: [BeerHeadAction] = []
@@ -10,20 +12,24 @@ struct BeerOverlayScreen<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        VStack(spacing: 0) {
-            BeerOverlayHead(title: title, onClose: onClose, trailing: trailing)
-            ScrollView {
-                content()
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 20)
+        ZStack {
+            VStack(spacing: 0) {
+                BeerOverlayHead(title: title, onClose: onClose, trailing: trailing)
+                ScrollView {
+                    content()
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 20)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .dismissKeyboardOnTap()
+                .refreshable {
+                    if let onRefresh { await onRefresh() }
+                }
             }
-            .scrollDismissesKeyboard(.interactively)
-            .dismissKeyboardOnTap()
-            .refreshable {
-                if let onRefresh { await onRefresh() }
-            }
+            .background(Theme.bg)
+
+            ToastOverlay(toast: app.toast, onDismiss: { app.hideToast() })
         }
-        .background(Theme.bg)
         .preferredColorScheme(.dark)
     }
 }
