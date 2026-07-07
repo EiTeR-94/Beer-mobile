@@ -29,6 +29,7 @@ final class BeerAPI {
     private static let nativeUserAgent = "PlexiBeer/3.3.4 (iPhone; native)"
 
     private let session: URLSession
+    private let lanProbeSession: URLSession
     private let passkeySession: URLSession
     private(set) var baseURL: URL
     private(set) var activeEndpoint: String = ""
@@ -36,22 +37,33 @@ final class BeerAPI {
     init(baseURL: URL = ServerSettings.apiBase) {
         self.baseURL = Self.canonicalBase(baseURL)
         let sharedCookies = HTTPCookieStorage.shared
-        func baseConfig() -> URLSessionConfiguration {
+        func baseConfig(requestTimeout: TimeInterval = 20, resourceTimeout: TimeInterval = 90) -> URLSessionConfiguration {
             let config = URLSessionConfiguration.default
             config.httpCookieStorage = sharedCookies
             config.httpShouldSetCookies = true
             config.httpCookieAcceptPolicy = .always
-            config.timeoutIntervalForRequest = 15
-            config.timeoutIntervalForResource = 30
+            config.timeoutIntervalForRequest = requestTimeout
+            config.timeoutIntervalForResource = resourceTimeout
             return config
         }
-        // Comptes locaux : URLSession normale + :8444 LAN (cookies domain OK).
+        // Admin : :8444 direct + :443 avec IPv4 (fallback VPN/5G — AAAA morte).
+        let adminConfig = baseConfig()
+        adminConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
         self.session = URLSession(
-            configuration: baseConfig(),
+            configuration: adminConfig,
             delegate: HomelabTLSDelegate.shared,
             delegateQueue: nil
         )
-        // Invités 5G + passkey : IPv4 forcé sur :443 (AAAA morte) + Bearer nginx-gate.
+        let lanConfig = baseConfig(
+            requestTimeout: ServerSettings.lanProbeTimeoutSec,
+            resourceTimeout: ServerSettings.lanProbeTimeoutSec + 4
+        )
+        self.lanProbeSession = URLSession(
+            configuration: lanConfig,
+            delegate: HomelabTLSDelegate.shared,
+            delegateQueue: nil
+        )
+        // Invités 5G + passkey : IPv4 forcé sur :443 + Bearer nginx-gate.
         let passkeyConfig = baseConfig()
         passkeyConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
         self.passkeySession = URLSession(
@@ -59,6 +71,12 @@ final class BeerAPI {
             delegate: HomelabTLSDelegate.shared,
             delegateQueue: nil
         )
+    }
+
+    private func session(for endpoint: URL, guest: Bool, probe: Bool = false) -> URLSession {
+        if guest { return passkeySession }
+        if probe && ServerSettings.isLanEndpoint(endpoint) { return lanProbeSession }
+        return session
     }
 
     func setBaseURL(_ url: URL) {
@@ -75,12 +93,20 @@ final class BeerAPI {
         if shouldUsePasskeyBearer {
             return await discoverGuestEndpoint()
         }
-        for url in ServerSettings.candidateURLs {
-            baseURL = Self.canonicalBase(url)
+        for candidate in ServerSettings.candidateURLs {
+            baseURL = Self.canonicalBase(candidate)
             do {
-                if try await healthCheck() {
-                    activeEndpoint = url.absoluteString
-                    return url.absoluteString
+                var probe = URLRequest(url: try url("/api/health"))
+                probe.httpMethod = "GET"
+                let (_, http, _) = try await performOnEndpoint(
+                    candidate,
+                    request: probe,
+                    guest: false,
+                    probe: true
+                )
+                if http.statusCode == 200 {
+                    activeEndpoint = candidate.absoluteString
+                    return candidate.absoluteString
                 }
             } catch {
                 continue
@@ -841,7 +867,7 @@ final class BeerAPI {
             applyCommonHeaders(to: &req)
             req.httpBody = body
             do {
-                let result = try await perform(req)
+                let result = try await performOnEndpoint(candidate, request: req, guest: false)
                 activeEndpoint = candidate.absoluteString
                 return result
             } catch {
@@ -859,65 +885,46 @@ final class BeerAPI {
         if shouldUsePasskeyBearer {
             return try await performWan(request)
         }
-        return try await perform(request)
+        return try await performOnEndpoint(baseURL, request: request, guest: false)
+    }
+
+    private func performOnEndpoint(
+        _ endpoint: URL,
+        request: URLRequest,
+        guest: Bool,
+        probe: Bool = false
+    ) async throws -> (Data, HTTPURLResponse, URL) {
+        var req = request
+        applyCommonHeaders(to: &req)
+        let httpSession = session(for: endpoint, guest: guest, probe: probe)
+        do {
+            let (data, response) = try await httpSession.data(for: req)
+            guard let http = response as? HTTPURLResponse, let url = response.url else {
+                throw BeerAPIError.decode
+            }
+            return (data, http, url)
+        } catch let err as BeerAPIError {
+            throw err
+        } catch let err as URLError {
+            switch err.code {
+            case .cannotConnectToHost, .networkConnectionLost:
+                throw BeerAPIError.server("Injoignable : \(endpoint.host ?? "?")")
+            case .secureConnectionFailed, .serverCertificateUntrusted:
+                throw BeerAPIError.server("SSL refusé sur \(endpoint.host ?? "?")")
+            case .timedOut:
+                throw BeerAPIError.server("Timeout \(endpoint.host ?? "?")")
+            case .notConnectedToInternet:
+                throw BeerAPIError.server("Pas de réseau")
+            default:
+                throw BeerAPIError.network(err)
+            }
+        } catch {
+            throw BeerAPIError.network(error)
+        }
     }
 
     private func performWan(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
-        var req = request
-        applyCommonHeaders(to: &req)
-        do {
-            let (data, response) = try await passkeySession.data(for: req)
-            guard let http = response as? HTTPURLResponse, let url = response.url else {
-                throw BeerAPIError.decode
-            }
-            return (data, http, url)
-        } catch let err as BeerAPIError {
-            throw err
-        } catch let err as URLError {
-            switch err.code {
-            case .cannotConnectToHost, .networkConnectionLost:
-                throw BeerAPIError.server("Injoignable : \(baseURL.host ?? "?")")
-            case .secureConnectionFailed, .serverCertificateUntrusted:
-                throw BeerAPIError.server("SSL refusé sur \(baseURL.host ?? "?")")
-            case .timedOut:
-                throw BeerAPIError.server("Timeout \(baseURL.host ?? "?")")
-            case .notConnectedToInternet:
-                throw BeerAPIError.server("Pas de réseau")
-            default:
-                throw BeerAPIError.network(err)
-            }
-        } catch {
-            throw BeerAPIError.network(error)
-        }
-    }
-
-    private func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
-        var req = request
-        applyCommonHeaders(to: &req)
-        do {
-            let (data, response) = try await session.data(for: req)
-            guard let http = response as? HTTPURLResponse, let url = response.url else {
-                throw BeerAPIError.decode
-            }
-            return (data, http, url)
-        } catch let err as BeerAPIError {
-            throw err
-        } catch let err as URLError {
-            switch err.code {
-            case .cannotConnectToHost, .networkConnectionLost:
-                throw BeerAPIError.server("Injoignable : \(baseURL.host ?? "?")")
-            case .secureConnectionFailed, .serverCertificateUntrusted:
-                throw BeerAPIError.server("SSL refusé sur \(baseURL.host ?? "?")")
-            case .timedOut:
-                throw BeerAPIError.server("Timeout \(baseURL.host ?? "?")")
-            case .notConnectedToInternet:
-                throw BeerAPIError.server("Pas de réseau")
-            default:
-                throw BeerAPIError.network(err)
-            }
-        } catch {
-            throw BeerAPIError.network(error)
-        }
+        try await performOnEndpoint(ServerSettings.apiBase, request: request, guest: true)
     }
 
     private static func canonicalBase(_ url: URL) -> URL {

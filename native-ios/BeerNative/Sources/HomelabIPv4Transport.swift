@@ -5,7 +5,7 @@ import Network
 enum HomelabIPv4Transport {
     private static let wanIP = ServerSettings.wanIPv4
     private static let tlsHost = ServerSettings.canonicalHost
-    private static let timeoutSeconds: UInt64 = 15
+    private static let timeoutSeconds: UInt64 = 25
 
     static func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         try await withThrowingTaskGroup(of: (Data, HTTPURLResponse, URL).self) { group in

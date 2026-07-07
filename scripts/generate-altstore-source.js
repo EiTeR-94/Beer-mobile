@@ -78,7 +78,7 @@ function versionReleaseNotes(ver, buildNum) {
   }
   if (ver === "3.3.4") {
     return ascii(
-      "Invites 5G: token Bearer + IPv4. Comptes perso: LAN/VPN (fix fallback IPv4 admin)."
+      "Face ID invites 5G (passkey Bearer IPv4). Comptes perso :8444 LAN + :443 fallback. Probe LAN 4s (plus de timeout)."
     );
   }
   return ascii(`Build ${buildNum} - Beer Log native`);
@@ -129,13 +129,16 @@ const manifest = {
       tintColor: "#f59e0b",
       category: "lifestyle",
       appPermissions: {
-        entitlements: [],
+        entitlements: ["com.apple.developer.associated-domains"],
         privacy: {
           NSCameraUsageDescription: ascii(
             "Scanner les codes-barres et prendre des photos de tes degustations."
           ),
+          NSFaceIDUsageDescription: ascii(
+            "Activer une invitation Beer Log et securiser la session invite (passkey Face ID)."
+          ),
           NSLocalNetworkUsageDescription: ascii(
-            "Connexion au serveur Beer Log sur ton reseau local Plexi (192.168.1.50)."
+            "Connexion au serveur Beer Log Plexi (eiter.freeboxos.fr, hub LAN :8444)."
           ),
           NSPhotoLibraryUsageDescription: ascii(
             "Joindre une photo a ta degustation Beer Log."

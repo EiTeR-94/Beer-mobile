@@ -25,6 +25,13 @@ enum ServerSettings {
         [apiBase]
     }
 
+    /// :8444 hub/LAN — probe court (hors LAN = fail fast, pas 15s de timeout).
+    static let lanProbeTimeoutSec: TimeInterval = 4
+
+    static func isLanEndpoint(_ url: URL) -> Bool {
+        url.port == 8444
+    }
+
     static func serverOrigin(from base: URL = apiBase) -> String {
         var c = URLComponents(url: base, resolvingAgainstBaseURL: false) ?? URLComponents()
         c.path = ""
