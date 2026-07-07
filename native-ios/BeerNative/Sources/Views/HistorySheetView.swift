@@ -99,6 +99,7 @@ struct HistorySheetView: View {
                 },
                 onEdit: { editing = item; selected = nil }
             )
+            .environmentObject(app)
         }
         .sheet(item: $editing) { item in
             CheckinEditView(item: item) { Task { await reload() } }

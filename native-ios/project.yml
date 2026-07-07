@@ -12,7 +12,7 @@ settings:
     INFOPLIST_FILE: BeerNative/Resources/Info.plist
     PRODUCT_BUNDLE_IDENTIFIER: fr.eiter.plexibeer
     MARKETING_VERSION: "3.2.0"
-    CURRENT_PROJECT_VERSION: "6"
+    CURRENT_PROJECT_VERSION: "7"
     CODE_SIGN_STYLE: Manual
     CODE_SIGN_IDENTITY: ""
     CODE_SIGNING_ALLOWED: NO

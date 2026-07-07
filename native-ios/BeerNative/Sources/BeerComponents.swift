@@ -631,9 +631,9 @@ struct InviteHelpBar: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             (
-                Text("Conseil").fontWeight(.semibold).foregroundStyle(Theme.accent)
+                Text("Conseil").fontWeight(.semibold).foregroundColor(Theme.accent)
                 + Text(" — garde Beer Log installé sur ton écran d'accueil et évite de vider ses données dans les réglages du téléphone : c'est ce qui maintient ta connexion.")
-                    .foregroundStyle(Theme.text)
+                    .foregroundColor(Theme.text)
             )
             .font(.system(size: 12.8))
             .fixedSize(horizontal: false, vertical: true)
