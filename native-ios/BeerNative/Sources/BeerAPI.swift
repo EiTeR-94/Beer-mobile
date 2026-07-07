@@ -36,8 +36,8 @@ final class BeerAPI {
         config.httpCookieStorage = HTTPCookieStorage.shared
         config.httpShouldSetCookies = true
         config.httpCookieAcceptPolicy = .always
-        config.timeoutIntervalForRequest = 15
-        config.timeoutIntervalForResource = 30
+        config.timeoutIntervalForRequest = 8
+        config.timeoutIntervalForResource = 20
         self.session = URLSession(
             configuration: config,
             delegate: HomelabTLSDelegate.shared,
@@ -55,8 +55,8 @@ final class BeerAPI {
         return http.statusCode == 200
     }
 
-    func discoverWorkingEndpoint() async -> String? {
-        for url in ServerSettings.candidateURLs {
+    func discoverWorkingEndpoint(preferWan: Bool = false) async -> String? {
+        for url in ServerSettings.candidateURLs(preferWan: preferWan) {
             baseURL = Self.canonicalBase(url)
             do {
                 if try await healthCheck() {
@@ -646,18 +646,20 @@ final class BeerAPI {
 
     // MARK: - HTTP
 
+    private var preferWanRouting: Bool = false
+
+    func setPreferWanRouting(_ enabled: Bool) {
+        preferWanRouting = enabled
+    }
+
     private func request(
         path: String,
         method: String,
         body: Data?,
         contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse, URL) {
-        var candidates = ServerSettings.candidateURLs
-        if !candidates.contains(ServerSettings.wanApiBase) {
-            candidates.append(ServerSettings.wanApiBase)
-        }
         return try await requestEndpoints(
-            candidates,
+            ServerSettings.candidateURLs(preferWan: preferWanRouting),
             path: path,
             method: method,
             body: body,
@@ -666,19 +668,15 @@ final class BeerAPI {
         )
     }
 
-    /// Invitations 4G : IP WAN en premier (contourne AAAA Freebox), puis FQDN/LAN.
+    /// Invitations 4G/5G : IP WAN en premier (contourne AAAA Freebox), puis FQDN/LAN.
     private func requestInvite(
         path: String,
         method: String,
         body: Data?,
         contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse, URL) {
-        var endpoints = [ServerSettings.wanApiBase]
-        for url in ServerSettings.candidateURLs where url != ServerSettings.wanApiBase {
-            endpoints.append(url)
-        }
         return try await requestEndpoints(
-            endpoints,
+            ServerSettings.candidateURLs(preferWan: true),
             path: path,
             method: method,
             body: body,

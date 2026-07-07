@@ -89,7 +89,9 @@ final class AppModel: ObservableObject {
             networkStatus = .offline
             return
         }
-        if await api.discoverWorkingEndpoint() != nil {
+        let preferWan = isInvite || BeerSessionStore.restore()?.isInvite == true
+        api.setPreferWanRouting(preferWan)
+        if await api.discoverWorkingEndpoint(preferWan: preferWan) != nil {
             networkStatus = .online
             serverVersion = (try? await api.version()) ?? serverVersion
         } else {
@@ -159,7 +161,9 @@ final class AppModel: ObservableObject {
 
     func testServer() async -> String {
         api.setBaseURL(ServerSettings.apiBase)
-        if let ok = await api.discoverWorkingEndpoint() {
+        let preferWan = isInvite
+        api.setPreferWanRouting(preferWan)
+        if let ok = await api.discoverWorkingEndpoint(preferWan: preferWan) {
             networkStatus = .online
             return "Serveur OK · \(ok)"
         }
@@ -197,6 +201,7 @@ final class AppModel: ObservableObject {
                 isInvite: true,
                 loggedIn: res.user != nil
             )
+            api.setPreferWanRouting(true)
             networkStatus = .online
             hideToast()
             let label = res.label ?? user ?? "invité"

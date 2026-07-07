@@ -10,7 +10,24 @@ enum HomelabIPv4Transport {
         URL(string: "https://\(tlsHost)/beer/")!
     }
 
+    private static let timeoutSeconds: UInt64 = 8
+
     static func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
+        try await withThrowingTaskGroup(of: (Data, HTTPURLResponse, URL).self) { group in
+            group.addTask { try await performOnce(request) }
+            group.addTask {
+                try await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
+                throw BeerAPIError.server("Timeout serveur (5G)")
+            }
+            guard let result = try await group.next() else {
+                throw BeerAPIError.server("Timeout serveur (5G)")
+            }
+            group.cancelAll()
+            return result
+        }
+    }
+
+    private static func performOnce(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         guard let url = request.url else { throw BeerAPIError.invalidURL }
 
         let path = {

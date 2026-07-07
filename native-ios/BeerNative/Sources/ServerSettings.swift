@@ -9,17 +9,19 @@ enum ServerSettings {
         URL(string: apiBaseString)!
     }
 
-    /// Comptes normaux : FQDN puis hub LAN (Wi‑Fi / VPN).
-    static var candidateURLs: [URL] {
-        var urls: [URL] = [apiBase]
-        if let lan = URL(string: "https://192.168.1.50:8444/beer/") {
-            urls.append(lan)
-        }
-        return urls
-    }
-
     static var wanApiBase: URL {
         URL(string: "https://\(wanIPv4)/beer/")!
+    }
+
+    /// preferWan : invités en 4G/5G — IP publique d'abord (évite IPv6 Freebox + timeout LAN).
+    static func candidateURLs(preferWan: Bool = false) -> [URL] {
+        let fqdn = apiBase
+        let lan = URL(string: "https://192.168.1.50:8444/beer/")!
+        let wan = wanApiBase
+        if preferWan {
+            return [wan, fqdn, lan]
+        }
+        return [fqdn, lan, wan]
     }
 
     static func serverOrigin(from base: URL = apiBase) -> String {
