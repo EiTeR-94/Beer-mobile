@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+#
+# Gradle startup script for UN*X
+#
+# ... (standard, but to save space, use the direct call)
+DIRNAME=`dirname "$0"`
+APP_HOME=`cd "$DIRNAME" >/dev/null 2>&1 && pwd`
+exec "$APP_HOME/bin/gradle" "$@"
