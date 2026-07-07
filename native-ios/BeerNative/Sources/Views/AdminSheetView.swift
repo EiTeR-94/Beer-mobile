@@ -27,6 +27,7 @@ struct AdminSheetView: View {
     @State private var ipTitle = "IP invités"
     @State private var ipEntries: [InviteIpEntry] = []
     @State private var inviteToRevoke: InviteItem?
+    @State private var showSettings = false
 
     private let validityOptions: [(String, String)] = [
         ("24h", "24 heures"), ("48h", "48 heures"), ("7d", "7 jours"),
@@ -37,7 +38,7 @@ struct AdminSheetView: View {
         BeerOverlayScreen(
             title: "Administration",
             onClose: { dismiss() },
-            trailing: [.ghost("↻ Actualiser") { Task { await reload() } }]
+            trailing: [.ghost("⚙︎ Paramètres") { showSettings = true }]
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 if let errorMessage { Text(errorMessage).font(.footnote).foregroundStyle(Theme.error) }
@@ -142,6 +143,10 @@ struct AdminSheetView: View {
         .sheet(isPresented: $showIPs) {
             InviteIPsSheetView(title: ipTitle, entries: ipEntries)
                 .beerSheetChrome()
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsSheetView()
+                .environmentObject(app)
         }
         .alert(
             "Révoquer l'invitation ?",

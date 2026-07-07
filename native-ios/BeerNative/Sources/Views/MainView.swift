@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum BeerSheet: String, Identifiable {
-    case history, gallery, wishlist, gifts, admin, patchnotes, pending, settings
+    case history, gallery, wishlist, gifts, admin, patchnotes, pending
     var id: String { rawValue }
 }
 
@@ -44,9 +44,6 @@ struct MainView: View {
                 PatchnotesSheetView()
             case .pending:
                 PendingSheetView()
-                    .environmentObject(app)
-            case .settings:
-                SettingsSheetView()
                     .environmentObject(app)
             }
         }
@@ -133,7 +130,6 @@ struct MainView: View {
         if app.pendingCount > 0 {
             buttons.append(HeaderButton(title: "En attente (\(app.pendingCount))") { sheet = .pending })
         }
-        buttons.append(HeaderButton(title: "⚙︎ Paramètres") { sheet = .settings })
         if app.isInvite {
             buttons.append(HeaderButton(title: "Déconnexion") { showInviteLogoutConfirm = true })
         } else {
