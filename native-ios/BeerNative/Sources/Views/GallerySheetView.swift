@@ -12,6 +12,7 @@ struct GallerySheetView: View {
     @State private var selected: CheckinItem?
     @State private var editing: CheckinItem?
     @State private var loading = false
+    @State private var isLoadingMore = false
     @State private var errorMessage: String?
     @State private var galleryOffset = 0
     @State private var galleryHasMore = true
@@ -78,17 +79,25 @@ struct GallerySheetView: View {
                                 GalleryCell(item: item)
                             }
                             .buttonStyle(.plain)
-                            .onAppear {
-                                if item.id == withPhotos.last?.id, galleryHasMore, !loading {
-                                    Task { await loadGallery(append: true) }
+                        }
+                        
+                        // Dedicated trigger view at the end for pagination to avoid duplicate onAppear fires
+                        if galleryHasMore {
+                            Color.clear
+                                .frame(height: 20)
+                                .onAppear {
+                                    if !loading && !isLoadingMore {
+                                        isLoadingMore = true
+                                        Task { await loadGallery(append: true) }
+                                    }
                                 }
-                            }
                         }
                     }
                     if galleryHasMore && !withPhotos.isEmpty {
-                        BeerLoadMoreButton(title: loading ? "Chargement…" : "Charger plus de photos") {
+                        BeerLoadMoreButton(title: isLoadingMore ? "Chargement…" : "Charger plus de photos") {
                             Task { await loadGallery(append: true) }
                         }
+                        .disabled(isLoadingMore)
                     }
                 }
             }
@@ -132,6 +141,7 @@ struct GallerySheetView: View {
     private func reload(force: Bool) async {
         if loading, !force { return }
         errorMessage = nil
+        isLoadingMore = false
 
         galleryOffset = 0
         galleryHasMore = true
@@ -140,10 +150,14 @@ struct GallerySheetView: View {
     }
 
     private func loadGallery(append: Bool) async {
-        if loading && !append { return }
+        if loading { return }   // serialize loads to prevent duplicate appends from multiple onAppear
         loading = true
+        if append { isLoadingMore = true }
         errorMessage = nil
-        defer { loading = false }
+        defer { 
+            loading = false 
+            if append { isLoadingMore = false }
+        }
 
         do {
             let batch = try await app.api.checkins(
@@ -155,7 +169,10 @@ struct GallerySheetView: View {
                 offset: append ? galleryOffset : 0
             )
             if append {
-                items.append(contentsOf: batch)
+                // avoid adding duplicates if somehow same batch is fetched again
+                let existingIds = Set(items.map { $0.id })
+                let newItems = batch.filter { !existingIds.contains($0.id) }
+                items.append(contentsOf: newItems)
             } else {
                 items = batch
             }
@@ -176,7 +193,6 @@ struct GallerySheetView: View {
                     return
                 }
             }
-            // for append load more, just show error
             errorMessage = err.localizedDescription
         }
     }
