@@ -167,9 +167,27 @@ struct BeerWizardView: View {
                 ForEach(untappdResults) { hit in
                     Button { Task { await selectUntappd(hit) } } label: {
                         HStack(spacing: 10) {
-                            BeerImage(path: hit.photoURL)
+                            // Use AsyncImage for external Untappd labels to guarantee loading (bypasses custom homelab download path that had pinning/transport issues)
+                            if let urlStr = hit.photoURL, let url = URL(string: urlStr) {
+                                AsyncImage(url: url) { phase in
+                                    switch phase {
+                                    case .success(let image):
+                                        image.resizable().aspectRatio(contentMode: .fill)
+                                    case .failure:
+                                        RoundedRectangle(cornerRadius: 8).fill(Theme.card).overlay(Text("🍺").font(.caption2))
+                                    default:
+                                        RoundedRectangle(cornerRadius: 8).fill(Theme.card).overlay(ProgressView().scaleEffect(0.6))
+                                    }
+                                }
                                 .frame(width: 44, height: 44)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .accessibilityLabel("Photo de la bière depuis Untappd")
+                            } else {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Theme.card)
+                                    .frame(width: 44, height: 44)
+                                    .overlay(Text("🍺").font(.caption2).foregroundStyle(Theme.muted))
+                            }
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(hit.beerName).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.text)
                                 Text([hit.brewery, hit.styleFr].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))

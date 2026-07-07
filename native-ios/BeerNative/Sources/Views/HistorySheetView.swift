@@ -235,9 +235,9 @@ struct HistorySheetView: View {
             styles = live
             app.cache.save(live, name: CacheKey.styles)
         }
-        if items.isEmpty, let cached = app.cache.load([CheckinItem].self, name: CacheKey.historyCheckins) {
+        if items.isEmpty, let cached = app.cache.load([CheckinItem].self, name: CacheKey.historyCheckins, maxAge: 86400) {
             items = cached
-            stats = app.cache.load(HistoryStats.self, name: CacheKey.historyStats)
+            stats = app.cache.load(HistoryStats.self, name: CacheKey.historyStats, maxAge: 86400)
         }
         await reload()
     }

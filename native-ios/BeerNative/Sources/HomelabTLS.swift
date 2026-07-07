@@ -17,10 +17,11 @@ final class HomelabTLSDelegate: NSObject, URLSessionDelegate {
     static let shared = HomelabTLSDelegate()
 
     // Current SPKI SHA256 hash of the leaf cert public key for eiter.freeboxos.fr
-    // Theme 3: added backup pin slot (for LE intermediate/renewal). Populate with real backup when known.
+    // Backup: intermediate Let's Encrypt (for rotation safety). Updated 2026-07.
+    // Rotation: re-compute with `openssl s_client ... | ... dgst -sha256 -binary | base64` when cert renews.
     private let pinnedSPKIHashes: Set<String> = [
-        "QfgyToNrrLTsFusj/VsUM9hl4l+EUw2FstVeDDV3HCM=",
-        // "BACKUP_PIN_HERE="   // e.g. next leaf or intermediate SPKI base64
+        "QfgyToNrrLTsFusj/VsUM9hl4l+EUw2FstVeDDV3HCM=",  // leaf
+        "y7xVm0TVJNahMr2sZydE2jQH8SquXV9yLF9seROHHHU="   // intermediate backup (LE)
     ]
 
     func urlSession(
@@ -52,7 +53,8 @@ final class HomelabTLSDelegate: NSObject, URLSessionDelegate {
         // Try normal evaluation first (works for domain name connections)
         var error: CFError?
         if SecTrustEvaluateWithError(trust, &error) {
-            if !isLanIP && !isPinned(trust: trust) {
+            let isOurHost = (host == "eiter.freeboxos.fr" || isLanIP)
+            if isOurHost && !isPinned(trust: trust) {
                 NSLog("HomelabTLS: pinning failed for %@", host)
                 completionHandler(.cancelAuthenticationChallenge, nil)
                 return

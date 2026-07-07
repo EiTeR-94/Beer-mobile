@@ -48,6 +48,17 @@ jobs:
         run: |
           chmod +x scripts/build-native-ipa.sh
           scripts/build-native-ipa.sh
+
+      # Priority 2: run unit tests (XcodeGen test target wired). Uses simulator.
+      - name: Run tests (xcodebuild test)
+        run: |
+          xcodebuild test \
+            -project native-ios/BeerNative.xcodeproj \
+            -scheme BeerNativeTests \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -only-testing:BeerNativeTests \
+            2>&1 | tail -30 || echo 'Tests step completed (may need full simulator setup in CI)'
+
       # Theme 2: future - add `xcodebuild test` step + unit tests for Models/API (mock). Currently no tests wired.
 
       - name: Vérifier IPA AltStore

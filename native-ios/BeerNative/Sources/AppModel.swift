@@ -3,6 +3,9 @@ import Network
 import Security
 import UIKit
 import LocalAuthentication  // Theme 4: biometric support for sensitive actions
+import os  // Priority 6: structured logging
+
+private let logger = Logger(subsystem: "fr.eiter.plexibeer", category: "AppModel")
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -38,6 +41,7 @@ final class AppModel: ObservableObject {
 
     var pendingItems: [PendingCheckin] { offline.items }
     var pendingDeletes: [Int] { offline.pendingDeletes }  // Theme 5
+    var pendingEdits: [Int] { offline.pendingEdits }  // Priority 6 stub
 
     func removePending(id: UUID) {
         offline.remove(id: id)
@@ -472,6 +476,7 @@ final class AppModel: ObservableObject {
             showToast("\(n) action(s) synchronisée(s)", variant: .success)
             hapticSuccess()
             objectWillChange.send()
+            logger.info("Synced \(n) pending actions")
         }
     }
 

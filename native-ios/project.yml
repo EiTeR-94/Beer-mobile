@@ -8,7 +8,7 @@ settings:
   base:
     SWIFT_VERSION: "5.9"
     IPHONEOS_DEPLOYMENT_TARGET: "16.0"
-    TARGETED_DEVICE_FAMILY: "1"
+    TARGETED_DEVICE_FAMILY: "1,2"  # Priority 5: basic iPad support (in addition to iPhone)
     INFOPLIST_FILE: BeerNative/Resources/Info.plist
     PRODUCT_BUNDLE_IDENTIFIER: fr.eiter.plexibeer
     MARKETING_VERSION: "3.3.4"
@@ -40,6 +40,21 @@ targets:
         PRODUCT_NAME: PlexiBeer
         GENERATE_INFOPLIST_FILE: NO
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+
+  # Priority 2: Test target wired (XcodeGen). Includes ExampleModelTests + can add mocks.
+  # To build: xcodegen ; xcodebuild test -project BeerNative.xcodeproj -scheme BeerNativeTests -destination 'platform=iOS Simulator,name=iPhone 16'
+  BeerNativeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: BeerNative/Tests
+    dependencies:
+      - target: BeerNative
+    settings:
+      base:
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/PlexiBeer.app/PlexiBeer"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
 schemes:
   BeerNative:
     build:
@@ -49,3 +64,11 @@ schemes:
       config: Debug
     archive:
       config: Release
+  # Test scheme for CI
+  BeerNativeTests:
+    build:
+      targets:
+        BeerNativeTests: all
+    test:
+      targets:
+        - BeerNativeTests

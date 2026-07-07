@@ -36,9 +36,15 @@ final class BeerOfflineCache {
         try? data.write(to: file(name), options: Data.WritingOptions.atomic)
     }
 
-    func load<T: Decodable>(_ type: T.Type, name: String) -> T? {
+    func load<T: Decodable>(_ type: T.Type, name: String, maxAge: TimeInterval? = nil) -> T? {
         guard let data = try? Data(contentsOf: file(name)),
               let env = try? decoder.decode(CacheEnvelopeDec<T>.self, from: data) else { return nil }
+        if let maxAge = maxAge {
+            if Date().timeIntervalSince(env.savedAt) > maxAge {
+                try? FileManager.default.removeItem(at: file(name))
+                return nil
+            }
+        }
         return env.payload
     }
 

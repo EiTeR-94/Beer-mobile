@@ -580,17 +580,37 @@ final class BeerAPI {
     }
 
     func downloadAsset(_ pathOrURL: String?) async throws -> Data {
+        guard let p = pathOrURL, !p.isEmpty else {
+            throw BeerAPIError.invalidURL
+        }
+
+        if p.hasPrefix("http://") || p.hasPrefix("https://") {
+            // External asset (e.g. Untappd search result labels, or other third-party images).
+            // Use plain system networking — do NOT go through homelab transport, cookie injection,
+            // custom IPv4 protocol or our TLS pinning delegate.
+            guard let url = URL(string: p) else { throw BeerAPIError.invalidURL }
+            // Theme 3: retry with backoff also for external photos (centralized)
+            return try await NetworkManager.shared.withRetry(maxAttempts: 3, baseDelayMs: 400) {
+                let (data, resp) = try await URLSession.shared.data(from: url)
+                if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
+                    throw BeerAPIError.server("Fichier externe HTTP \(http.statusCode)")
+                }
+                return data
+            }
+        }
+
+        // Internal server asset (relative path like "photos/..." or "static/...").
+        // Force LAN base for local accounts to avoid domain (eiter.freeboxos.fr) unreachable.
         var useBase = baseURL
-        // For local accounts, force LAN base for assets to avoid domain (eiter.freeboxos.fr) unreachable
         if !shouldUsePasskeyBearer {
             useBase = ServerSettings.lanApiBase
         }
-        guard let resolved = ServerSettings.resolveAssetURL(pathOrURL, base: useBase) else {
+        guard let resolved = ServerSettings.resolveAssetURL(p, base: useBase) else {
             throw BeerAPIError.invalidURL
         }
         var req = URLRequest(url: resolved)
-        // Theme 3: retry with backoff for photo downloads (critical for gallery)
-        return try await withRetry(maxAttempts: 3, baseDelayMs: 400) {
+        // Theme 3: retry with backoff via central NetworkManager
+        return try await NetworkManager.shared.withRetry(maxAttempts: 3, baseDelayMs: 400) {
             let (data, http, _) = try await self.performTransport(req)
             try self.throwIfUnauthorized(http.statusCode)
             if http.statusCode != 200 { throw BeerAPIError.server("Fichier HTTP \(http.statusCode)") }
@@ -605,12 +625,15 @@ final class BeerAPI {
             URLQueryItem(name: "limit", value: "5"),
         ]
         var req = URLRequest(url: components.url!)
-        let (data, http, _) = try await performTransport(req)
-        try throwIfUnauthorized(http.statusCode)
-        guard let decoded = try? JSONDecoder().decode(UntappdSearchResponse.self, from: data) else {
-            throw BeerAPIError.decode
+        // Priority 3: extend retry backoff to untappd search too
+        return try await NetworkManager.shared.withRetry {
+            let (data, http, _) = try await performTransport(req)
+            try throwIfUnauthorized(http.statusCode)
+            guard let decoded = try? JSONDecoder().decode(UntappdSearchResponse.self, from: data) else {
+                throw BeerAPIError.decode
+            }
+            return decoded
         }
-        return decoded
     }
 
     func saveProduct(barcode: String, beerName: String, brewery: String, style: String) async throws -> LookupResponse {
@@ -1051,21 +1074,5 @@ final class BeerAPI {
         return body
     }
 
-    // Theme 3: exponential backoff retry for critical ops (photos, etc). LAN preferred.
-    private func withRetry<T>(maxAttempts: Int = 3, baseDelayMs: UInt64 = 300, _ op: () async throws -> T) async throws -> T {
-        var attempt = 0
-        var lastErr: Error?
-        while attempt < maxAttempts {
-            do {
-                return try await op()
-            } catch {
-                lastErr = error
-                attempt += 1
-                if attempt >= maxAttempts { break }
-                let delay = baseDelayMs * UInt64(1 << (attempt - 1))   // 300, 600, 1200...
-                try? await Task.sleep(nanoseconds: delay * 1_000_000)
-            }
-        }
-        throw lastErr ?? BeerAPIError.network(NSError(domain: "retry", code: -1))
-    }
+    // Note: retry logic centralized in NetworkManager (priority 3). Local copy removed to avoid duplication.
 }

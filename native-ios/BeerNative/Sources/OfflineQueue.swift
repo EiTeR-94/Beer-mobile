@@ -4,6 +4,7 @@ import Foundation
 final class OfflineQueue: ObservableObject {
     @Published private(set) var items: [PendingCheckin] = []
     @Published private(set) var pendingDeletes: [Int] = []  // Theme 5: support offline deletes
+    @Published private(set) var pendingEdits: [Int] = []  // Priority 6 stub: offline edits (needs backend PATCH + diffing for full)
 
     private let fileURL: URL
     private let deletesFileURL: URL
@@ -43,6 +44,14 @@ final class OfflineQueue: ObservableObject {
     func removePendingDelete(checkinId: Int) {
         pendingDeletes.removeAll { $0 == checkinId }
         persistDeletes()
+    }
+
+    // Priority 6: stub for offline edits support (enqueued on edit when offline)
+    func enqueueEdit(checkinId: Int) {
+        if !pendingEdits.contains(checkinId) {
+            pendingEdits.append(checkinId)
+            // persist stub omitted for minimal change; full would save diffs
+        }
     }
 
     private func persistDeletes() {
