@@ -885,7 +885,7 @@ final class BeerAPI {
             }
         }
         if let lastError { throw lastError }
-        throw BeerAPIError.server("Serveur injoignable en 5G (IPv4)")
+        throw BeerAPIError.server("Serveur injoignable en 5G (IPv4). Vérifie ta connexion cellulaire.")
     }
 
     private func request(
@@ -925,7 +925,7 @@ final class BeerAPI {
         let tried = ServerSettings.candidateURLs.map(\.absoluteString).joined(separator: ", ")
         if let lastError { throw lastError }
         throw BeerAPIError.allEndpointsFailed(
-            "Aucun serveur joignable (\(tried)). Active « Réseau local » pour Beer Log dans Réglages iPhone."
+            "Aucun serveur joignable (\(tried)). Vérifie ta connexion Wi-Fi/VPN et l'autorisation « Réseau local » dans Réglages."
         )
     }
 
@@ -966,11 +966,16 @@ final class BeerAPI {
         } catch let err as URLError {
             switch err.code {
             case .cannotConnectToHost, .networkConnectionLost:
-                throw BeerAPIError.server("Injoignable : \(endpoint.host ?? "?")")
+                throw BeerAPIError.server("Injoignable : \(endpoint.host ?? "?"). Vérifie Wi-Fi/VPN et que le serveur est up.")
             case .secureConnectionFailed, .serverCertificateUntrusted:
-                throw BeerAPIError.server("SSL refusé sur \(endpoint.host ?? "?")")
+                let host = endpoint.host ?? "?"
+                if host.hasPrefix("192.168.") {
+                    throw BeerAPIError.server("SSL refusé sur \(host). Active « Réseau local » pour Beer Log dans Réglages > Confidentialité et sécurité, et réessaie.")
+                } else {
+                    throw BeerAPIError.server("SSL refusé sur \(host).")
+                }
             case .timedOut:
-                throw BeerAPIError.server("Timeout \(endpoint.host ?? "?")")
+                throw BeerAPIError.server("Timeout \(endpoint.host ?? "?"). Le serveur est lent ou injoignable.")
             case .notConnectedToInternet:
                 throw BeerAPIError.server("Pas de réseau")
             default:

@@ -20,7 +20,9 @@ enum ServerSettings {
     }
 
     static var candidateURLs: [URL] {
-        [lanApiBase]
+        // LAN IP first (fast, avoids hairpin/DNS issues), then domain as fallback
+        // for cases where direct IP has transient problems.
+        [lanApiBase, URL(string: "https://\(canonicalHost):8444/beer/")!]
     }
 
     static var passkeyBaseURLs: [URL] {

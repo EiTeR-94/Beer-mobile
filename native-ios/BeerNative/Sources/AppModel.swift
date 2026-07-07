@@ -43,6 +43,7 @@ final class AppModel: ObservableObject {
     private var toastTask: Task<Void, Never>?
     private var syncTask: Task<Void, Never>?
     private var probeTask: Task<Void, Never>?
+    private var retryTask: Task<Void, Never>?
     private var syncInProgress = false
 
     init() {
@@ -88,6 +89,23 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func scheduleRetryProbe() {
+        retryTask?.cancel()
+        retryTask = Task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000) // 5s
+            guard !Task.isCancelled else { return }
+            if networkStatus == .serverUnreachable {
+                await probeServerReachability()
+                if networkStatus == .serverUnreachable {
+                    // retry again later with backoff
+                    try? await Task.sleep(nanoseconds: 15_000_000_000) // 15s
+                    guard !Task.isCancelled else { return }
+                    await probeServerReachability()
+                }
+            }
+        }
+    }
+
     private func scheduleSyncDebounced() {
         syncTask?.cancel()
         syncTask = Task {
@@ -105,8 +123,10 @@ final class AppModel: ObservableObject {
         if await api.discoverWorkingEndpoint() != nil {
             networkStatus = .online
             serverVersion = (try? await api.version()) ?? serverVersion
+            retryTask?.cancel()
         } else {
             networkStatus = .serverUnreachable
+            scheduleRetryProbe()
         }
     }
 
@@ -189,13 +209,23 @@ final class AppModel: ObservableObject {
     }
 
     func testServer() async -> String {
-        api.setBaseURL(ServerSettings.lanApiBase)
-        if let ok = await api.discoverWorkingEndpoint() {
-            networkStatus = .online
-            return "Serveur OK · \(ok)"
+        // Test LAN IP first, then domain as fallback (more diagnostic info)
+        let endpoints = [ServerSettings.lanApiBase, ServerSettings.apiBase]
+        var results: [String] = []
+        for ep in endpoints {
+            api.setBaseURL(ep)
+            do {
+                let ok = await api.discoverWorkingEndpoint()
+                if ok != nil {
+                    networkStatus = .online
+                    return "Serveur OK via \(ep.host ?? "?"):\(ep.port ?? 0)"
+                }
+            } catch {
+                results.append("\(ep.host ?? "?"): \(error.localizedDescription)")
+            }
         }
         networkStatus = isOnline ? .serverUnreachable : .offline
-        return "Échec — vérifie ta connexion Wi‑Fi ou VPN Plexi."
+        return "Échec. Tests: \(results.joined(separator: " | ")) — Vérifie Wi-Fi/VPN + autorisation Réseau local."
     }
 
     func login(username: String, password: String) async throws {
