@@ -6,6 +6,7 @@ struct LoginView: View {
     @State private var password = ""
     @State private var error: String?
     @State private var busy = false
+    @State private var biometricsUnavailable = !PasskeyAuth.biometricsAvailable
 
     var body: some View {
         ZStack {
@@ -41,10 +42,28 @@ struct LoginView: View {
                         Task { await submit() }
                     }
 
-                    BeerPrimaryButton(title: "Coller mon invitation", disabled: busy, busy: busy) {
+                    BeerPrimaryButton(
+                        title: busy ? "Activation…" : "Activer avec Face ID",
+                        disabled: busy || biometricsUnavailable,
+                        busy: busy
+                    ) {
                         Task { await app.redeemInviteFromClipboard() }
                     }
                     .padding(.top, 10)
+
+                    Text("Colle ton lien d'invitation — Face ID ou Touch ID requis.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 8)
+
+                    if biometricsUnavailable {
+                        Text("Biométrie indisponible sur cet appareil.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.error)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 6)
+                    }
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 28)

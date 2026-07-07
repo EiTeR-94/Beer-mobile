@@ -35,6 +35,8 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Active ton invitation Beer Log et sécurise ta session invité.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Scanner les codes-barres et prendre des photos de tes dégustations.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

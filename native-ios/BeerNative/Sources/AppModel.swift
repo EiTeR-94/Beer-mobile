@@ -105,6 +105,9 @@ final class AppModel: ObservableObject {
         if loggedIn, let user {
             BeerSessionStore.save(user: user, isAdmin: isAdmin, isInvite: isInvite)
             KeychainStore.username = user
+            if !isInvite {
+                PasskeySessionStore.clear()
+            }
         }
     }
 
@@ -125,7 +128,7 @@ final class AppModel: ObservableObject {
             return
         }
         do {
-            let me = try await api.me()
+            let me = try await fetchMeRefreshingPasskeyIfNeeded()
             if me.auth && me.user == nil {
                 await logout()
                 return
@@ -137,6 +140,12 @@ final class AppModel: ObservableObject {
                 loggedIn: me.user != nil
             )
             if isLoggedIn { await syncPending() }
+        } catch BeerAPIError.forbidden {
+            showToast(
+                "Invitation invalide ou expirée — demande un nouveau lien à l'admin.",
+                variant: .error,
+                durationMs: 5200
+            )
         } catch {
             if !isLoggedIn, let saved = BeerSessionStore.restore() {
                 applySession(user: saved.user, isAdmin: saved.isAdmin, isInvite: saved.isInvite, loggedIn: true)
@@ -168,6 +177,7 @@ final class AppModel: ObservableObject {
     }
 
     func login(username: String, password: String) async throws {
+        PasskeySessionStore.clear()
         _ = try await api.login(username: username, password: password)
         let me = try await api.me()
         applySession(
@@ -190,22 +200,67 @@ final class AppModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         do {
-            let res = try await api.redeemInvite(token: token)
+            guard PasskeyAuth.biometricsAvailable else {
+                showToast(
+                    "Face ID ou Touch ID requis pour activer l'invitation.",
+                    variant: .error,
+                    durationMs: 4800
+                )
+                return
+            }
+            let result = try await PasskeyAuth.shared.register(inviteToken: token)
+            PasskeySessionStore.save(accessToken: result.accessToken)
             let me = try await api.me()
             applySession(
-                user: me.user ?? res.user,
-                isAdmin: me.isAdmin,
-                isInvite: me.isInvite,
-                loggedIn: me.user != nil
+                user: me.user ?? result.user,
+                isAdmin: false,
+                isInvite: true,
+                loggedIn: true
             )
             networkStatus = .online
             hideToast()
-            let label = res.label ?? user ?? "invité"
+            let label = result.label ?? user ?? "invité"
             showToast("Bienvenue \(label) !", variant: .success, durationMs: 3600)
             await syncPending()
         } catch let err {
             showToast(err.localizedDescription, variant: .error, durationMs: 4800)
         }
+    }
+
+    private func fetchMeRefreshingPasskeyIfNeeded() async throws -> MeResponse {
+        do {
+            return try await api.me()
+        } catch BeerAPIError.forbidden where shouldRefreshPasskeySession {
+            await clearInviteSession()
+            throw BeerAPIError.forbidden
+        } catch BeerAPIError.unauthorized where shouldRefreshPasskeySession {
+            guard let username = KeychainStore.username ?? BeerSessionStore.restore()?.user else {
+                throw BeerAPIError.unauthorized
+            }
+            guard PasskeyAuth.biometricsAvailable else { throw BeerAPIError.unauthorized }
+            do {
+                let token = try await PasskeyAuth.shared.login(username: username)
+                PasskeySessionStore.save(accessToken: token)
+                return try await api.me()
+            } catch {
+                await clearInviteSession()
+                throw error
+            }
+        }
+    }
+
+    private func clearInviteSession() async {
+        PasskeySessionStore.clear()
+        BeerSessionStore.clear()
+        user = nil
+        isAdmin = false
+        isInvite = false
+        isLoggedIn = false
+        KeychainStore.username = nil
+    }
+
+    private var shouldRefreshPasskeySession: Bool {
+        PasskeySessionStore.accessToken != nil || BeerSessionStore.restore()?.isInvite == true
     }
 
     private static func parseJoinToken(from url: URL) -> String? {
@@ -254,6 +309,7 @@ final class AppModel: ObservableObject {
         isInvite = false
         isLoggedIn = false
         BeerSessionStore.clear()
+        PasskeySessionStore.clear()
         KeychainStore.username = nil
         hideToast()
     }
