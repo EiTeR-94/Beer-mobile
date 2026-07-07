@@ -46,7 +46,7 @@ final class AppModel: ObservableObject {
     private var syncInProgress = false
 
     init() {
-        api.setBaseURL(ServerSettings.apiBase)
+        api.setBaseURL(ServerSettings.lanApiBase)  // Local accounts only
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in
                 self?.handlePathUpdate(path)
@@ -163,11 +163,11 @@ final class AppModel: ObservableObject {
 
     func applyServerURL(_ raw: String) {
         _ = raw
-        api.setBaseURL(ServerSettings.apiBase)
+        api.setBaseURL(ServerSettings.lanApiBase)
     }
 
     func testServer() async -> String {
-        api.setBaseURL(ServerSettings.apiBase)
+        api.setBaseURL(ServerSettings.lanApiBase)  // Local only now
         if let ok = await api.discoverWorkingEndpoint() {
             networkStatus = .online
             return "Serveur OK · \(ok)"
@@ -178,6 +178,7 @@ final class AppModel: ObservableObject {
 
     func login(username: String, password: String) async throws {
         PasskeySessionStore.clear()
+        api.setBaseURL(ServerSettings.lanApiBase)  // Local accounts: force LAN path for WiFi/VPN
         _ = try await api.login(username: username, password: password)
         let me = try await api.me()
         applySession(

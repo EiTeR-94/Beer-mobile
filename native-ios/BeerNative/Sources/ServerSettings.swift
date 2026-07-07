@@ -12,14 +12,14 @@ enum ServerSettings {
         URL(string: apiBaseString)!
     }
 
-    /// Hub LAN :8444 — cookies admin OK (FQDN). :443 = fallback IPv4 (passkey / 4G).
-    /// On WiFi/VPN, relies on local DNS or hairpin to reach internal. Host header must be the domain for nginx server_name.
+    /// Direct LAN IP for local accounts (WiFi/VPN) — avoids DNS/hairpin issues.
+    /// Uses 192.168.1.50:8444, TLS delegate accepts it.
     static var lanApiBase: URL {
-        URL(string: "https://\(canonicalHost):8444/beer/")!
+        URL(string: "https://192.168.1.50:8444/beer/")!
     }
 
     static var candidateURLs: [URL] {
-        [lanApiBase, apiBase]
+        [lanApiBase]
     }
 
     static var passkeyBaseURLs: [URL] {
