@@ -70,19 +70,19 @@ final class BeerAPI {
             delegate: HomelabTLSDelegate.shared,
             delegateQueue: nil
         )
-        // Invités 5G + passkey : IPv4 forcé sur :443 + Bearer nginx-gate.
-        // Longer timeouts for 5G/cellular connections which can be slower/unreliable.
-        let passkeyConfig = baseConfig(requestTimeout: 60, resourceTimeout: 180)
-        passkeyConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
-        self.passkeySession = URLSession(
-            configuration: passkeyConfig,
-            delegate: HomelabTLSDelegate.shared,
-            delegateQueue: nil
-        )
+        // Invités 5G : chemin STANDARD vers le domaine (comme le navigateur webapp).
+        // PAS de PlexiIPv4URLProtocol, PAS de HomelabTLSDelegate, PAS de transport custom.
+        // Ça permet d'utiliser la résolution DNS et connexion normale en 5G pur.
+        // (Le stack custom IPv4/TLS est réservé aux locaux LAN pour éviter les emmerdes IPv6/SSL sur IP.)
+        let guestConfig = baseConfig(requestTimeout: 60, resourceTimeout: 180)
+        // pas de protocolClasses, pas de delegate custom
+        self.passkeySession = URLSession(configuration: guestConfig)  // plain standard pour guests 5G
     }
 
     private func session(for endpoint: URL, guest: Bool, probe: Bool = false) -> URLSession {
-        if guest { return passkeySession }
+        if guest {
+            return passkeySession  // plain standard pour 5G invités (comme browser)
+        }
         // Only the explicit health probe in discover uses the short-timeout lanProbeSession.
         // All real LAN calls (login, API, etc) must use the normal long-timeout session.
         if probe && ServerSettings.isLanEndpoint(endpoint) { return lanProbeSession }
@@ -1035,10 +1035,9 @@ final class BeerAPI {
     }
 
     private func performWan(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
-        // For guest/5G/WAN calls, force the IPv4 transport directly.
-        // This ensures we always use the custom IPv4 + SNI path for the domain,
-        // bypassing any potential issues with protocol interception in the session.
-        try await HomelabIPv4Transport.perform(request)
+        // Chemin guest 5G : on utilise la session plain (standard) via performOnEndpoint.
+        // Pas de custom transport ici (réservé aux locaux).
+        try await performOnEndpoint(ServerSettings.apiBase, request: request, guest: true)
     }
 
     private static func canonicalBase(_ url: URL) -> URL {

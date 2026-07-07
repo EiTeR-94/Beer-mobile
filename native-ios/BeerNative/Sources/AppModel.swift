@@ -303,11 +303,9 @@ final class AppModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         do {
-            // Guest connection path: strictly separate from local accounts.
-            // Uses passkey registration for invite token (same as web invite system),
-            // Bearer token (PasskeySessionStore), apiBase (domain), isInvite=true.
-            // NEVER touches lanApiBase, cookies, or local LAN logic.
-            // Retry for 5G unreliability.
+            // Vrai chemin 5G pour invités : on force le guest path standard (domaine + plain session).
+            // Pas de LAN, pas de custom IPv4 protocol, pas de cookies locaux.
+            // Même système que web (passkey + token invité).
             let result = try await NetworkManager.shared.withRetry(maxAttempts: 3, baseDelayMs: 1000) {
                 try await PasskeyAuth.shared.register(inviteToken: token)
             }
@@ -318,8 +316,7 @@ final class AppModel: ObservableObject {
                 isInvite: true,
                 loggedIn: true
             )
-            // Force guest base (domain) - separate connection
-            api.setBaseURL(ServerSettings.apiBase)
+            api.setBaseURL(ServerSettings.apiBase)  // domaine, pas lan
             networkStatus = .online
             hideToast()
             await syncPending()

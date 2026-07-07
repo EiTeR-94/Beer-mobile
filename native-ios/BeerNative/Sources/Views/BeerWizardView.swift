@@ -238,7 +238,7 @@ struct BeerWizardView: View {
 
             if let product, !product.beerName.isEmpty {
                 BeerPreviewCard(product: product)
-                // Native guests (isInvite): full features, separate connection from locals.
+                // Invités 5G : full features (même que web), via chemin standard domaine.
                 BeerSecondaryButton(title: "+ Ajouter à la liste « À boire »") {
                     Task { await addToWishlist(product) }
                 }

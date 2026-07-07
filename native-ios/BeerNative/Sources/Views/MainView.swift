@@ -120,9 +120,7 @@ struct MainView: View {
             buttons.append(HeaderButton(title: "Patch notes") { sheet = .patchnotes })
             buttons.append(HeaderButton(title: "Admin") { sheet = .admin })
         }
-        // For native guests (isInvite): allow full app use like locals (wishlist, gifts etc.).
-        // Restrictions (timers, no admin) are enforced backend + duration.
-        // Local connection path untouched.
+        // Invités 5G : full features (comme web), chemin séparé.
         buttons.append(HeaderButton(title: "À boire") { sheet = .wishlist })
         buttons.append(HeaderButton(title: "Historique") { sheet = .history })
         buttons.append(HeaderButton(title: "Idées cadeaux") { sheet = .gifts })

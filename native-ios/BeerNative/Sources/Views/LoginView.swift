@@ -44,9 +44,8 @@ struct LoginView: View {
                     BeerPrimaryButton(title: busy ? "Connexion…" : "Se connecter", disabled: username.isEmpty || password.isEmpty, busy: busy) {
                         Task { await submit() }
                     }
-                    // Connexion invité : separate connection path (domain + Bearer/passkey + isInvite).
-                    // Uses exactly the same invite system as web (timers, restrictions, etc.).
-                    // Does NOT use local LAN/cookie config at all.
+                    // Bouton pour invités 5G : utilise son propre chemin (domaine + Bearer/passkey standard)
+                    // Identique à la webapp. Pas de stack LAN custom.
                     BeerPrimaryButton(
                         title: busy ? "Connexion invité…" : "Connexion invité",
                         disabled: busy || biometricsUnavailable,
@@ -56,7 +55,7 @@ struct LoginView: View {
                     }
                     .padding(.top, 10)
 
-                    Text("Colle ton lien d'invitation (même système que la web) — Face ID requis.")
+                    Text("Colle ton lien d'invitation (5G) — Face ID requis. Chemin séparé des locaux.")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)
