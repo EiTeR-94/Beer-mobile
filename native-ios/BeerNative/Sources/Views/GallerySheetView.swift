@@ -131,9 +131,7 @@ struct GallerySheetView: View {
 
     private func reload(force: Bool) async {
         if loading, !force { return }
-        loading = true
         errorMessage = nil
-        defer { loading = false }
 
         galleryOffset = 0
         galleryHasMore = true
@@ -142,10 +140,10 @@ struct GallerySheetView: View {
     }
 
     private func loadGallery(append: Bool) async {
-        guard !loading || append else { return }
-        if !append { loading = true }
+        if loading && !append { return }
+        loading = true
         errorMessage = nil
-        defer { if !append { loading = false } }
+        defer { loading = false }
 
         do {
             let batch = try await app.api.checkins(
@@ -168,12 +166,18 @@ struct GallerySheetView: View {
             }
             app.prewarmPhotos(batch)
         } catch let err {
-            if !append, let cached = app.cache.load([CheckinItem].self, name: CacheKey.historyCheckins), !cached.isEmpty {
-                items = cached
-                errorMessage = "Galerie en cache — \(app.networkStatus.label.lowercased())"
-            } else if force || items.isEmpty {
-                errorMessage = err.localizedDescription
+            if !append {
+                if let cached = app.cache.load([CheckinItem].self, name: CacheKey.historyCheckins), !cached.isEmpty {
+                    items = cached
+                    errorMessage = "Galerie en cache — \(app.networkStatus.label.lowercased())"
+                    return
+                } else {
+                    errorMessage = err.localizedDescription
+                    return
+                }
             }
+            // for append load more, just show error
+            errorMessage = err.localizedDescription
         }
     }
 }
