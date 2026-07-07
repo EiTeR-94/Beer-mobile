@@ -301,6 +301,9 @@ final class AppModel: ObservableObject {
 
     func redeemInviteToken(_ token: String) async {
         isLoading = true
+        // Message spécifique pour le flow 5G invité (le Face ID ne vient qu'après l'appel réseau)
+        // Sur 5G le premier appel (register/options) peut prendre 10-25s à cause de la latence + transport IPv4.
+        showToast("Activation invité 5G : connexion au serveur (peut être long la première fois)...", variant: .info, durationMs: 15000)
         defer { isLoading = false }
         do {
             // Vrai chemin 5G pour invités : guest path (domaine) avec forçage IPv4
@@ -321,7 +324,7 @@ final class AppModel: ObservableObject {
             hideToast()
             await syncPending()
         } catch {
-            showToast("Échec activation invitation : \(error.localizedDescription)", variant: .error)
+            showToast("Échec activation invitation : \(error.localizedDescription). Vérifie le lien et réessaie (nouveau lien recommandé).", variant: .error)
         }
     }
 

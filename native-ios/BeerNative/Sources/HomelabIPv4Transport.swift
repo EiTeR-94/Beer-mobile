@@ -14,7 +14,7 @@ import Network
 enum HomelabIPv4Transport {
     private static let wanIP = ServerSettings.wanIPv4
     private static let tlsHost = ServerSettings.canonicalHost
-    private static let timeoutSeconds: UInt64 = 25  // cellular 5G: fail faster to avoid "ultra long loading" feel; WAN latency is higher than LAN
+    private static let timeoutSeconds: UInt64 = 35  // 5G: un peu plus de marge pour latence + envoi POST (le connect a son propre timeout 12s)
 
     static func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         try await withThrowingTaskGroup(of: (Data, HTTPURLResponse, URL).self) { group in
@@ -59,9 +59,18 @@ enum HomelabIPv4Transport {
                 cont.resume(with: result)
             }
 
+            // Connect timeout spécifique pour 5G (le handshake TCP+TLS peut être lent sur cellulaire)
+            let connectTimeoutTask = Task {
+                try? await Task.sleep(nanoseconds: 12_000_000_000) // 12s pour le .ready
+                if !resumed {
+                    finish(.failure(BeerAPIError.server("Timeout connexion 5G (établissement lent). Réessaie ou passe en WiFi/VPN.")))
+                }
+            }
+
             conn.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
+                    connectTimeoutTask.cancel()
                     Task {
                         do {
                             let out = try await exchange(conn: conn, method: method, path: path, request: request, body: body, url: url)
@@ -71,8 +80,13 @@ enum HomelabIPv4Transport {
                         }
                     }
                 case .failed(let err):
+                    connectTimeoutTask.cancel()
                     finish(.failure(BeerAPIError.network(err)))
+                case .waiting(let err):
+                    // On continue d'attendre un peu (5G peut mettre du temps), le connect timeout gérera
+                    break
                 case .cancelled:
+                    connectTimeoutTask.cancel()
                     if !resumed {
                         finish(.failure(BeerAPIError.server("Connexion interrompue")))
                     }
