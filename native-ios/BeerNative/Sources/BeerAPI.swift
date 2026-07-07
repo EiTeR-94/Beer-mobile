@@ -366,7 +366,8 @@ final class BeerAPI {
 
     func styles() async throws -> [StyleOption] {
         let (data, http, _) = try await request(path: "/api/styles", method: "GET", body: nil)
-        try throwIfUnauthorized(http.statusCode)
+        // pas de throw unauthorized ici pour éviter clear/toast sur appel non critique
+        if http.statusCode == 401 { return [] }
         return (try? JSONDecoder().decode([StyleOption].self, from: data)) ?? []
     }
 
@@ -839,6 +840,14 @@ final class BeerAPI {
         }
     }
 
+    private func beerSessionCookieString() -> String? {
+        // Force beer_session cookie for local accounts (IP direct can have matching issues)
+        if let cookie = HTTPCookieStorage.shared.cookies?.first(where: { $0.name == "beer_session" }) {
+            return "beer_session=\(cookie.value)"
+        }
+        return nil
+    }
+
     private static func passkeyErrorMessage(_ status: Int) -> String {
         status == 403 ? "Cette invitation est liée à un autre appareil." : "Passkey refusée"
     }
@@ -896,7 +905,9 @@ final class BeerAPI {
             applyCommonHeaders(to: &req)
             req.httpBody = body
             // Manually ensure session cookie is sent for local accounts (in case auto cookie handling misses it for the IP base)
-            if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL), !cookies.isEmpty {
+            if let cookieStr = beerSessionCookieString() {
+                req.setValue(cookieStr, forHTTPHeaderField: "Cookie")
+            } else if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL), !cookies.isEmpty {
                 let cookieString = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
                 req.setValue(cookieString, forHTTPHeaderField: "Cookie")
             }
@@ -924,7 +935,9 @@ final class BeerAPI {
         // probe: false to use normal (long) timeout; short timeout only for explicit health probe in discover
         var req = request
         // Manually ensure session cookie is sent for local accounts (in case auto cookie handling misses it for the IP base)
-        if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL), !cookies.isEmpty {
+        if let cookieStr = beerSessionCookieString() {
+            req.setValue(cookieStr, forHTTPHeaderField: "Cookie")
+        } else if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL), !cookies.isEmpty {
             let cookieString = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
             req.setValue(cookieString, forHTTPHeaderField: "Cookie")
         }

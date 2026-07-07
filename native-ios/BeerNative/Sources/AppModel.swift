@@ -61,7 +61,7 @@ final class AppModel: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 if self.isLoggedIn {
-                    await self.clearSessionState()
+                    // Ne plus clear automatiquement pour éviter de délogguer sur un appel raté (ex: styles)
                     self.showToast("Session expirée — reconnecte-toi", variant: .error, durationMs: 3500)
                 }
             }
