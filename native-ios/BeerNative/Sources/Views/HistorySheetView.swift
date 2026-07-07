@@ -3,13 +3,11 @@ import SwiftUI
 struct HistorySheetView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
-    var initialSearch: String = ""
     var onOpenGallery: (() -> Void)?
 
     @State private var items: [CheckinItem] = []
     @State private var stats: HistoryStats?
     @State private var styles: [StyleOption] = []
-    @State private var search = ""
     @State private var filterStyle = ""
     @State private var filterRating: Double = 0
     @State private var filterPeriod = ""
@@ -41,7 +39,6 @@ struct HistorySheetView: View {
                     filterPeriod: $filterPeriod,
                     styles: styles
                 )
-                BeerHistorySearchField(text: $search)
 
                 if let error {
                     Text(error).font(.footnote).foregroundStyle(Theme.error)
@@ -55,9 +52,7 @@ struct HistorySheetView: View {
                     BeerEmptyState(
                         icon: "🍺",
                         title: "Aucune dégustation",
-                        subtitle: search.isEmpty
-                            ? "Note ta première bière depuis l'accueil."
-                            : "Aucun résultat pour « \(search) »."
+                        subtitle: "Note ta première bière depuis l'accueil."
                     )
                 } else {
                     LazyVStack(spacing: 11) {
@@ -80,14 +75,10 @@ struct HistorySheetView: View {
                 }
             }
         }
-        .onChange(of: search, perform: { _ in Task { await reload() } })
         .onChange(of: filterStyle, perform: { _ in Task { await reload() } })
         .onChange(of: filterRating, perform: { _ in Task { await reload() } })
         .onChange(of: filterPeriod, perform: { _ in Task { await reload() } })
-        .task {
-            if !initialSearch.isEmpty && search.isEmpty { search = initialSearch }
-            await bootstrap()
-        }
+        .task { await bootstrap() }
         .refreshable { await reload() }
         .fullScreenCover(item: $selected) { item in
             CheckinDetailView(
@@ -260,7 +251,7 @@ struct HistorySheetView: View {
         defer { loading = false }
         do {
             let batch = try await app.api.checkins(
-                q: search.trimmingCharacters(in: .whitespaces),
+                q: "",
                 style: filterStyle,
                 minRating: filterRating,
                 period: filterPeriod,

@@ -6,7 +6,6 @@ struct GallerySheetView: View {
 
     @State private var items: [CheckinItem] = []
     @State private var styles: [StyleOption] = []
-    @State private var search = ""
     @State private var filterStyle = ""
     @State private var filterRating: Double = 0
     @State private var filterPeriod = ""
@@ -28,7 +27,6 @@ struct GallerySheetView: View {
                     filterPeriod: $filterPeriod,
                     styles: styles
                 )
-                BeerHistorySearchField(text: $search)
 
                 if let errorMessage {
                     Text(errorMessage).font(.footnote).foregroundStyle(Theme.muted)
@@ -57,7 +55,6 @@ struct GallerySheetView: View {
                 }
             }
         }
-        .onChange(of: search, perform: { _ in Task { await reload(force: false) } })
         .onChange(of: filterStyle, perform: { _ in Task { await reload(force: false) } })
         .onChange(of: filterRating, perform: { _ in Task { await reload(force: false) } })
         .onChange(of: filterPeriod, perform: { _ in Task { await reload(force: false) } })
@@ -105,7 +102,7 @@ struct GallerySheetView: View {
         for off in stride(from: 0, to: 150, by: 50) {
             do {
                 let batch = try await app.api.checkins(
-                    q: search.trimmingCharacters(in: .whitespaces),
+                    q: "",
                     style: filterStyle,
                     minRating: filterRating,
                     period: filterPeriod,

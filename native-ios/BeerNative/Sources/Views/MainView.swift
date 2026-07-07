@@ -9,8 +9,6 @@ struct MainView: View {
     @EnvironmentObject private var app: AppModel
     @AppStorage("inviteHelpDismissed") private var inviteHelpDismissed = false
     @State private var sheet: BeerSheet?
-    @State private var globalSearch = ""
-    @State private var historySearchSeed = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,7 +30,7 @@ struct MainView: View {
         .fullScreenCover(item: $sheet) { s in
             switch s {
             case .history:
-                HistorySheetView(initialSearch: historySearchSeed, onOpenGallery: { sheet = .gallery })
+                HistorySheetView(onOpenGallery: { sheet = .gallery })
             case .gallery:
                 GallerySheetView()
             case .wishlist:
@@ -48,7 +46,7 @@ struct MainView: View {
         .environmentObject(app)
     }
 
-    /// Titre + recherche + boutons en grille (évite le wrap brouillon du FlowLayout sur iPhone).
+    /// Titre + boutons en grille (évite le wrap brouillon du FlowLayout sur iPhone).
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
@@ -70,20 +68,6 @@ struct MainView: View {
                         .overlay(Capsule().stroke(Theme.border))
                 }
             }
-
-            TextField("Rechercher...", text: $globalSearch)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .font(.system(size: Theme.Font.search))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 7)
-                .background(Theme.fieldBg)
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .onSubmit {
-                    historySearchSeed = globalSearch
-                    sheet = .history
-                }
 
             LazyVGrid(
                 columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3),
@@ -124,10 +108,7 @@ struct MainView: View {
         if !app.isInvite {
             buttons.append(HeaderButton(title: "À boire") { sheet = .wishlist })
         }
-        buttons.append(HeaderButton(title: "Historique") {
-            historySearchSeed = globalSearch
-            sheet = .history
-        })
+        buttons.append(HeaderButton(title: "Historique") { sheet = .history })
         if !app.isInvite {
             buttons.append(HeaderButton(title: "Idées cadeaux") { sheet = .gifts })
         }

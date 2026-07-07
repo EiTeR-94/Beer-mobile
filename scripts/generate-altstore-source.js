@@ -66,7 +66,7 @@ function versionReleaseNotes(ver, buildNum) {
       "v3.3.0 Stable - version figee Plexi. UI polish, mode hors ligne, admin invite, scan + toasts, AltStore OK."
     );
   }
-  if (ver === "3.3.1") {
+  if (ver === "3.3.1" || ver === "3.3.2") {
     return ascii("bugs fix");
   }
   return ascii(`Build ${buildNum} - Beer Log native`);
@@ -84,7 +84,7 @@ const appLongDescription = ascii(
     "saveurs et houblons. Historique, galerie, liste a boire, idees cadeaux : tout est la, pense pour le quotidien entre amis. " +
     "Mode hors ligne : tes degustations restent sur l'iPhone et partent au serveur des que le Wi-Fi maison ou le VPN Plexi revient. " +
     "Connexion : eiter.freeboxos.fr. Admin : comptes, invitations privees, referentiels. " +
-    "v3.3.1 - la version de reference du homelab. Fait avec soin pour Plexi, pas pour l'App Store."
+    "v3.3.2 - la version de reference du homelab. Fait avec soin pour Plexi, pas pour l'App Store."
 );
 
 const manifest = {
