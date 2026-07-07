@@ -1035,7 +1035,10 @@ final class BeerAPI {
     }
 
     private func performWan(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
-        try await performOnEndpoint(ServerSettings.apiBase, request: request, guest: true)
+        // For guest/5G/WAN calls, force the IPv4 transport directly.
+        // This ensures we always use the custom IPv4 + SNI path for the domain,
+        // bypassing any potential issues with protocol interception in the session.
+        try await HomelabIPv4Transport.perform(request)
     }
 
     private static func canonicalBase(_ url: URL) -> URL {
