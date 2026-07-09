@@ -326,7 +326,7 @@ fun BeerApp(context: Context) {
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { currentScreen = "add"; wizardStep = 1 }) { Text("Nouveau") }
+                Button(onClick = { wizardStep = 1; resetAddForm() }) { Text("Nouveau / Reset Wizard") }
                 Button(onClick = { currentScreen = "history" }) { Text("Historique") }
                 Button(onClick = { currentScreen = "gallery" }) { Text("Galerie") }
                 Button(onClick = { currentScreen = "wishlist" }) { Text("Wishlist") }
@@ -335,9 +335,162 @@ fun BeerApp(context: Context) {
 
             when (currentScreen) {
                 "main" -> {
-                    Text("Bienvenue ! Utilise Nouveau pour ajouter.")
-                    Text("Base: ${ServerSettings.effectiveBase}", style = MaterialTheme.typography.bodySmall)
-                    Button(onClick = { scope.launch { api.discoverWorkingEndpoint() } }) { Text("Re-prober LAN") }
+                    // The wizard is always shown like in iOS MainView
+                    Column {
+                        Text("Nouveau checkin - Étape $wizardStep / 4", style = MaterialTheme.typography.titleMedium)
+                        Text("lookup → photo → note → review", style = MaterialTheme.typography.bodySmall)
+
+                        // Step nav pills
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+                            for (s in 1..4) {
+                                val label = when (s) {
+                                    1 -> "Lookup"
+                                    2 -> "Photo"
+                                    3 -> "Note"
+                                    4 -> "Review"
+                                    else -> ""
+                                }
+                                Button(
+                                    onClick = { if (s <= wizardStep) goToStep(s) },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text(label, style = MaterialTheme.typography.labelSmall) }
+                            }
+                        }
+
+                        when (wizardStep) {
+                            1 -> {
+                                // Step 1: Lookup / enter (closer to iOS)
+                                Text("Scan EAN optionnel — ou cherche sur Untappd.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                                OutlinedTextField(value = lookupBarcode, onValueChange = { lookupBarcode = it }, label = { Text("Code-barres EAN (optionnel)") }, modifier = Modifier.fillMaxWidth())
+                                Row {
+                                    Button(onClick = { 
+                                        scope.launch {
+                                            lookupStatus = "Recherche..."
+                                            try {
+                                                val resp = api.lookup(lookupBarcode.filter { it.isDigit() })
+                                                if (resp.beerName != null) {
+                                                    beerName = resp.beerName ?: ""
+                                                    brewery = resp.brewery ?: ""
+                                                    style = resp.style ?: ""
+                                                    lookupStatus = "✓ Identifiée"
+                                                } else lookupStatus = resp.error ?: "Introuvable"
+                                            } catch (e: Exception) { lookupStatus = e.message ?: "err" }
+                                        }
+                                    }, enabled = lookupBarcode.isNotBlank()) { Text("Lookup EAN") }
+                                    Button(onClick = { startBarcodeScan() }) { Text("📷 Scanner (ML Kit)") }
+                                }
+                                if (lookupStatus.isNotBlank()) Text(lookupStatus)
+
+                                // Untappd search like iOS
+                                Text("Chercher sur Untappd", style = MaterialTheme.typography.titleSmall)
+                                OutlinedTextField(value = untappdBrewery, onValueChange = { untappdBrewery = it }, label = { Text("Brasserie (optionnel)") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = untappdName, onValueChange = { untappdName = it }, label = { Text("Nom de la bière") }, modifier = Modifier.fillMaxWidth())
+                                Button(onClick = {
+                                    scope.launch {
+                                        busy = true; untappdError = null
+                                        try {
+                                            val resp = api.searchUntappd(untappdBrewery, untappdName)
+                                            untappdResults = resp.results ?: emptyList()
+                                            if (untappdResults.isEmpty()) untappdError = "Aucun résultat"
+                                        } catch (e: Exception) { untappdError = e.message }
+                                        busy = false
+                                    }
+                                }, enabled = untappdName.length >= 2 || untappdBrewery.length >= 2) { Text(if (busy) "Recherche…" else "Chercher sur Untappd") }
+                                if (untappdError != null) Text(untappdError!!, color = MaterialTheme.colorScheme.error)
+                                untappdResults.forEach { hit ->
+                                    Button(onClick = {
+                                        beerName = hit.beerName
+                                        brewery = hit.brewery ?: ""
+                                        style = hit.styleFr ?: ""
+                                        untappdResults = emptyList()
+                                    }) {
+                                        Text("${hit.beerName} - ${hit.brewery ?: ""}")
+                                    }
+                                }
+
+                                OutlinedTextField(value = beerName, onValueChange = { beerName = it }, label = { Text("Nom de la bière *") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = brewery, onValueChange = { brewery = it }, label = { Text("Brasserie") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = style, onValueChange = { style = it }, label = { Text("Style") }, modifier = Modifier.fillMaxWidth())
+
+                                Button(onClick = { goToStep(2) }, enabled = beerName.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Continuer → Photo") }
+                            }
+                            2 -> {
+                                // Step 2: Photo
+                                Text("Photo de la bière / du verre")
+                                Button(onClick = { takePhoto() }, modifier = Modifier.fillMaxWidth()) { Text("📷 Prendre photo (full res)") }
+                                if (photoFile != null) {
+                                    Text("Photo prête")
+                                    AsyncImage(model = photoFile, contentDescription = null, modifier = Modifier.height(120.dp).fillMaxWidth())
+                                    TextButton(onClick = { photoFile = null }) { Text("Retirer") }
+                                }
+                                Row {
+                                    Button(onClick = { goToStep(1) }) { Text("← Retour") }
+                                    Spacer(Modifier.width(8.dp))
+                                    Button(onClick = { goToStep(3) }) { Text("Continuer → Note") }
+                                }
+                            }
+                            3 -> {
+                                // Step 3: Rating / comment + flavors/hops (closer to iOS)
+                                Text("Note (0.25-5)")
+                                Slider(value = rating, onValueChange = { rating = it }, valueRange = 0.25f..5f, steps = 19)
+                                Text("%.2f / 5".format(rating))
+                                OutlinedTextField(value = comment, onValueChange = { comment = it }, label = { Text("Commentaire") }, modifier = Modifier.fillMaxWidth())
+
+                                // Flavors
+                                Text("Flavors")
+                                Row {
+                                    OutlinedTextField(value = customFlavorInput, onValueChange = { customFlavorInput = it }, label = { Text("Custom flavor") }, modifier = Modifier.weight(1f))
+                                    Button(onClick = {
+                                        if (customFlavorInput.isNotBlank()) {
+                                            flavors = flavors + customFlavorInput.trim()
+                                            customFlavorInput = ""
+                                        }
+                                    }) { Text("+") }
+                                }
+                                if (flavors.isNotEmpty()) Text("Selected: ${flavors.joinToString()}")
+
+                                // Hops
+                                Text("Hops")
+                                Row {
+                                    OutlinedTextField(value = customHopInput, onValueChange = { customHopInput = it }, label = { Text("Custom hop") }, modifier = Modifier.weight(1f))
+                                    Button(onClick = {
+                                        if (customHopInput.isNotBlank()) {
+                                            hops = hops + customHopInput.trim()
+                                            customHopInput = ""
+                                        }
+                                    }) { Text("+") }
+                                }
+                                if (hops.isNotEmpty()) Text("Selected: ${hops.joinToString()}")
+
+                                Row {
+                                    Button(onClick = { goToStep(2) }) { Text("← Retour") }
+                                    Spacer(Modifier.width(8.dp))
+                                    Button(onClick = { goToStep(4) }) { Text("Continuer → Review") }
+                                }
+                            }
+                            4 -> {
+                                // Step 4: Review & submit
+                                Card(modifier = Modifier.fillMaxWidth()) {
+                                    Column(Modifier.padding(12.dp)) {
+                                        Text("${beerName} - ${brewery}", style = MaterialTheme.typography.titleSmall)
+                                        Text("Style: $style  |  Note: %.2f/5".format(rating))
+                                        if (comment.isNotBlank()) Text("Comment: $comment")
+                                        if (flavors.isNotEmpty()) Text("Flavors: ${flavors.joinToString()}")
+                                        if (hops.isNotEmpty()) Text("Hops: ${hops.joinToString()}")
+                                        if (photoFile != null) Text("📷 Photo incluse")
+                                    }
+                                }
+                                Row {
+                                    Button(onClick = { goToStep(3) }) { Text("← Retour") }
+                                    Spacer(Modifier.width(8.dp))
+                                    Button(onClick = { submitCheckin() }, enabled = beerName.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Enregistrer la dégustation") }
+                                }
+                            }
+                            else -> {}
+                        }
+                        if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
+                    }
                 }
                 "add" -> {
                     // 4-STEP WIZARD like iOS BeerWizardView
