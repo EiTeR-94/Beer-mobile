@@ -10,17 +10,17 @@ import Network
 enum HomelabIPv4Transport {
     private static let wanIP = ServerSettings.wanIPv4
     private static let tlsHost = ServerSettings.canonicalHost
-    private static let timeoutSeconds: UInt64 = 30  // reasonable for VPN/LAN latency
+    private static let timeoutSeconds: UInt64 = 120  // generous for owner VPN/LAN/slow links (was aggressive for 5G guests)
 
     static func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         try await withThrowingTaskGroup(of: (Data, HTTPURLResponse, URL).self) { group in
             group.addTask { try await performOnce(request) }
             group.addTask {
                 try await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
-                throw BeerAPIError.server("Timeout (connexion lente ou instable sur VPN/WAN). Réessaie ou passe par WiFi/VPN.")
+                throw BeerAPIError.server("Timeout connexion (établissement lent). Vérifie ton WiFi/VPN.")
             }
             guard let result = try await group.next() else {
-                throw BeerAPIError.server("Timeout (connexion lente ou instable sur VPN/WAN). Réessaie ou passe par WiFi/VPN.")
+                throw BeerAPIError.server("Timeout connexion (établissement lent). Vérifie ton WiFi/VPN.")
             }
             group.cancelAll()
             return result
@@ -56,9 +56,9 @@ enum HomelabIPv4Transport {
                 cont.resume(with: result)
             }
 
-            // Connect timeout for VPN/slow links - longer for reliability
+            // Connect timeout for VPN/slow links - very patient for owner use
             let connectTimeoutTask = Task {
-                try? await Task.sleep(nanoseconds: 60_000_000_000) // 60s
+                try? await Task.sleep(nanoseconds: 120_000_000_000) // 120s
                 if !resumed {
                     finish(.failure(BeerAPIError.server("Timeout connexion (établissement lent). Vérifie ton WiFi/VPN.")))
                 }

@@ -76,7 +76,27 @@ final class BeerImageLoader: ObservableObject {
                 image = img
                 failed = img == nil
             } catch {
-                if !Task.isCancelled { failed = true }
+                if !Task.isCancelled {
+                    // On slow establishment (common on first VPN/WiFi connect or slow links), retry a few times
+                    let isSlow = error.localizedDescription.contains("établissement lent") || error.localizedDescription.contains("Timeout connexion")
+                    if isSlow {
+                        for delay in [2, 4, 8] {  // progressive backoff
+                            try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000_000)
+                            do {
+                                let data = try await api.downloadAsset(path)
+                                if Task.isCancelled { return }
+                                let img = UIImage(data: data)
+                                if let img {
+                                    BeerImageCache.shared.store(img, for: path)
+                                }
+                                image = img
+                                failed = img == nil
+                                return
+                            } catch {}
+                        }
+                    }
+                    failed = true
+                }
             }
         }
     }

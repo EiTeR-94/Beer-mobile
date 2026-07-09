@@ -31,6 +31,7 @@ final class AppModel: ObservableObject {
     @Published var toast: ToastPayload?
     @Published var isOnline = true
     @Published var networkStatus: NetworkStatus = .online
+    @Published var isOnLocalWifi = false  // used to be patient on slow-but-local networks
     @Published var serverVersion: String = ""
     @Published var wizardStep = 1
     @Published var wizardProduct: BeerProduct?
@@ -92,6 +93,15 @@ final class AppModel: ObservableObject {
     private var retryTask: Task<Void, Never>?
     private var syncInProgress = false
 
+    /// Pre-warm the connection on launch / network change to avoid "first connect slow" timeouts
+    /// on WiFi/VPN when the native app is used frequently.
+    private func prewarmConnection() {
+        Task {
+            // Fire a quick health check in background (non blocking)
+            _ = try? await api.healthCheck()
+        }
+    }
+
     init() {
         api.setBaseURL(ServerSettings.lanApiBase)
         monitor.pathUpdateHandler = { [weak self] path in
@@ -113,7 +123,10 @@ final class AppModel: ObservableObject {
                 }
             }
         }
-        Task { await bootstrap() }
+        Task { 
+            await bootstrap()
+            prewarmConnection()
+        }
     }
 
     private func handlePathUpdate(_ path: NWPath) {
@@ -126,10 +139,16 @@ final class AppModel: ObservableObject {
         }
         // On local WiFi, prefer lan IP base for speed and to avoid domain transport.
         if path.usesInterfaceType(.wifi) && !path.isExpensive {
+            isOnLocalWifi = true
             api.setBaseURL(ServerSettings.lanApiBase)
+        } else {
+            isOnLocalWifi = false
         }
         scheduleServerProbe()
         scheduleSyncDebounced()
+        if isOnLocalWifi || path.usesInterfaceType(.wifi) {
+            prewarmConnection()
+        }
     }
 
     private func scheduleServerProbe() {

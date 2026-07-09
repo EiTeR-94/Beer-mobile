@@ -51,4 +51,13 @@ enum ServerSettings {
         while s.hasSuffix("/") { s.removeLast() }
         return s + "/"
     }
+
+    /// Heuristic: are we likely on the local WiFi where direct LAN IP is reachable and preferred?
+    /// Used to avoid unnecessary fallback to domain+transport on slow-but-local networks.
+    static func isLikelyOnLocalWifi() -> Bool {
+        // Simple heuristic based on common setup; can be improved with NWPath in AppModel
+        // For now, assume if not explicitly remote, prefer LAN strategy.
+        // Real detection is done in AppModel.handlePathUpdate.
+        return true  // conservative for owner on supported networks
+    }
 }

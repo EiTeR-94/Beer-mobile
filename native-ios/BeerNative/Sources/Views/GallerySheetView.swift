@@ -183,17 +183,31 @@ struct GallerySheetView: View {
             }
             app.prewarmPhotos(batch)
         } catch let err {
+            let isSlowTransport = err.localizedDescription.contains("établissement lent") || err.localizedDescription.contains("Timeout connexion")
             if !append {
                 if let cached = app.cache.load([CheckinItem].self, name: CacheKey.historyCheckins), !cached.isEmpty {
                     items = cached
-                    errorMessage = "Galerie en cache — \(app.networkStatus.label.lowercased())"
+                    errorMessage = isSlowTransport ? "Chargement lent... (cache affiché)" : "Galerie en cache — \(app.networkStatus.label.lowercased())"
                     return
-                } else {
-                    errorMessage = err.localizedDescription
-                    return
+                } else if isSlowTransport {
+                    // retry once on slow establishment
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    do {
+                        let batch2 = try await app.api.checkins(
+                            q: "", style: filterStyle, minRating: filterRating, period: filterPeriod,
+                            limit: galleryPageSize, offset: 0
+                        )
+                        items = batch2
+                        galleryOffset = items.count
+                        galleryHasMore = batch2.count == galleryPageSize
+                        app.prewarmPhotos(batch2)
+                        return
+                    } catch {}
                 }
+                errorMessage = err.localizedDescription
+                return
             }
-            errorMessage = err.localizedDescription
+            errorMessage = isSlowTransport ? nil : err.localizedDescription  // don't spam error on slow
         }
     }
 }

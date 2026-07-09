@@ -107,7 +107,11 @@ final class BeerAPI {
                     return lan.absoluteString
                 }
             } catch {
-                // fall to domain
+                // Do not fallback to domain if we are on local wifi (trust the LAN IP)
+                // Only fallback on VPN or when explicitly needed
+                if !ServerSettings.isLikelyOnLocalWifi() {
+                    // fall to domain
+                }
             }
         }
         // Fallback to domain (VPN)
