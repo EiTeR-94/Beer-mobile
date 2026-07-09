@@ -730,14 +730,7 @@ final class BeerAPI {
         return nil
     }
 
-    // Guest/passkey paths removed (owner main account only).
-    private static func passkeyErrorMessage(_ status: Int) -> String { "Non utilisé" }
-    private static func mapPasskeyError(_ error: String?, status: Int) -> String { "Non utilisé" }
-
-    // Stub: no more wanRequest for guests.
-    private func wanRequest(path: String, method: String, body: Data?, contentType: String? = nil) async throws -> (Data, HTTPURLResponse, URL) {
-        throw BeerAPIError.server("Chemin invité désactivé sur l'app native (utilise le PWA web sur LAN/VPN).")
-    }
+    // All guest/passkey code removed. Owner main account only.
 
     private func request(
         path: String,
