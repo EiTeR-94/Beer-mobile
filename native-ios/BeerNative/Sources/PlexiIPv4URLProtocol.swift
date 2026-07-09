@@ -8,7 +8,7 @@ import Foundation
 /// 
 /// Used for BOTH:
 /// - LAN accounts (when they fall back to domain, though they prefer direct IP)
-/// - 5G guest/passkey path (plain https://eiter... requests)
+/// - (5G guest path comment removed)
 ///
 /// By intercepting and delegating to HomelabIPv4Transport (IPv4 + correct SNI),
 /// we bypass the broken AAAA. Registered on the relevant URLSession configs.

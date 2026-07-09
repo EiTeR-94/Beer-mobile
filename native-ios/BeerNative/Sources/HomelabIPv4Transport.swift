@@ -1,7 +1,7 @@
 import Foundation
 import Network
 
-/// Low-level IP (v4 or v6) + SNI transport used for WAN (5G guests via passkey) and domain fallbacks.
+/// Low-level IP (v4 or v6) + SNI transport (guest 5G logic removed).
 ///
 /// We connect directly to the known server IP (IPv4 or the real IPv6) + correct SNI (domain)
 /// so TLS cert validates, bypassing the broken Freebox AAAA (which points to the box ::1 instead of the server).
@@ -15,7 +15,7 @@ enum HomelabIPv4Transport {
     private static let tlsHost = ServerSettings.canonicalHost
     private static let timeoutSeconds: UInt64 = 60  // 5G: plus long pour établissement lent sur cellulaire
 
-    // Use IPv6 for 5G guest path (bypass broken Freebox AAAA DNS pointing to box ::1)
+    // (5G guest path comment removed)
     static var useIPv6 = true
 
     static func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {

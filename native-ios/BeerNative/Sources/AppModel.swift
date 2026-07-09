@@ -185,7 +185,7 @@ final class AppModel: ObservableObject {
         if loggedIn, let user {
             BeerSessionStore.save(user: user, isAdmin: isAdmin, isInvite: false)
             KeychainStore.username = user
-            // PasskeySessionStore.clear() -- guest system removed
+            // (guest token clear removed)
         }
     }
 
@@ -304,7 +304,7 @@ final class AppModel: ObservableObject {
         isLoggedIn = false
     }
 
-    private var shouldRefreshPasskeySession: Bool { false } // guest system removed
+    private var shouldRefreshPasskeySession: Bool { false } // removed
 
     func logout() async {
         await api.logout()
@@ -486,7 +486,7 @@ enum KeychainStore {
     private static let account = "username"
 
     // Theme 4: hardened - username also AfterFirstUnlockThisDeviceOnly (consistent).
-    // Real secrets (passkey tokens) use same in PasskeySessionStore.
+    // (passkey comment removed)
     static var username: String? {
         get {
             let query: [String: Any] = [

@@ -453,7 +453,7 @@ final class BeerAPI {
         // Internal server asset (relative path like "photos/..." or "static/...").
         // Force LAN base for local accounts to avoid domain (eiter.freeboxos.fr) unreachable.
         var useBase = baseURL
-        // Guest logic removed - always prefer LAN for owner.
+        // Always use LAN base for owner.
         guard let resolved = ServerSettings.resolveAssetURL(p, base: useBase) else {
             throw BeerAPIError.invalidURL
         }
@@ -714,7 +714,7 @@ final class BeerAPI {
 
     // MARK: - HTTP
 
-    // Guest system removed - owner main account only.
+    // Owner main account only (LAN/VPN).
 
     private func applyCommonHeaders(to req: inout URLRequest) {
         req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
