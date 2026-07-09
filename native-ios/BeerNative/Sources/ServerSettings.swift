@@ -60,4 +60,17 @@ enum ServerSettings {
         // Real detection is done in AppModel.handlePathUpdate.
         return true  // conservative for owner on supported networks
     }
+
+    // VPN range from network.env (192.168.27.0/24)
+    private static let vpnRange = "192.168.27."
+
+    /// More fine detection: true LAN (local subnet) vs VPN.
+    static func isOnLocalLAN() -> Bool {
+        // This will be enhanced in AppModel with actual IP check.
+        return false // placeholder, real logic in AppModel
+    }
+
+    static func isOnVPN() -> Bool {
+        return false // placeholder
+    }
 }

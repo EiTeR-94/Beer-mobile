@@ -674,6 +674,7 @@ struct InviteHelpBar: View {
 struct NetworkStatusBar: View {
     let status: AppModel.NetworkStatus
     var pending: Int = 0
+    var latency: TimeInterval? = nil // simple monitoring
 
     private var tint: Color {
         switch status {
@@ -691,6 +692,11 @@ struct NetworkStatusBar: View {
             if pending > 0 {
                 Text("· \(pending) en attente")
                     .font(.system(size: 11, weight: .medium))
+            }
+            if let lat = latency {
+                Text(String(format: "· %.0fms", lat * 1000))
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.muted)
             }
             if status != .online {
                 Text("· cache local")

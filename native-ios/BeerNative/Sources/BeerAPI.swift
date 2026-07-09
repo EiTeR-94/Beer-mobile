@@ -104,6 +104,8 @@ final class BeerAPI {
                 if http.statusCode == 200 {
                     baseURL = Self.canonicalBase(lan)
                     activeEndpoint = lan.absoluteString
+                    // remember last good for strategy
+                    // (AppModel will store if needed)
                     return lan.absoluteString
                 }
             } catch {
@@ -170,7 +172,7 @@ final class BeerAPI {
         return decoded
     }
 
-    // Guest/passkey functions removed (owner main account only).
+    // (legacy guest/passkey functions removed - owner main account only)
     // These paths are no longer called from the app.
 
     func me() async throws -> MeResponse {

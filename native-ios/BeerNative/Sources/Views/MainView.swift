@@ -13,7 +13,7 @@ struct MainView: View {
         VStack(spacing: 0) {
             header
             if app.isLoggedIn, app.networkStatus != .online || app.pendingCount > 0 {
-                NetworkStatusBar(status: app.networkStatus, pending: app.pendingCount)
+                NetworkStatusBar(status: app.networkStatus, pending: app.pendingCount, latency: app.lastEndpointLatency)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 4)
             }

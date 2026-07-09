@@ -93,6 +93,11 @@ final class AppModel: ObservableObject {
     private var retryTask: Task<Void, Never>?
     private var syncInProgress = false
 
+    @Published var isOnVPN = false
+    @Published var currentLocalIP: String?
+    @Published var lastEndpointLatency: TimeInterval? // simple monitoring for latency of last successful health
+    private var lastSuccessfulBase: URL? // store last working endpoint for better strategy
+
     /// Pre-warm the connection on launch / network change to avoid "first connect slow" timeouts
     /// on WiFi/VPN when the native app is used frequently.
     private func prewarmConnection() {
@@ -100,6 +105,30 @@ final class AppModel: ObservableObject {
             // Fire a quick health check in background (non blocking)
             _ = try? await api.healthCheck()
         }
+    }
+
+    private func getCurrentIPAddress() -> String? {
+        var address: String?
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        if getifaddrs(&ifaddr) == 0 {
+            var ptr = ifaddr
+            while ptr != nil {
+                defer { ptr = ptr?.pointee.ifa_next }
+                let interface = ptr?.pointee
+                let addrFamily = interface?.ifa_addr.pointee.sa_family
+                if addrFamily == UInt8(AF_INET) {
+                    let name = String(cString: (interface?.ifa_name)!)
+                    if name == "en0" || name.hasPrefix("utun") || name.hasPrefix("ipsec") { // wifi or vpn
+                        var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                        getnameinfo(interface?.ifa_addr, socklen_t((interface?.ifa_addr.pointee.sa_len)!), &hostname, socklen_t(hostname.count), nil, socklen_t(0), NI_NUMERICHOST)
+                        address = String(cString: hostname)
+                        break
+                    }
+                }
+            }
+            freeifaddrs(ifaddr)
+        }
+        return address
     }
 
     init() {
@@ -137,16 +166,41 @@ final class AppModel: ObservableObject {
             probeTask?.cancel()
             return
         }
-        // On local WiFi, prefer lan IP base for speed and to avoid domain transport.
-        if path.usesInterfaceType(.wifi) && !path.isExpensive {
+        // Finer detection: local LAN (192.168.1.x) vs VPN (192.168.27.x) vs other
+        let ip = getCurrentIPAddress()
+        currentLocalIP = ip
+        if let ip = ip {
+            if ip.hasPrefix("192.168.1.") {
+                isOnLocalWifi = true
+                isOnVPN = false
+                api.setBaseURL(ServerSettings.lanApiBase)
+                PlexiIPv4URLProtocol.useCustomTransport = false
+            } else if ip.hasPrefix("192.168.27.") {
+                isOnLocalWifi = false
+                isOnVPN = true
+                api.setBaseURL(ServerSettings.apiBase) // domain for VPN
+                PlexiIPv4URLProtocol.useCustomTransport = false // use high-level on known VPN too
+            } else {
+                isOnLocalWifi = false
+                isOnVPN = false
+                PlexiIPv4URLProtocol.useCustomTransport = true
+            }
+        } else if path.usesInterfaceType(.wifi) && !path.isExpensive {
             isOnLocalWifi = true
+            isOnVPN = false
             api.setBaseURL(ServerSettings.lanApiBase)
+            PlexiIPv4URLProtocol.useCustomTransport = false
         } else {
             isOnLocalWifi = false
+            isOnVPN = false
+            PlexiIPv4URLProtocol.useCustomTransport = true
+            if let last = lastSuccessfulBase {
+                api.setBaseURL(last)
+            }
         }
         scheduleServerProbe()
         scheduleSyncDebounced()
-        if isOnLocalWifi || path.usesInterfaceType(.wifi) {
+        if isOnLocalWifi || isOnVPN || path.usesInterfaceType(.wifi) {
             prewarmConnection()
         }
     }
@@ -189,7 +243,11 @@ final class AppModel: ObservableObject {
             networkStatus = .offline
             return
         }
+        let start = Date()
         if await api.discoverWorkingEndpoint() != nil {
+            let latency = Date().timeIntervalSince(start)
+            lastEndpointLatency = latency
+            lastSuccessfulBase = baseURL
             networkStatus = .online
             serverVersion = (try? await api.version()) ?? serverVersion
             retryTask?.cancel()
@@ -207,7 +265,7 @@ final class AppModel: ObservableObject {
         if loggedIn, let user {
             BeerSessionStore.save(user: user, isAdmin: isAdmin, isInvite: false)
             KeychainStore.username = user
-            // (no guest tokens)
+            // (no legacy guest tokens)
         }
     }
 
@@ -309,7 +367,7 @@ final class AppModel: ObservableObject {
     }
 
     func handleOpenURL(_ url: URL) async {
-        // No guest tokens.
+        // (no legacy guest tokens)
     }
 
     private func fetchMe() async throws -> MeResponse {

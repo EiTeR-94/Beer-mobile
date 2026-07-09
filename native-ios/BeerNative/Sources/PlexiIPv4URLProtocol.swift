@@ -10,12 +10,15 @@ import Foundation
 /// By intercepting and delegating to HomelabIPv4Transport (IPv4 + correct SNI),
 /// we bypass the broken AAAA. Registered on the relevant URLSession configs.
 final class PlexiIPv4URLProtocol: URLProtocol {
+    static var useCustomTransport = true  // false on trusted local wifi/VPN to use high-level URLSession
+
     private var loadTask: Task<Void, Never>?
     private static let handledKey = "PlexiIPv4URLProtocolHandled"
 
     override class func canInit(with request: URLRequest) -> Bool {
         guard let url = request.url else { return false }
         if property(forKey: handledKey, in: request) != nil { return false }
+        if !useCustomTransport { return false } // on trusted local, use high-level URLSession directly
         let port = url.port ?? 443
         return url.scheme == "https"
             && url.host == ServerSettings.canonicalHost

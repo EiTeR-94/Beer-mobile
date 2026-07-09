@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Used only for quick offline restore of "who am I" (username + role) and to decide
 /// whether we can show cached UI when the server is unreachable.
-/// Sensitive tokens are stored in Keychain (see KeychainStore). Guest system removed.
+/// Sensitive tokens are stored in Keychain (see KeychainStore). (legacy guest system removed)
 ///
 /// This mix is intentional: UserDefaults is fast and survives app restarts for UX,
 /// while tokens stay protected.

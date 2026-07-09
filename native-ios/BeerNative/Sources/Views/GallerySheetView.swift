@@ -74,11 +74,23 @@ struct GallerySheetView: View {
                     )
                 } else {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 108), spacing: 8)], spacing: 8) {
-                        ForEach(withPhotos) { item in
+                        ForEach(Array(withPhotos.enumerated()), id: \.element.id) { index, item in
                             Button { selected = item } label: {
                                 GalleryCell(item: item)
                             }
                             .buttonStyle(.plain)
+                            .onAppear {
+                                // intelligent prefetch next few images for smooth scroll
+                                let prefetchCount = 5
+                                for i in 1...prefetchCount {
+                                    let nextIndex = index + i
+                                    if nextIndex < withPhotos.count {
+                                        if let p = withPhotos[nextIndex].photoURL {
+                                            BeerImageLoader.prewarm(path: p, api: app.api)
+                                        }
+                                    }
+                                }
+                            }
                         }
                         
                         // Dedicated trigger view at the end for pagination to avoid duplicate onAppear fires

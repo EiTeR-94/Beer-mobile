@@ -238,7 +238,7 @@ struct BeerWizardView: View {
 
             if let product, !product.beerName.isEmpty {
                 BeerPreviewCard(product: product)
-                // (legacy 5G comment removed)
+                // (legacy comment removed)
                 BeerSecondaryButton(title: "+ Ajouter à la liste « À boire »") {
                     Task { await addToWishlist(product) }
                 }
