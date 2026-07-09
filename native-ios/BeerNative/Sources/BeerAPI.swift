@@ -92,11 +92,11 @@ final class BeerAPI {
         // Try LAN first
         if let lan = candidates.first(where: { ServerSettings.isLanEndpoint($0) }) {
             do {
-                var probe = URLRequest(url: try url("/api/health"))
-                probe.httpMethod = "GET"
+                var healthProbe = URLRequest(url: try url("/api/health"))
+                healthProbe.httpMethod = "GET"
                 let (_, http, _) = try await performOnEndpoint(
                     lan,
-                    request: probe,
+                    request: healthProbe,
                     probe: true
                 )
                 if http.statusCode == 200 {
@@ -111,11 +111,11 @@ final class BeerAPI {
         // Fallback to domain (VPN)
         for candidate in candidates where !ServerSettings.isLanEndpoint(candidate) {
             do {
-                var probe = URLRequest(url: try url("/api/health"))
-                probe.httpMethod = "GET"
+                var healthProbe = URLRequest(url: try url("/api/health"))
+                healthProbe.httpMethod = "GET"
                 let (_, http, _) = try await performOnEndpoint(
                     candidate,
-                    request: probe,
+                    request: healthProbe,
                     probe: true
                 )
                 if http.statusCode == 200 {
