@@ -124,6 +124,10 @@ final class AppModel: ObservableObject {
             probeTask?.cancel()
             return
         }
+        // On local WiFi, prefer lan IP base for speed and to avoid domain transport.
+        if path.usesInterfaceType(.wifi) && !path.isExpensive {
+            api.setBaseURL(ServerSettings.lanApiBase)
+        }
         scheduleServerProbe()
         scheduleSyncDebounced()
     }

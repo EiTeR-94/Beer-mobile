@@ -23,9 +23,7 @@ enum ServerSettings {
         [lanApiBase, apiBase]
     }
 
-    /// Legacy (not used in owner-only native).
-    static var passkeyBaseURLs: [URL] {
-        []
+    // (passkey base removed - no guest mode)
     }
 
     /// Probe timeout for LAN/VPN. Short for quick fail, longer for VPN latency.
