@@ -470,10 +470,10 @@ final class BeerAPI {
         }
 
         // Internal server asset (relative path like "photos/..." or "static/...").
-        // Force LAN base for local accounts to avoid domain (eiter.freeboxos.fr) unreachable.
-        var useBase = baseURL
-        // Always use LAN base for owner.
-        guard let resolved = ServerSettings.resolveAssetURL(p, base: useBase) else {
+        // Prefer direct LAN IP for owner to avoid domain issues and slow transport.
+        // Fallback to current base (domain) for VPN if LAN not reachable.
+        let assetBase = ServerSettings.lanApiBase
+        guard let resolved = ServerSettings.resolveAssetURL(p, base: assetBase) ?? ServerSettings.resolveAssetURL(p, base: baseURL) else {
             throw BeerAPIError.invalidURL
         }
         var req = URLRequest(url: resolved)

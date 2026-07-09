@@ -43,7 +43,7 @@ enum ServerSettings {
         return c.string ?? base.absoluteString
     }
 
-    static func resolveAssetURL(_ path: String?, base: URL = apiBase) -> URL? {
+    static func resolveAssetURL(_ path: String?, base: URL = lanApiBase) -> URL? {
         guard let path, !path.isEmpty else { return nil }
         if path.hasPrefix("http") { return URL(string: path) }
         let origin = serverOrigin(from: base)

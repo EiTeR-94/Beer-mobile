@@ -507,7 +507,7 @@ struct BeerPrivateBadge: View {
 
 struct HistoryCardView: View {
     let item: CheckinItem
-    var photoBase: URL = ServerSettings.apiBase
+    var photoBase: URL = ServerSettings.lanApiBase  // prefer LAN for owner to avoid domain transport issues
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
