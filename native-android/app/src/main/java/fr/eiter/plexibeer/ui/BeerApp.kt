@@ -91,7 +91,10 @@ fun BeerApp(context: Context) {
             } catch (_: Exception) {}
         }
         if (currentScreen == "history") {
-            scope.launch { checkins = api.checkins(50) }
+            scope.launch { 
+                checkins = api.checkins(50) 
+                stats = api.stats()
+            }
         }
         if (currentScreen == "gallery") {
             scope.launch { checkins = api.checkins(100) }
