@@ -13,7 +13,7 @@ enum BeerAPIError: LocalizedError {
         switch self {
         case .invalidURL: return "URL API invalide"
         case .unauthorized: return "Session expirée — reconnecte-toi"
-        case .forbidden: return "Invitation invalide ou expirée — demande un nouveau lien"
+        case .forbidden: return "Accès refusé (VPN ou WiFi requis)"
         case .server(let msg): return msg
         case .network(let err): return err.localizedDescription
         case .decode: return "Réponse serveur illisible"
@@ -70,8 +70,8 @@ final class BeerAPI {
         )
     }
 
-    private func session(for endpoint: URL, guest: Bool = false, probe: Bool = false) -> URLSession {
-        // Only main owner account now (LAN/WiFi or VPN). No guest.
+    private func session(for endpoint: URL, probe: Bool = false) -> URLSession {
+        // Owner main account (LAN or VPN).
         if probe && ServerSettings.isLanEndpoint(endpoint) { return lanProbeSession }
         return session
     }
@@ -87,16 +87,37 @@ final class BeerAPI {
     }
 
     func discoverWorkingEndpoint() async -> String? {
-        // Owner only: LAN IP (WiFi or VPN). Direct IP to avoid domain IPv6 issues.
+        // Owner: prefer direct LAN IP (fast, no IPv6/DNS issues on Freebox), fallback to domain for VPN.
         let originalBase = baseURL
-        for candidate in ServerSettings.candidateURLs {
+        let candidates = ServerSettings.candidateURLs
+        // Try LAN first
+        if let lan = candidates.first(where: { ServerSettings.isLanEndpoint($0) }) {
+            do {
+                var probe = URLRequest(url: try url("/api/health"))
+                probe.httpMethod = "GET"
+                let (_, http, _) = try await performOnEndpoint(
+                    lan,
+                    request: probe,
+                    probe: true,
+                    probe: true
+                )
+                if http.statusCode == 200 {
+                    baseURL = Self.canonicalBase(lan)
+                    activeEndpoint = lan.absoluteString
+                    return lan.absoluteString
+                }
+            } catch {
+                // fall to domain
+            }
+        }
+        // Fallback to domain (VPN)
+        for candidate in candidates where !ServerSettings.isLanEndpoint(candidate) {
             do {
                 var probe = URLRequest(url: try url("/api/health"))
                 probe.httpMethod = "GET"
                 let (_, http, _) = try await performOnEndpoint(
                     candidate,
                     request: probe,
-                    guest: false,
                     probe: true
                 )
                 if http.statusCode == 200 {
@@ -388,7 +409,7 @@ final class BeerAPI {
             throw BeerAPIError.decode
         }
         if http.statusCode >= 400 || decoded.ok == false {
-            throw BeerAPIError.server(decoded.error ?? "Invitation impossible")
+            throw BeerAPIError.server(decoded.error ?? "Opération refusée")
         }
         return decoded
     }
@@ -754,7 +775,7 @@ final class BeerAPI {
                 req.setValue(cookieString, forHTTPHeaderField: "Cookie")
             }
             do {
-                let result = try await performOnEndpoint(candidate, request: req, guest: false, probe: false)
+                let result = try await performOnEndpoint(candidate, request: req, probe: false)
                 activeEndpoint = candidate.absoluteString
                 return result
             } catch {
@@ -777,18 +798,17 @@ final class BeerAPI {
             let cookieString = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
             req.setValue(cookieString, forHTTPHeaderField: "Cookie")
         }
-        return try await performOnEndpoint(baseURL, request: req, guest: false, probe: false)
+        return try await performOnEndpoint(baseURL, request: req, probe: false)
     }
 
     private func performOnEndpoint(
         _ endpoint: URL,
         request: URLRequest,
-        guest: Bool,
         probe: Bool = false
     ) async throws -> (Data, HTTPURLResponse, URL) {
         var req = request
         applyCommonHeaders(to: &req)
-        let httpSession = session(for: endpoint, guest: guest, probe: probe)
+        let httpSession = session(for: endpoint, probe: probe)
         do {
             let (data, response) = try await httpSession.data(for: req)
             guard let http = response as? HTTPURLResponse, let url = response.url else {
@@ -830,7 +850,7 @@ final class BeerAPI {
     private func performWan(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         // Guest 5G path: use plain guestSession (standard networking to domain).
         // No custom LAN IPv4 or TLS delegate.
-        try await performOnEndpoint(ServerSettings.apiBase, request: request, guest: true)
+        try await performOnEndpoint(ServerSettings.apiBase, request: request)
     }
 
     private static func canonicalBase(_ url: URL) -> URL {

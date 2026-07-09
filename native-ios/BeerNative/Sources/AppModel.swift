@@ -171,7 +171,6 @@ final class AppModel: ObservableObject {
             serverVersion = (try? await api.version()) ?? serverVersion
             retryTask?.cancel()
         } else {
-            api.setBaseURL(ServerSettings.lanApiBase)  // ensure we don't stick to failing domain base
             networkStatus = .serverUnreachable
             scheduleRetryProbe()
         }

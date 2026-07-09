@@ -20,10 +20,10 @@ enum HomelabIPv4Transport {
             group.addTask { try await performOnce(request) }
             group.addTask {
                 try await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
-                throw BeerAPIError.server("Timeout 5G/WAN (connexion lente ou instable). Réessaie ou passe par WiFi/VPN.")
+                throw BeerAPIError.server("Timeout (connexion lente ou instable sur VPN/WAN). Réessaie ou passe par WiFi/VPN.")
             }
             guard let result = try await group.next() else {
-                throw BeerAPIError.server("Timeout 5G/WAN (connexion lente ou instable). Réessaie ou passe par WiFi/VPN.")
+                throw BeerAPIError.server("Timeout (connexion lente ou instable sur VPN/WAN). Réessaie ou passe par WiFi/VPN.")
             }
             group.cancelAll()
             return result
@@ -63,7 +63,7 @@ enum HomelabIPv4Transport {
             let connectTimeoutTask = Task {
                 try? await Task.sleep(nanoseconds: 30_000_000_000) // 30s pour le .ready sur 5G lent
                 if !resumed {
-                    finish(.failure(BeerAPIError.server("Timeout connexion 5G (établissement lent). Réessaie ou passe en WiFi/VPN.")))
+                    finish(.failure(BeerAPIError.server("Timeout connexion (établissement lent). Réessaie ou passe en WiFi/VPN.")))
                 }
             }
 
@@ -81,7 +81,7 @@ enum HomelabIPv4Transport {
                     }
                 case .failed(let err):
                     connectTimeoutTask.cancel()
-                    finish(.failure(BeerAPIError.server("Erreur de connexion IPv4 5G: \(err.localizedDescription) (code: \((err as NSError).code))")))
+                    finish(.failure(BeerAPIError.server("Erreur de connexion: \(err.localizedDescription) (code: \((err as NSError).code))")))
                 case .waiting(let err):
                     // On continue d'attendre un peu (5G peut mettre du temps), le connect timeout gérera
                     break
@@ -161,7 +161,7 @@ enum HomelabIPv4Transport {
     private static func send(conn: NWConnection, data: Data) async throws {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             conn.send(content: data, completion: .contentProcessed { err in
-                if let err { cont.resume(throwing: BeerAPIError.server("Erreur envoi requête 5G: \(err.localizedDescription)")) }
+                if let err { cont.resume(throwing: BeerAPIError.server("Erreur envoi requête: \(err.localizedDescription)")) }
                 else { cont.resume() }
             })
         }
@@ -176,7 +176,7 @@ enum HomelabIPv4Transport {
             let (chunk, _): (Data?, Bool) = try await withCheckedThrowingContinuation { cont in
                 conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, isComplete, err in
                     if let err {
-                        cont.resume(throwing: BeerAPIError.server("Erreur réception en-têtes 5G: \(err.localizedDescription)"))
+                        cont.resume(throwing: BeerAPIError.server("Erreur réception en-têtes: \(err.localizedDescription)"))
                         return
                     }
                     cont.resume(returning: (data, isComplete))
@@ -218,7 +218,7 @@ enum HomelabIPv4Transport {
                 let (chunk, _): (Data?, Bool) = try await withCheckedThrowingContinuation { cont in
                     conn.receive(minimumIncompleteLength: 0, maximumLength: toRead) { data, _, isComplete, err in
                         if let err {
-                            cont.resume(throwing: BeerAPIError.server("Erreur réception body 5G: \(err.localizedDescription)"))
+                            cont.resume(throwing: BeerAPIError.server("Erreur réception body: \(err.localizedDescription)"))
                             return
                         }
                         cont.resume(returning: (data, isComplete))
@@ -237,7 +237,7 @@ enum HomelabIPv4Transport {
                 let (chunk, isComplete): (Data?, Bool) = try await withCheckedThrowingContinuation { cont in
                     conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, isComplete, err in
                         if let err {
-                            cont.resume(throwing: BeerAPIError.server("Erreur réception body 5G: \(err.localizedDescription)"))
+                            cont.resume(throwing: BeerAPIError.server("Erreur réception body: \(err.localizedDescription)"))
                             return
                         }
                         cont.resume(returning: (data, isComplete))

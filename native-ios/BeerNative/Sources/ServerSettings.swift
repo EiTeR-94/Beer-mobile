@@ -19,7 +19,8 @@ enum ServerSettings {
     }
 
     static var candidateURLs: [URL] {
-        [lanApiBase]
+        // Try direct LAN IP first (fast, avoids DNS/IPv6 issues), fallback to domain (for VPN)
+        [lanApiBase, apiBase]
     }
 
     /// No longer used: guest/invite paths removed (owner only, main account).

@@ -42,7 +42,7 @@ final class PlexiIPv4URLProtocol: URLProtocol {
                 client?.urlProtocolDidFinishLoading(self)
             } catch {
                 // Toujours produire une erreur avec description claire pour éviter "erreur 0" générique
-                let desc = "Erreur 5G invité (IPv4 transport): \(error.localizedDescription)"
+                let desc = "Erreur transport IPv4: \(error.localizedDescription)"
                 let urlErr = URLError(.unknown, userInfo: [NSLocalizedDescriptionKey: desc])
                 client?.urlProtocol(self, didFailWithError: urlErr)
             }
