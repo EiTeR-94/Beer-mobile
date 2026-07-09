@@ -7,18 +7,11 @@ enum BeerSheet: String, Identifiable {
 
 struct MainView: View {
     @EnvironmentObject private var app: AppModel
-    @AppStorage("inviteHelpDismissed") private var inviteHelpDismissed = false
     @State private var sheet: BeerSheet?
-    @State private var showInviteLogoutConfirm = false
 
     var body: some View {
         VStack(spacing: 0) {
             header
-            if app.isInvite && !inviteHelpDismissed {
-                InviteHelpBar { inviteHelpDismissed = true }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 4)
-            }
             if app.isLoggedIn, app.networkStatus != .online || app.pendingCount > 0 {
                 NetworkStatusBar(status: app.networkStatus, pending: app.pendingCount)
                     .padding(.horizontal, 12)
@@ -48,17 +41,6 @@ struct MainView: View {
             }
         }
         .environmentObject(app)
-        .alert("Se déconnecter ?", isPresented: $showInviteLogoutConfirm) {
-            Button("Annuler", role: .cancel) {}
-            Button("Déconnexion", role: .destructive) {
-                Task { await app.logout() }
-            }
-        } message: {
-            Text(
-                "En te déconnectant, tu perdras l'accès à Beer Log sur cet appareil. "
-                    + "Tu ne pourras pas revenir sans un nouveau lien d'invitation."
-            )
-        }
     }
 
     /// Titre + boutons en grille (évite le wrap brouillon du FlowLayout sur iPhone).
@@ -120,18 +102,13 @@ struct MainView: View {
             buttons.append(HeaderButton(title: "Patch notes") { sheet = .patchnotes })
             buttons.append(HeaderButton(title: "Admin") { sheet = .admin })
         }
-        // Invités 5G : full features (comme web), chemin séparé.
         buttons.append(HeaderButton(title: "À boire") { sheet = .wishlist })
         buttons.append(HeaderButton(title: "Historique") { sheet = .history })
         buttons.append(HeaderButton(title: "Idées cadeaux") { sheet = .gifts })
         if app.pendingCount > 0 {
             buttons.append(HeaderButton(title: "En attente (\(app.pendingCount))") { sheet = .pending })
         }
-        if app.isInvite {
-            buttons.append(HeaderButton(title: "Déconnexion") { showInviteLogoutConfirm = true })
-        } else {
-            buttons.append(HeaderButton(title: "Déconnexion") { Task { await app.logout() } })
-        }
+        buttons.append(HeaderButton(title: "Déconnexion") { Task { await app.logout() } })
         return buttons
     }
 }

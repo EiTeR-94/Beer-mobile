@@ -64,7 +64,7 @@ enum HomelabIPv4Transport {
 
             // Connect timeout spécifique pour 5G (le handshake TCP+TLS peut être lent sur cellulaire)
             let connectTimeoutTask = Task {
-                try? await Task.sleep(nanoseconds: 20_000_000_000) // 20s pour le .ready sur 5G
+                try? await Task.sleep(nanoseconds: 30_000_000_000) // 30s pour le .ready sur 5G lent
                 if !resumed {
                     finish(.failure(BeerAPIError.server("Timeout connexion 5G (établissement lent). Réessaie ou passe en WiFi/VPN.")))
                 }

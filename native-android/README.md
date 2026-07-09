@@ -5,7 +5,7 @@ Ceci est l'équivalent natif Android de l'application iOS BeerNative (fr.eiter.p
 ## Structure
 - Même logique que l'iOS :
   - Comptes locaux : chemin LAN (WiFi/VPN) via 192.168.1.50:8444 ou LAN
-  - Invités : chemin 5G via domaine public + Passkeys (Credential Manager)
+  - Owner only (main account via LAN/VPN). No guest/invite paths (use PWA web for others).
 
 ## Configuration
 - applicationId: fr.eiter.plexibeer

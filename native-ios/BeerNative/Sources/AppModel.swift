@@ -185,7 +185,7 @@ final class AppModel: ObservableObject {
         if loggedIn, let user {
             BeerSessionStore.save(user: user, isAdmin: isAdmin, isInvite: false)
             KeychainStore.username = user
-            PasskeySessionStore.clear()
+            // PasskeySessionStore.clear() -- guest system removed
         }
     }
 
@@ -206,7 +206,7 @@ final class AppModel: ObservableObject {
             return
         }
         do {
-            let me = try await fetchMeRefreshingPasskeyIfNeeded()
+            let me = try await fetchMe()
             if me.auth && me.user == nil {
                 await logout()
                 return
@@ -292,7 +292,7 @@ final class AppModel: ObservableObject {
         // No more guest join tokens for native app.
     }
 
-    private func fetchMeRefreshingPasskeyIfNeeded() async throws -> MeResponse {
+    private func fetchMe() async throws -> MeResponse {
         // Main account only.
         return try await api.me()
     }
@@ -304,41 +304,7 @@ final class AppModel: ObservableObject {
         isLoggedIn = false
     }
 
-    private var shouldRefreshPasskeySession: Bool { false }
-
-    private static func parseJoinToken(from url: URL) -> String? {
-        if url.scheme?.lowercased() == "plexibeer", url.host == "join" {
-            let token = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            return token.isEmpty ? nil : token
-        }
-        let parts = url.path.split(separator: "/").map(String.init)
-        guard let idx = parts.firstIndex(of: "join"), idx + 1 < parts.count else { return nil }
-        let token = parts[idx + 1]
-        return token.isEmpty ? nil : token
-    }
-
-    static func parseJoinToken(from text: String) -> String? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        if let url = URL(string: trimmed), let token = parseJoinToken(from: url) {
-            return token
-        }
-        if let range = trimmed.range(of: #"/join/([^/?#\s]+)"#, options: .regularExpression) {
-            let chunk = String(trimmed[range])
-            if let slash = chunk.range(of: "/join/") {
-                let token = String(chunk[slash.upperBound...])
-                return token.isEmpty ? nil : token
-            }
-        }
-        if trimmed.count >= 20, !trimmed.contains(" ") {
-            return trimmed
-        }
-        return nil
-    }
-
-    func redeemInviteFromClipboard() async {
-        // Removed for owner-only native app.
-    }
+    private var shouldRefreshPasskeySession: Bool { false } // guest system removed
 
     func logout() async {
         await api.logout()
