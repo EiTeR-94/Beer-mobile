@@ -10,8 +10,7 @@ import fr.eiter.plexibeer.ui.theme.PlexiBeerTheme
 
 @Composable
 fun PlexiBeerApp() {
-    var message by remember { mutableStateOf("PlexiBeer Android - Même logique que iOS native") }
-    var isLocalMode by remember { mutableStateOf(true) }
+    var message by remember { mutableStateOf("PlexiBeer Android — owner only (LAN/VPN)") }
 
     Column(
         modifier = Modifier
@@ -26,25 +25,16 @@ fun PlexiBeerApp() {
         Spacer(Modifier.height(16.dp))
 
         Button(onClick = {
-            isLocalMode = true
-            message = "Mode Local (WiFi/VPN) - base: ${ServerSettings.lanApiBase}"
+            ServerSettings.resetToLan()
+            message = "Base effective:\n${ServerSettings.effectiveBase}\n\nSur émulateur Windows : utilise les boutons dans MainActivity ou entre 10.0.2.2 si besoin."
         }) {
-            Text("Mode Comptes Locaux (LAN)")
+            Text("Reset base LAN")
         }
 
         Spacer(Modifier.height(8.dp))
 
-        Button(onClick = {
-            isLocalMode = false
-            message = "Mode Invité 5G - base: ${ServerSettings.passkeyBaseURLs.first()}"
-        }) {
-            Text("Mode Invités (5G)")
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        Text("App prête pour build. Logique identique à l'iOS :")
-        Text("- Locaux : LAN path")
-        Text("- Invités : 5G public path")
+        Text("Owner-only. Pas de guest 5G.")
+        Text("PWA web pour les invités.")
+        Text("Test sur Windows : LDPlayer / MuMu + artifact CI est le plus simple.")
     }
 }

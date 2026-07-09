@@ -1,30 +1,32 @@
 package fr.eiter.plexibeer
 
 import android.os.Bundle
-import androidx.appcompat.app.AppCompatActivity
-import android.widget.TextView
-import android.widget.LinearLayout
-import android.widget.Button
-import android.view.ViewGroup
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import fr.eiter.plexibeer.ui.BeerApp
+import fr.eiter.plexibeer.ui.theme.PlexiBeerTheme
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val layout = LinearLayout(this)
-        layout.orientation = LinearLayout.VERTICAL
-        layout.layoutParams = ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        )
-        val text = TextView(this)
-        text.text = "PlexiBeer Android\n\nSame as iOS native:\n- Local accounts: LAN path\n- Guests: 5G path\n\nAPK ready for test on PC emulator."
-        layout.addView(text)
-        val btn = Button(this)
-        btn.text = "Test LAN mode"
-        btn.setOnClickListener {
-            text.text = "Using LAN base: ${ServerSettings.lanApiBase}"
+
+        // Use effective LAN base by default (good for real device / LDPlayer / MuMu on same LAN)
+        ServerSettings.useEffectiveBaseIfNeeded()
+
+        setContent {
+            PlexiBeerTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    BeerApp(context = this@MainActivity)
+                }
+            }
         }
-        layout.addView(btn)
-        setContentView(layout)
     }
 }
