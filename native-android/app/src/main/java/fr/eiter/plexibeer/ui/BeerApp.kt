@@ -90,6 +90,15 @@ fun BeerApp(context: Context) {
                 hopTags = fh.hops ?: emptyList()
             } catch (_: Exception) {}
         }
+        if (currentScreen == "history") {
+            scope.launch { checkins = api.checkins(50) }
+        }
+        if (currentScreen == "gallery") {
+            scope.launch { checkins = api.checkins(100) }
+        }
+        if (currentScreen == "wishlist") {
+            scope.launch { wishlist = api.wishlist() }
+        }
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -496,7 +505,6 @@ fun BeerApp(context: Context) {
                         if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
                     }
                 }
-                "add" -> {
                 "history" -> {
                     Text("Historique", style = MaterialTheme.typography.titleMedium)
                     if (stats != null) {
