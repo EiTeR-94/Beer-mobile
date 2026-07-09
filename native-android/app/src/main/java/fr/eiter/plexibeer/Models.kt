@@ -84,3 +84,28 @@ data class HistoryStats(
 }
 
 data class StyleOption(val value: String, val label: String)
+
+data class UntappdSearchResponse(
+    val ok: Boolean,
+    val error: String?,
+    val results: List<UntappdHit>?
+)
+
+data class UntappdHit(
+    val bid: Int,
+    @SerializedName("beer_name") val beerName: String,
+    val brewery: String?,
+    @SerializedName("style_fr") val styleFr: String?,
+    @SerializedName("photo_url") val photoURL: String?
+) : java.io.Serializable {
+    val id: Int get() = bid
+}
+
+data class FlavorsResponse(
+    val flavors: List<String>?,
+    @SerializedName("suggested_flavors") val suggestedFlavors: List<String>?,
+    val hops: List<String>?,
+    @SerializedName("suggested_hops") val suggestedHops: List<String>?,
+    @SerializedName("show_flavors_block") val showFlavorsBlock: Boolean?,
+    @SerializedName("show_hops_block") val showHopsBlock: Boolean?
+)

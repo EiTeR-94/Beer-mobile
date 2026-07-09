@@ -4,6 +4,8 @@ import android.content.Context
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.FormBody
+import okhttp3.FormBody
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -141,9 +143,20 @@ class BeerAPI private constructor(private val context: Context) {
     }
 
     suspend fun createCheckin(data: Map<String, Any?>): Map<String, Any?> = withContext(Dispatchers.IO) {
-        val json = gson.toJson(data)
-        val req = buildRequest("/api/checkins", "POST", json)
-        val bodyStr = executeRequest(req)
+        // Use form encoding (matching web/iOS and backend Form(...) deps). JSON would 422.
+        val formBuilder = FormBody.Builder()
+        data.forEach { (key, value) ->
+            formBuilder.add(key, value?.toString() ?: "")
+        }
+        val req = Request.Builder()
+            .url(baseURL + "api/checkins")
+            .header(NATIVE_CLIENT_HEADER, NATIVE_CLIENT_VALUE)
+            .post(formBuilder.build())
+            .build()
+        val resp = client.newCall(req).execute()
+        val bodyStr = resp.body?.string() ?: "{}"
+        if (resp.code == 403) throw Exception("Accès refusé — Wi-Fi maison ou VPN Plexi requis")
+        if (!resp.isSuccessful) throw Exception("Erreur serveur: ${resp.code} $bodyStr")
         gson.fromJson(bodyStr, object : com.google.gson.reflect.TypeToken<Map<String, Any?>>() {}.type)
     }
 
@@ -193,5 +206,73 @@ class BeerAPI private constructor(private val context: Context) {
         val bodyStr = executeRequest(req)
         val listType = object : com.google.gson.reflect.TypeToken<List<StyleOption>>() {}.type
         gson.fromJson(bodyStr, listType)
+    }
+
+    suspend fun searchUntappd(brewery: String, name: String): UntappdSearchResponse = withContext(Dispatchers.IO) {
+        val json = gson.toJson(mapOf("brewery" to brewery, "name" to name))
+        val req = buildRequest("/api/untappd/search", "POST", json)
+        val bodyStr = executeRequest(req)
+        gson.fromJson(bodyStr, UntappdSearchResponse::class.java)
+    }
+
+    suspend fun flavorsAndHops(): FlavorsResponse = withContext(Dispatchers.IO) {
+        val req = buildRequest("/api/flavors")
+        val bodyStr = executeRequest(req)
+        gson.fromJson(bodyStr, FlavorsResponse::class.java)
+    }
+
+    /**
+     * Création multipart (comme iOS) pour supporter Form + photo optionnelle.
+     * Retourne l'id du checkin créé.
+     */
+    suspend fun createCheckinMultipart(
+        beerName: String,
+        brewery: String,
+        style: String,
+        rating: Double,
+        comment: String?,
+        photoFile: File? = null,
+        barcode: String = "",
+        untappdBid: Int? = null,
+        flavors: List<String> = emptyList(),
+        hops: List<String> = emptyList(),
+        force: Boolean = false
+    ): Int = withContext(Dispatchers.IO) {
+        val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
+        builder.addFormDataPart("beer_name", beerName)
+        builder.addFormDataPart("brewery", brewery)
+        builder.addFormDataPart("style", style.ifBlank { "Unknown" })
+        builder.addFormDataPart("rating", rating.toString())
+        builder.addFormDataPart("comment", comment?.take(120) ?: "")
+        builder.addFormDataPart("barcode", barcode)
+        builder.addFormDataPart("abv", "")
+        builder.addFormDataPart("summary", "")
+        builder.addFormDataPart("flavors", gson.toJson(flavors))
+        builder.addFormDataPart("hops", gson.toJson(hops))
+        builder.addFormDataPart("untappd_bid", untappdBid?.toString() ?: "")
+        builder.addFormDataPart("force", force.toString())
+
+        if (photoFile != null && photoFile.exists()) {
+            builder.addFormDataPart(
+                "photo",
+                photoFile.name,
+                photoFile.asRequestBody("image/jpeg".toMediaType())
+            )
+        }
+
+        val req = Request.Builder()
+            .url(baseURL.trimEnd('/') + "/api/checkins")
+            .header(NATIVE_CLIENT_HEADER, NATIVE_CLIENT_VALUE)
+            .post(builder.build())
+            .build()
+
+        val resp = client.newCall(req).execute()
+        val bodyStr = resp.body?.string() ?: "{}"
+        if (!resp.isSuccessful) {
+            throw Exception("Erreur création checkin: ${resp.code} $bodyStr")
+        }
+        val mapType = object : com.google.gson.reflect.TypeToken<Map<String, Any?>>() {}.type
+        val map: Map<String, Any?> = gson.fromJson(bodyStr, mapType)
+        (map["id"] as? Number)?.toInt() ?: 0
     }
 }

@@ -61,6 +61,33 @@ fun BeerApp(context: Context) {
     var pendingPhotoFile by remember { mutableStateOf<File?>(null) }
     var pendingScanFile by remember { mutableStateOf<File?>(null) }
 
+    // Additional state for closer iOS parity
+    var untappdBrewery by remember { mutableStateOf("") }
+    var untappdName by remember { mutableStateOf("") }
+    var untappdResults by remember { mutableStateOf(listOf<UntappdHit>()) }
+    var untappdError by remember { mutableStateOf<String?>(null) }
+    var styleOptions by remember { mutableStateOf(listOf<StyleOption>()) }
+    var manualStyle by remember { mutableStateOf("") }
+    var flavors by remember { mutableStateOf(setOf<String>()) }
+    var hops by remember { mutableStateOf(setOf<String>()) }
+    var customFlavorInput by remember { mutableStateOf("") }
+    var customHopInput by remember { mutableStateOf("") }
+    var flavorTags by remember { mutableStateOf(listOf<String>()) }
+    var hopTags by remember { mutableStateOf(listOf<String>()) }
+    var busy by remember { mutableStateOf(false) }
+
+    // Load styles and flavors when entering add (like onAppear in iOS)
+    LaunchedEffect(currentScreen) {
+        if (currentScreen == "add") {
+            try {
+                styleOptions = api.styles()
+                val fh = api.flavorsAndHops()
+                flavorTags = fh.flavors ?: emptyList()
+                hopTags = fh.hops ?: emptyList()
+            } catch (_: Exception) {}
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -83,6 +110,8 @@ fun BeerApp(context: Context) {
     fun resetAddForm() {
         beerName = ""; brewery = ""; style = ""; comment = ""; rating = 3.5f
         photoFile = null; pendingPhotoFile = null; lookupBarcode = ""; lookupStatus = ""; wizardStep = 1
+        untappdBrewery = ""; untappdName = ""; untappdResults = emptyList(); untappdError = null
+        manualStyle = ""; flavors = emptySet(); hops = emptySet(); customFlavorInput = ""; customHopInput = ""
     }
 
     fun takePhoto() {
@@ -245,27 +274,30 @@ fun BeerApp(context: Context) {
             try {
                 val r = (rating / 2f).coerceIn(0.25f, 5f).toDouble()
                 val bc = lookupBarcode.filter { it.isDigit() }.ifBlank { null }
-                val data = mapOf(
-                    "beer_name" to beerName,
-                    "brewery" to brewery,
-                    "style" to (style.ifBlank { "Unknown" }),
-                    "rating" to r,
-                    "comment" to comment.ifBlank { null },
-                    "barcode" to bc
+                val untappdBid = untappdResults.firstOrNull()?.bid
+                val id = api.createCheckinMultipart(
+                    beerName = beerName,
+                    brewery = brewery,
+                    style = style.ifBlank { "Unknown" },
+                    rating = r,
+                    comment = comment.ifBlank { null },
+                    photoFile = photoFile,
+                    barcode = bc ?: "",
+                    untappdBid = untappdBid,
+                    flavors = flavors.toList(),
+                    hops = hops.toList(),
+                    force = false
                 )
-                val result = api.createCheckin(data)
-                val id = (result["id"] as? Number)?.toInt()
-                photoFile?.let { pf ->
-                    if (id != null) {
-                        try { api.uploadPhoto(id, pf) } catch (_: Exception) {}
-                    }
-                }
-                error = "Checkin ajouté ✓"
+                error = "Checkin ajouté ✓ (id=$id)"
                 refreshData(api, checkins = { checkins = it }, wishlist = { wishlist = it }, stats = { stats = it })
                 resetAddForm()
                 currentScreen = "history"
             } catch (e: Exception) {
-                error = "Erreur ajout: ${e.message}"
+                if (e.message?.contains("déjà", ignoreCase = true) == true || e.message?.contains("duplicate", ignoreCase = true) == true) {
+                    error = "Déjà dégustée. Force ? (non implémenté)"
+                } else {
+                    error = "Erreur ajout: ${e.message}"
+                }
             }
             isLoading = false
         }
@@ -351,6 +383,33 @@ fun BeerApp(context: Context) {
                                 Button(onClick = { startBarcodeScan() }) { Text("📷 Scanner (ML Kit)") }
                                 if (lookupStatus.isNotBlank()) Text(lookupStatus)
 
+                                // Untappd search like iOS
+                                Text("Chercher sur Untappd", style = MaterialTheme.typography.titleSmall)
+                                OutlinedTextField(value = untappdBrewery, onValueChange = { untappdBrewery = it }, label = { Text("Brasserie (optionnel)") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = untappdName, onValueChange = { untappdName = it }, label = { Text("Nom de la bière") }, modifier = Modifier.fillMaxWidth())
+                                Button(onClick = {
+                                    scope.launch {
+                                        busy = true; untappdError = null
+                                        try {
+                                            val resp = api.searchUntappd(untappdBrewery, untappdName)
+                                            untappdResults = resp.results ?: emptyList()
+                                            if (untappdResults.isEmpty()) untappdError = "Aucun résultat"
+                                        } catch (e: Exception) { untappdError = e.message }
+                                        busy = false
+                                    }
+                                }, enabled = untappdName.length >= 2 || untappdBrewery.length >= 2) { Text(if (busy) "Recherche…" else "Chercher sur Untappd") }
+                                if (untappdError != null) Text(untappdError!!, color = MaterialTheme.colorScheme.error)
+                                untappdResults.forEach { hit ->
+                                    Button(onClick = {
+                                        beerName = hit.beerName
+                                        brewery = hit.brewery ?: ""
+                                        style = hit.styleFr ?: ""
+                                        untappdResults = emptyList()
+                                    }) {
+                                        Text("${hit.beerName} - ${hit.brewery ?: ""}")
+                                    }
+                                }
+
                                 OutlinedTextField(value = beerName, onValueChange = { beerName = it }, label = { Text("Nom de la bière *") }, modifier = Modifier.fillMaxWidth())
                                 OutlinedTextField(value = brewery, onValueChange = { brewery = it }, label = { Text("Brasserie") }, modifier = Modifier.fillMaxWidth())
                                 OutlinedTextField(value = style, onValueChange = { style = it }, label = { Text("Style") }, modifier = Modifier.fillMaxWidth())
@@ -373,11 +432,38 @@ fun BeerApp(context: Context) {
                                 }
                             }
                             3 -> {
-                                // Step 3: Rating / comment
+                                // Step 3: Rating / comment + flavors/hops (closer to iOS)
                                 Text("Note (0.25-5)")
                                 Slider(value = rating, onValueChange = { rating = it }, valueRange = 0.25f..5f, steps = 19)
                                 Text("%.2f / 5".format(rating))
                                 OutlinedTextField(value = comment, onValueChange = { comment = it }, label = { Text("Commentaire") }, modifier = Modifier.fillMaxWidth())
+
+                                // Flavors
+                                Text("Flavors")
+                                Row {
+                                    OutlinedTextField(value = customFlavorInput, onValueChange = { customFlavorInput = it }, label = { Text("Custom flavor") }, modifier = Modifier.weight(1f))
+                                    Button(onClick = {
+                                        if (customFlavorInput.isNotBlank()) {
+                                            flavors = flavors + customFlavorInput.trim()
+                                            customFlavorInput = ""
+                                        }
+                                    }) { Text("+") }
+                                }
+                                if (flavors.isNotEmpty()) Text("Selected: ${flavors.joinToString()}")
+
+                                // Hops
+                                Text("Hops")
+                                Row {
+                                    OutlinedTextField(value = customHopInput, onValueChange = { customHopInput = it }, label = { Text("Custom hop") }, modifier = Modifier.weight(1f))
+                                    Button(onClick = {
+                                        if (customHopInput.isNotBlank()) {
+                                            hops = hops + customHopInput.trim()
+                                            customHopInput = ""
+                                        }
+                                    }) { Text("+") }
+                                }
+                                if (hops.isNotEmpty()) Text("Selected: ${hops.joinToString()}")
+
                                 Row {
                                     Button(onClick = { goToStep(2) }) { Text("← Retour") }
                                     Spacer(Modifier.width(8.dp))
@@ -391,6 +477,8 @@ fun BeerApp(context: Context) {
                                         Text("${beerName} - ${brewery}", style = MaterialTheme.typography.titleSmall)
                                         Text("Style: $style  |  Note: %.2f/5".format(rating))
                                         if (comment.isNotBlank()) Text("Comment: $comment")
+                                        if (flavors.isNotEmpty()) Text("Flavors: ${flavors.joinToString()}")
+                                        if (hops.isNotEmpty()) Text("Hops: ${hops.joinToString()}")
                                         if (photoFile != null) Text("📷 Photo incluse")
                                     }
                                 }
