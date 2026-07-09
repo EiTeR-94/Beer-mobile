@@ -4,6 +4,7 @@ import Security
 import UIKit
 import LocalAuthentication  // Theme 4: biometric support for sensitive actions
 import os  // Priority 6: structured logging
+import Darwin  // for getifaddrs, NI_MAXHOST in getCurrentIPAddress
 
 private let logger = Logger(subsystem: "fr.eiter.plexibeer", category: "AppModel")
 
@@ -247,7 +248,7 @@ final class AppModel: ObservableObject {
         if await api.discoverWorkingEndpoint() != nil {
             let latency = Date().timeIntervalSince(start)
             lastEndpointLatency = latency
-            lastSuccessfulBase = baseURL
+            lastSuccessfulBase = api.baseURL
             networkStatus = .online
             serverVersion = (try? await api.version()) ?? serverVersion
             retryTask?.cancel()
