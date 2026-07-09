@@ -6,7 +6,6 @@ struct LoginView: View {
     @State private var password = ""
     @State private var error: String?
     @State private var busy = false
-    @State private var biometricsUnavailable = !PasskeyAuth.biometricsAvailable
 
     var body: some View {
         ZStack {
@@ -43,14 +42,6 @@ struct LoginView: View {
 
                     BeerPrimaryButton(title: busy ? "Connexion…" : "Se connecter", disabled: username.isEmpty || password.isEmpty, busy: busy) {
                         Task { await submit() }
-                    }
-
-                    if biometricsUnavailable {
-                        Text("Biométrie indisponible sur cet appareil.")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.error)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.top, 6)
                     }
                 }
                 .padding(.horizontal, 24)

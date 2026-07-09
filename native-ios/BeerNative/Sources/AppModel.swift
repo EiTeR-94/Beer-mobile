@@ -180,18 +180,18 @@ final class AppModel: ObservableObject {
     func applySession(user: String?, isAdmin: Bool, isInvite: Bool, loggedIn: Bool) {
         self.user = user
         self.isAdmin = isAdmin
-        self.isInvite = isInvite
+        self.isInvite = false  // owner only, no guest mode in native app
         self.isLoggedIn = loggedIn
         if loggedIn, let user {
-            BeerSessionStore.save(user: user, isAdmin: isAdmin, isInvite: isInvite)
+            BeerSessionStore.save(user: user, isAdmin: isAdmin, isInvite: false)
             KeychainStore.username = user
-            PasskeySessionStore.clear()  // ensure no guest token lingers
+            PasskeySessionStore.clear()
         }
     }
 
     func restoreOfflineSessionIfNeeded() {
         guard let saved = BeerSessionStore.restore() else { return }
-        applySession(user: saved.user, isAdmin: saved.isAdmin, isInvite: saved.isInvite, loggedIn: true)
+        applySession(user: saved.user, isAdmin: saved.isAdmin, isInvite: false, loggedIn: true)
     }
 
     func bootstrap() async {
@@ -224,11 +224,7 @@ final class AppModel: ObservableObject {
             await clearSessionState()
             BeerSessionStore.clear()
             KeychainStore.username = nil
-            showToast(
-                "Invitation invalide ou expirée — demande un nouveau lien à l'admin.",
-                variant: .error,
-                durationMs: 5200
-            )
+            showToast("Accès refusé.", variant: .error, durationMs: 4000)
         } catch BeerAPIError.unauthorized {
             await clearSessionState()
             if networkStatus == .online {
@@ -293,17 +289,11 @@ final class AppModel: ObservableObject {
     }
 
     func handleOpenURL(_ url: URL) async {
-        guard let token = Self.parseJoinToken(from: url) else { return }
-        await redeemInviteToken(token)
-    }
-
-    func redeemInviteToken(_ token: String) async {
-        // Invitation system removed from native app (owner only, use main account + PWA web for others).
-        showToast("Invites désactivés sur l'app native. Utilise le PWA web (LAN ou VPN).", variant: .error)
+        // No more guest join tokens for native app.
     }
 
     private func fetchMeRefreshingPasskeyIfNeeded() async throws -> MeResponse {
-        // No passkey/guest refresh anymore (owner main account only).
+        // Main account only.
         return try await api.me()
     }
 
@@ -347,7 +337,7 @@ final class AppModel: ObservableObject {
     }
 
     func redeemInviteFromClipboard() async {
-        showToast("Invites désactivés sur l'app native (owner only). Utilise le PWA web sur LAN/VPN.", variant: .info)
+        // Removed for owner-only native app.
     }
 
     func logout() async {
