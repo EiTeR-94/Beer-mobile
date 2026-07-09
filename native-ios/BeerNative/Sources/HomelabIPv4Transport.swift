@@ -11,12 +11,11 @@ import Network
 /// See also: PlexiIPv4URLProtocol and ServerSettings.wanIPv4
 enum HomelabIPv4Transport {
     private static let wanIP = ServerSettings.wanIPv4
-    private static let wanIPv6 = ServerSettings.wanIPv6
+    // wanIPv6 removed - owner-only native (no more 5G guest paths)
     private static let tlsHost = ServerSettings.canonicalHost
-    private static let timeoutSeconds: UInt64 = 60  // 5G: plus long pour établissement lent sur cellulaire
+    private static let timeoutSeconds: UInt64 = 60
 
-    // (5G guest path comment removed)
-    static var useIPv6 = true
+    static var useIPv6 = false  // always IPv4 for owner LAN/VPN
 
     static func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         try await withThrowingTaskGroup(of: (Data, HTTPURLResponse, URL).self) { group in
@@ -50,7 +49,7 @@ enum HomelabIPv4Transport {
         sec_protocol_options_set_tls_server_name(tls.securityProtocolOptions, tlsHost)
         let params = NWParameters(tls: tls, tcp: tcp)
 
-        let hostStr = Self.useIPv6 ? wanIPv6 : wanIP
+        let hostStr = wanIP  // IPv4 only now (owner-only, no 5G guest)
         let conn = NWConnection(host: NWEndpoint.Host(hostStr), port: 443, using: params)
         return try await withCheckedThrowingContinuation { cont in
             let queue = DispatchQueue(label: "fr.eiter.plexibeer.ipv4")
@@ -70,7 +69,7 @@ enum HomelabIPv4Transport {
                 }
             }
 
-            conn.stateUpdateHandler = { state in
+            conn.stateUpdateHandler = { (state: NWConnection.State) in
                 switch state {
                 case .ready:
                     connectTimeoutTask.cancel()
