@@ -256,14 +256,12 @@ final class AppModel: ObservableObject {
         var results: [String] = []
         for ep in endpoints {
             api.setBaseURL(ep)
-            do {
-                let ok = await api.discoverWorkingEndpoint()
-                if ok != nil {
-                    networkStatus = .online
-                    return "Serveur OK via \(ep.host ?? "?"):\(ep.port ?? 0)"
-                }
-            } catch {
-                results.append("\(ep.host ?? "?"): \(error.localizedDescription)")
+            let ok = await api.discoverWorkingEndpoint()
+            if ok != nil {
+                networkStatus = .online
+                return "Serveur OK via \(ep.host ?? "?"):\(ep.port ?? 0)"
+            } else {
+                results.append("\(ep.host ?? "?"): unreachable")
             }
         }
         networkStatus = isOnline ? .serverUnreachable : .offline
