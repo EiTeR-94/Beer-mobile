@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
@@ -276,8 +277,8 @@ fun BeerApp(context: Context) {
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("🍺 Beer Log — Android (owner)", style = MaterialTheme.typography.headlineMedium, color = BeerColors.text)
-        Text("LAN/VPN uniquement — même chose que iOS", style = MaterialTheme.typography.bodySmall, color = BeerColors.muted)
+        Text("🍺 Beer Log — Android (owner)", style = MaterialTheme.typography.headlineMedium)
+        Text("LAN/VPN uniquement — même chose que iOS", style = MaterialTheme.typography.bodySmall)
 
         if (!isLoggedIn) {
             Spacer(Modifier.height(24.dp))
@@ -314,18 +315,23 @@ fun BeerApp(context: Context) {
                 "add" -> {
                     // 4-STEP WIZARD like iOS BeerWizardView
                     Column {
-                        Text("Nouveau checkin - Étape $wizardStep / 4", style = MaterialTheme.typography.titleMedium, color = BeerColors.text)
-                        Text("lookup → photo → note → review", style = MaterialTheme.typography.bodySmall, color = BeerColors.muted)
+                        Text("Nouveau checkin - Étape $wizardStep / 4", style = MaterialTheme.typography.titleMedium)
+                        Text("lookup → photo → note → review", style = MaterialTheme.typography.bodySmall)
 
                         // Step nav pills
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(vertical = 8.dp)) {
                             for (s in 1..4) {
-                                val label = when(s) {1->"Lookup",2->"Photo",3->"Note",4->"Review"}
+                                val label = when (s) {
+                                    1 -> "Lookup"
+                                    2 -> "Photo"
+                                    3 -> "Note"
+                                    4 -> "Review"
+                                    else -> ""
+                                }
                                 Button(
                                     onClick = { if (s <= wizardStep) goToStep(s) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = if (s == wizardStep) BeerColors.accent else BeerColors.card),
                                     modifier = Modifier.weight(1f)
-                                ) { Text(label, fontSize = 10.sp) }
+                                ) { Text(label, style = MaterialTheme.typography.labelSmall) }
                             }
                         }
 
@@ -348,7 +354,7 @@ fun BeerApp(context: Context) {
                                     }
                                 }, enabled = lookupBarcode.isNotBlank()) { Text("Lookup EAN") }
                                 Button(onClick = { startBarcodeScan() }) { Text("📷 Scanner (ML Kit)") }
-                                if (lookupStatus.isNotBlank()) Text(lookupStatus, color = if (lookupStatus.startsWith("✓")) BeerColors.ok else BeerColors.error)
+                                if (lookupStatus.isNotBlank()) Text(lookupStatus)
 
                                 OutlinedTextField(value = beerName, onValueChange = { beerName = it }, label = { Text("Nom de la bière *") }, modifier = Modifier.fillMaxWidth())
                                 OutlinedTextField(value = brewery, onValueChange = { brewery = it }, label = { Text("Brasserie") }, modifier = Modifier.fillMaxWidth())
@@ -361,7 +367,7 @@ fun BeerApp(context: Context) {
                                 Text("Photo de la bière / du verre")
                                 Button(onClick = { takePhoto() }, modifier = Modifier.fillMaxWidth()) { Text("📷 Prendre photo (full res)") }
                                 if (photoFile != null) {
-                                    Text("Photo prête", color = BeerColors.ok)
+                                    Text("Photo prête")
                                     AsyncImage(model = photoFile, contentDescription = null, modifier = Modifier.height(120.dp).fillMaxWidth())
                                     TextButton(onClick = { photoFile = null }) { Text("Retirer") }
                                 }
@@ -375,7 +381,7 @@ fun BeerApp(context: Context) {
                                 // Step 3: Rating / comment
                                 Text("Note (0.25-5)")
                                 Slider(value = rating, onValueChange = { rating = it }, valueRange = 0.25f..5f, steps = 19)
-                                Text("%.2f / 5".format(rating), color = BeerColors.star)
+                                Text("%.2f / 5".format(rating))
                                 OutlinedTextField(value = comment, onValueChange = { comment = it }, label = { Text("Commentaire") }, modifier = Modifier.fillMaxWidth())
                                 Row {
                                     Button(onClick = { goToStep(2) }) { Text("← Retour") }
@@ -399,6 +405,7 @@ fun BeerApp(context: Context) {
                                     Button(onClick = { submitCheckin() }, enabled = beerName.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Enregistrer la dégustation") }
                                 }
                             }
+                            else -> {}
                         }
                         if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
                     }
@@ -427,6 +434,7 @@ fun BeerApp(context: Context) {
                     Text("Wishlist")
                     // simplified
                 }
+                else -> {}
             }
         }
         if (isLoading) CircularProgressIndicator()
