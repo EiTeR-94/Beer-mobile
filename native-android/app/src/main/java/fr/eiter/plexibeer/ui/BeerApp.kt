@@ -24,7 +24,6 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import fr.eiter.plexibeer.*
-import fr.eiter.plexibeer.ui.theme.BeerColors
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -127,12 +126,35 @@ fun BeerApp(context: Context) {
             scope.launch {
                 isLoading = true
                 try {
-                    val code = scanImageForBarcode(context, f)
+                    val code = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        kotlinx.coroutines.suspendCancellableCoroutine<String?> { cont ->
+                            try {
+                                val img = com.google.mlkit.vision.common.InputImage.fromFilePath(context, Uri.fromFile(f))
+                                val sc = com.google.mlkit.vision.barcode.BarcodeScanning.getClient()
+                                sc.process(img)
+                                    .addOnSuccessListener { bs ->
+                                        val code = bs.firstOrNull { b ->
+                                            val f = b.format
+                                            (f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_EAN_13 || f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_EAN_8 || f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_UPC_A || f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_UPC_E) && b.rawValue != null
+                                        }?.rawValue ?: bs.firstOrNull { it.rawValue != null }?.rawValue
+                                        try { sc.close() } catch (_: Exception) {}
+                                        cont.resume(code)
+                                    }
+                                    .addOnFailureListener { ex ->
+                                        try { sc.close() } catch (_: Exception) {}
+                                        cont.resumeWithException(ex)
+                                    }
+                                cont.invokeOnCancellation { try { sc.close() } catch (_: Exception) {} }
+                            } catch (e: Exception) {
+                                cont.resumeWithException(e)
+                            }
+                        }
+                    }
                     if (!code.isNullOrBlank()) {
                         lookupBarcode = code
                         lookupStatus = "Scan ML Kit OK — lookup..."
                         try {
-                            val resp = api.lookup(code.filter { it.isDigit() })
+                            val resp = api.lookup(code.filter { c -> c.isDigit() })
                             if (resp.ok && !resp.beerName.isNullOrBlank()) {
                                 beerName = resp.beerName ?: beerName
                                 brewery = resp.brewery ?: brewery
@@ -174,33 +196,6 @@ fun BeerApp(context: Context) {
             launchScanCapture(context)
         } else {
             permissionLauncher.launch(p)
-        }
-    }
-
-    suspend fun scanImageForBarcode(ctx: Context, file: File): String? {
-        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            kotlinx.coroutines.suspendCancellableCoroutine<String?> { cont ->
-                try {
-                    val img = com.google.mlkit.vision.common.InputImage.fromFilePath(ctx, Uri.fromFile(file))
-                    val sc = com.google.mlkit.vision.barcode.BarcodeScanning.getClient()
-                    sc.process(img)
-                        .addOnSuccessListener { bs ->
-                            val code = bs.firstOrNull { b ->
-                                val f = b.format
-                                (f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_EAN_13 || f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_EAN_8 || f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_UPC_A || f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_UPC_E) && b.rawValue != null
-                            }?.rawValue ?: bs.firstOrNull { it.rawValue != null }?.rawValue
-                            try { sc.close() } catch (_: Exception) {}
-                            cont.resume(code)
-                        }
-                        .addOnFailureListener { ex ->
-                            try { sc.close() } catch (_: Exception) {}
-                            cont.resumeWithException(ex)
-                        }
-                    cont.invokeOnCancellation { try { sc.close() } catch (_: Exception) {} }
-                } catch (e: Exception) {
-                    cont.resumeWithException(e)
-                }
-            }
         }
     }
 
