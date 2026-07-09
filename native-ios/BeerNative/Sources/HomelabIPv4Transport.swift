@@ -60,7 +60,7 @@ enum HomelabIPv4Transport {
             let connectTimeoutTask = Task {
                 try? await Task.sleep(nanoseconds: 60_000_000_000) // 60s
                 if !resumed {
-                    finish(.failure(BeerAPIError.server("Timeout connexion (établissement lent). Réessaie ou passe en WiFi/VPN.")))
+                    finish(.failure(BeerAPIError.server("Timeout connexion (établissement lent). Vérifie ton WiFi/VPN.")))
                 }
             }
 
