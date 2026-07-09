@@ -23,9 +23,6 @@ enum ServerSettings {
         [lanApiBase, apiBase]
     }
 
-    // (passkey base removed - no guest mode)
-    }
-
     /// Probe timeout for LAN/VPN. Short for quick fail, longer for VPN latency.
     static let lanProbeTimeoutSec: TimeInterval = 15
 
