@@ -2,35 +2,29 @@ import Foundation
 
 enum ServerSettings {
     static let canonicalHost = "eiter.freeboxos.fr"
-    /// IPv4 WAN fallback.
+    /// IPv4 WAN fallback (kept for reference, but owner-only native now uses LAN/VPN only).
     static let wanIPv4 = "82.64.151.113"
 
-    /// IPv6 WAN for 5G guests. Exact stable global IPv6 of this server.
-    /// Bypasses broken Freebox AAAA (2a01:...::1 on the box, which doesn't forward 443 properly).
-    static let wanIPv6 = "2a01:e0a:3d0:de50:fab1:56ff:feaa:75d7"
-
-    /// URL canonique pour invités 5G.
+    /// URL for main account (owner only via LAN IP or VPN).
     static let apiBaseString = "https://\(canonicalHost)/beer/"
 
     static var apiBase: URL {
         URL(string: apiBaseString)!
     }
 
-    /// Direct LAN IP for local accounts (WiFi/VPN) — avoids DNS/hairpin issues.
-    /// Uses 192.168.1.50:8444, TLS delegate accepts it.
-    /// This is the main path for local accounts.
+    /// Direct LAN IP for owner (WiFi or VPN). Avoids domain IPv6 issues on Freebox.
+    /// Main (and only) path now.
     static var lanApiBase: URL {
         URL(string: "https://192.168.1.50:8444/beer/")!
     }
 
     static var candidateURLs: [URL] {
-        // For local accounts: ONLY LAN IP. Domain fallback is dangerous because it can leave baseURL
-        // pointing to unreachable domain (IPv6 AAAA issue on Freebox) and break photo loads etc.
         [lanApiBase]
     }
 
+    /// No longer used: guest/invite paths removed (owner only, main account).
     static var passkeyBaseURLs: [URL] {
-        [apiBase]
+        []
     }
 
     /// :8444 hub/LAN — probe court (hors LAN = fail fast, pas 15s de timeout).

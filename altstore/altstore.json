@@ -13,7 +13,7 @@
       "bundleIdentifier": "fr.eiter.plexibeer",
       "developerName": "eiter",
       "subtitle": "Ton carnet de bieres sur Plexi",
-      "localizedDescription": "Beer Log, c'est ton journal de bieres sur le serveur Plexi d'EiTeR - 100% natif iPhone, zero WebView. Tu scannes un code-barres, tu cherches sur Untappd, tu poses la photo du verre, tu notes avec des demi-etoiles, saveurs et houblons. Historique, galerie, liste a boire, idees cadeaux : tout est la, pense pour le quotidien entre amis. Mode hors ligne : tes degustations restent sur l'iPhone et partent au serveur des que le Wi-Fi maison ou le VPN Plexi revient. Connexion : eiter.freeboxos.fr. Admin : comptes, invitations privees, referentiels. Face ID pour les invites 5G. Fait avec soin pour Plexi, pas pour l'App Store.",
+      "localizedDescription": "Beer Log, c'est ton journal de bieres sur le serveur Plexi d'EiTeR - 100% natif iPhone, zero WebView. Tu scannes un code-barres, tu cherches sur Untappd, tu poses la photo du verre, tu notes avec des demi-etoiles, saveurs et houblons. Historique, galerie, liste a boire, idees cadeaux : tout est la. Mode hors ligne : tes degustations restent sur l'iPhone et partent au serveur des que le Wi-Fi maison ou le VPN Plexi revient. Connexion : LAN ou VPN uniquement (owner). Fait avec soin pour Plexi, pas pour l'App Store.",
       "iconURL": "https://eiter.freeboxos.fr/mobile/beer/icon-180.png",
       "tintColor": "#f59e0b",
       "category": "lifestyle",
@@ -23,7 +23,7 @@
         ],
         "privacy": {
           "NSCameraUsageDescription": "Scanner les codes-barres et prendre des photos de tes degustations.",
-          "NSFaceIDUsageDescription": "Activer une invitation Beer Log et securiser la session invite (passkey Face ID).",
+          "NSFaceIDUsageDescription": "Securiser les actions sensibles (suppression, etc.) avec Face ID.",
           "NSLocalNetworkUsageDescription": "Connexion au serveur Beer Log Plexi (eiter.freeboxos.fr, hub LAN :8444).",
           "NSPhotoLibraryUsageDescription": "Joindre une photo a ta degustation Beer Log."
         }

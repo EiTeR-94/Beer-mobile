@@ -44,22 +44,6 @@ struct LoginView: View {
                     BeerPrimaryButton(title: busy ? "Connexion…" : "Se connecter", disabled: username.isEmpty || password.isEmpty, busy: busy) {
                         Task { await submit() }
                     }
-                    // Bouton pour invités 5G : utilise son propre chemin (domaine + Bearer/passkey standard)
-                    // Identique à la webapp. Pas de stack LAN custom.
-                    BeerPrimaryButton(
-                        title: busy ? "Connexion invité…" : "Connexion invité",
-                        disabled: busy || biometricsUnavailable,
-                        busy: busy
-                    ) {
-                        Task { await app.redeemInviteFromClipboard() }
-                    }
-                    .padding(.top, 10)
-
-                    Text("Colle ton lien d'invitation (5G) — Face ID requis. Chemin séparé des locaux.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.muted)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, 8)
 
                     if biometricsUnavailable {
                         Text("Biométrie indisponible sur cet appareil.")

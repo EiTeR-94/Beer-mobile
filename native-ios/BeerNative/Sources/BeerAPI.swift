@@ -34,11 +34,10 @@ final class BeerAPI {
 
     private let session: URLSession
     private let lanProbeSession: URLSession
-    private let passkeySession: URLSession
     private(set) var baseURL: URL
     private(set) var activeEndpoint: String = ""
 
-    init(baseURL: URL = ServerSettings.apiBase) {
+    init(baseURL: URL = ServerSettings.lanApiBase) {
         self.baseURL = Self.canonicalBase(baseURL)
         let sharedCookies = HTTPCookieStorage.shared
         func baseConfig(requestTimeout: TimeInterval = 20, resourceTimeout: TimeInterval = 90, shouldSetCookies: Bool = true) -> URLSessionConfiguration {
@@ -50,11 +49,12 @@ final class BeerAPI {
             config.timeoutIntervalForResource = resourceTimeout
             return config
         }
-        // Local session (LAN accounts): custom IPv4 + TLS delegate for LAN IP certs and IPv6 bypass.
-        let adminConfig = baseConfig(shouldSetCookies: false)
-        adminConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
+        // Owner session (LAN/WiFi or VPN): custom IPv4 + TLS delegate for LAN IP certs and IPv6 bypass.
+        // No more guest/passkey 5G paths (owner only, main account via LAN or VPN).
+        let ownerConfig = baseConfig(shouldSetCookies: false)
+        ownerConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
         self.session = URLSession(
-            configuration: adminConfig,
+            configuration: ownerConfig,
             delegate: HomelabTLSDelegate.shared,
             delegateQueue: nil
         )
@@ -68,21 +68,10 @@ final class BeerAPI {
             delegate: HomelabTLSDelegate.shared,
             delegateQueue: nil
         )
-        // Guest session (5G invités): uses PlexiIPv4URLProtocol (via config) to force
-        // direct IPv4 + proper SNI to wanIPv4. This bypasses broken/unreachable
-        // Freebox AAAA for eiter.freeboxos.fr:443 which causes SSL/TLS failures on
-        // cellular (5G). No TLS delegate (low-level transport handles TLS).
-        let guestConfig = baseConfig(requestTimeout: 60, resourceTimeout: 180)
-        guestConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
-        self.passkeySession = URLSession(configuration: guestConfig)
     }
 
-    private func session(for endpoint: URL, guest: Bool, probe: Bool = false) -> URLSession {
-        if guest {
-            return passkeySession  // 5G invités: IPv4 forcé via PlexiIPv4URLProtocol + transport
-        }
-        // Only the explicit health probe in discover uses the short-timeout lanProbeSession.
-        // All real LAN calls (login, API, etc) must use the normal long-timeout session.
+    private func session(for endpoint: URL, guest: Bool = false, probe: Bool = false) -> URLSession {
+        // Only main owner account now (LAN/WiFi or VPN). No guest.
         if probe && ServerSettings.isLanEndpoint(endpoint) { return lanProbeSession }
         return session
     }
@@ -98,11 +87,7 @@ final class BeerAPI {
     }
 
     func discoverWorkingEndpoint() async -> String? {
-        if shouldUsePasskeyBearer {
-            return await discoverGuestEndpoint()
-        }
-        // Local accounts: LAN IP only (WiFi/VPN). Direct IP to avoid domain issues.
-        // IMPORTANT: never set baseURL to a failing candidate, to avoid leaving it on unreachable domain.
+        // Owner only: LAN IP (WiFi or VPN). Direct IP to avoid domain IPv6 issues.
         let originalBase = baseURL
         for candidate in ServerSettings.candidateURLs {
             do {
@@ -118,30 +103,6 @@ final class BeerAPI {
                     baseURL = Self.canonicalBase(candidate)
                     activeEndpoint = candidate.absoluteString
                     return candidate.absoluteString
-                }
-            } catch {
-                // do NOT change baseURL on failure
-                continue
-            }
-        }
-        baseURL = originalBase  // restore if all failed
-        return nil
-    }
-
-    /// Invités 5G — :443 IPv4 forcé (via PlexiIPv4URLProtocol). /api/me public WAN.
-    private func discoverGuestEndpoint() async -> String? {
-        let originalBase = baseURL
-        for url in ServerSettings.passkeyBaseURLs {
-            do {
-                let (_, http, _) = try await wanRequest(
-                    path: "/api/me",
-                    method: "GET",
-                    body: nil
-                )
-                if http.statusCode == 200 {
-                    baseURL = Self.canonicalBase(url)
-                    activeEndpoint = url.absoluteString
-                    return url.absoluteString
                 }
             } catch {
                 continue
@@ -864,18 +825,13 @@ final class BeerAPI {
 
     // MARK: - HTTP
 
-    var shouldUsePasskeyBearer: Bool {
-        if PasskeySessionStore.accessToken != nil { return true }
-        if let saved = BeerSessionStore.restore(), saved.isInvite { return true }
-        return false
-    }
+    // No more guest/passkey: owner main account only (LAN or VPN).
+    var shouldUsePasskeyBearer: Bool { false }
 
     private func applyCommonHeaders(to req: inout URLRequest) {
         req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
         req.setValue(Self.nativeUserAgent, forHTTPHeaderField: "User-Agent")
-        if shouldUsePasskeyBearer, let token = PasskeySessionStore.accessToken {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        // Main account uses cookie session (no Bearer for guests).
     }
 
     private func beerSessionCookieString() -> String? {
@@ -886,47 +842,13 @@ final class BeerAPI {
         return nil
     }
 
-    private static func passkeyErrorMessage(_ status: Int) -> String {
-        status == 403 ? "Cette invitation est liée à un autre appareil." : "Passkey refusée"
-    }
+    // Guest/passkey paths removed (owner main account only).
+    private static func passkeyErrorMessage(_ status: Int) -> String { "Non utilisé" }
+    private static func mapPasskeyError(_ error: String?, status: Int) -> String { "Non utilisé" }
 
-    private static func mapPasskeyError(_ error: String?, status: Int) -> String {
-        switch error {
-        case "wrong_device": return "Cette invitation est liée à un autre appareil."
-        case "rate_limit": return "Trop de tentatives — réessaie dans une minute."
-        case "invalid": return "Cette invitation n'est pas valide ou a expiré."
-        default: return error ?? passkeyErrorMessage(status)
-        }
-    }
-
-    /// 5G / passkey guest path — connection to domain using guestSession.
-    /// Use IPv6 if wanIPv6 is set (to bypass broken Freebox AAAA), else IPv4.
-    private func wanRequest(
-        path: String,
-        method: String,
-        body: Data?,
-        contentType: String? = nil
-    ) async throws -> (Data, HTTPURLResponse, URL) {
-        HomelabIPv4Transport.useIPv6 = !ServerSettings.wanIPv6.isEmpty
-        // Use retry for robustness on 5G cellular.
-        return try await NetworkManager.shared.withRetry(maxAttempts: 3, baseDelayMs: 500) {
-            var lastError: Error?
-            for candidate in ServerSettings.passkeyBaseURLs {
-                baseURL = Self.canonicalBase(candidate)
-                var req = URLRequest(url: try self.url(path))
-                req.httpMethod = method
-                if let contentType { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
-                self.applyCommonHeaders(to: &req)
-                req.httpBody = body
-                do {
-                    return try await self.performWan(req)
-                } catch {
-                    lastError = error
-                }
-            }
-            if let lastError { throw lastError }
-            throw BeerAPIError.server("Serveur injoignable en 5G (IPv4). Premier chargement lent normal (latence WAN + handshakes). Réessaie ou utilise WiFi/VPN.")
-        }
+    // Stub: no more wanRequest for guests.
+    private func wanRequest(path: String, method: String, body: Data?, contentType: String? = nil) async throws -> (Data, HTTPURLResponse, URL) {
+        throw BeerAPIError.server("Chemin invité désactivé sur l'app native (utilise le PWA web sur LAN/VPN).")
     }
 
     private func request(
@@ -935,10 +857,7 @@ final class BeerAPI {
         body: Data?,
         contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse, URL) {
-        if shouldUsePasskeyBearer {
-            return try await wanRequest(path: path, method: method, body: body, contentType: contentType)
-        }
-        // Local accounts: LAN IP only (WiFi/VPN). Direct IP to avoid domain/hairpin issues on 8444.
+        // Owner main account only (LAN/WiFi or VPN).
         var lastError: Error?
         for candidate in ServerSettings.candidateURLs {
             baseURL = Self.canonicalBase(candidate)
@@ -947,7 +866,6 @@ final class BeerAPI {
             if let contentType { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
             applyCommonHeaders(to: &req)
             req.httpBody = body
-            // Manually ensure session cookie is sent for local accounts (in case auto cookie handling misses it for the IP base)
             if let cookieStr = beerSessionCookieString() {
                 req.setValue(cookieStr, forHTTPHeaderField: "Cookie")
             } else if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL), !cookies.isEmpty {
@@ -955,7 +873,6 @@ final class BeerAPI {
                 req.setValue(cookieString, forHTTPHeaderField: "Cookie")
             }
             do {
-                // probe: false → use full timeout session even on LAN (only discover health uses short probe timeout)
                 let result = try await performOnEndpoint(candidate, request: req, guest: false, probe: false)
                 activeEndpoint = candidate.absoluteString
                 return result
@@ -971,13 +888,8 @@ final class BeerAPI {
     }
 
     private func performTransport(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
-        if shouldUsePasskeyBearer {
-            return try await performWan(request)
-        }
-        // Local accounts: use current base (LAN preferred via discover or previous set)
-        // probe: false to use normal (long) timeout; short timeout only for explicit health probe in discover
+        // Owner: LAN preferred.
         var req = request
-        // Manually ensure session cookie is sent for local accounts (in case auto cookie handling misses it for the IP base)
         if let cookieStr = beerSessionCookieString() {
             req.setValue(cookieStr, forHTTPHeaderField: "Cookie")
         } else if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL), !cookies.isEmpty {
@@ -1016,7 +928,7 @@ final class BeerAPI {
                     throw BeerAPIError.server("SSL refusé sur \(host).")
                 }
             case .timedOut:
-                throw BeerAPIError.server("Timeout \(endpoint.host ?? "?"). Sur 5G le premier chargement peut prendre 10-20s (nouvelles connexions TCP+TLS à chaque appel).")
+                throw BeerAPIError.server("Timeout \(endpoint.host ?? "?").")
             case .notConnectedToInternet:
                 throw BeerAPIError.server("Pas de réseau")
             default:

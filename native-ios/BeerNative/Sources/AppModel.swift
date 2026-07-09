@@ -25,7 +25,7 @@ final class AppModel: ObservableObject {
 
     @Published var user: String?
     @Published var isAdmin = false
-    @Published var isInvite = false
+    @Published var isInvite = false  // always false: no more invitation system on native app (owner main account only)
     @Published var isLoggedIn = false
     @Published var isLoading = true
     @Published var toast: ToastPayload?
@@ -185,9 +185,7 @@ final class AppModel: ObservableObject {
         if loggedIn, let user {
             BeerSessionStore.save(user: user, isAdmin: isAdmin, isInvite: isInvite)
             KeychainStore.username = user
-            if !isInvite {
-                PasskeySessionStore.clear()
-            }
+            PasskeySessionStore.clear()  // ensure no guest token lingers
         }
     }
 
@@ -239,7 +237,7 @@ final class AppModel: ObservableObject {
         } catch {
             // Erreurs réseau / injoignable : on peut garder l'état offline depuis la session locale
             if !isLoggedIn, let saved = BeerSessionStore.restore() {
-                applySession(user: saved.user, isAdmin: saved.isAdmin, isInvite: saved.isInvite, loggedIn: true)
+                applySession(user: saved.user, isAdmin: saved.isAdmin, isInvite: false, loggedIn: true)
             }
             if isLoggedIn {
                 if networkStatus == .offline {
@@ -278,7 +276,7 @@ final class AppModel: ObservableObject {
     }
 
     func login(username: String, password: String) async throws {
-        PasskeySessionStore.clear()
+        // No passkey/guest: owner main account.
         BeerSessionStore.clear()
         api.setBaseURL(ServerSettings.lanApiBase)
         let loginResp = try await api.login(username: username, password: password)
@@ -286,7 +284,7 @@ final class AppModel: ObservableObject {
         applySession(
             user: loginResp.user ?? me?.user ?? username,
             isAdmin: loginResp.isAdmin ?? me?.isAdmin ?? false,
-            isInvite: me?.isInvite ?? false,
+            isInvite: false,
             loggedIn: true
         )
         networkStatus = .online
@@ -300,76 +298,23 @@ final class AppModel: ObservableObject {
     }
 
     func redeemInviteToken(_ token: String) async {
-        isLoading = true
-        // Message spécifique pour le flow 5G invité (le Face ID ne vient qu'après l'appel réseau)
-        // Sur 5G le premier appel (register/options) peut prendre 10-25s à cause de la latence + transport IPv4.
-        showToast("Activation invité 5G : connexion au serveur (peut être long la première fois)...", variant: .info, durationMs: 15000)
-        defer { isLoading = false }
-        do {
-            // Vrai chemin 5G pour invités : guest path (domaine) avec forçage IPv4
-            // via PlexiIPv4URLProtocol (bypass AAAA Freebox cassé sur 443).
-            // Pas de LAN direct, passkey + token invité.
-            let result = try await NetworkManager.shared.withRetry(maxAttempts: 3, baseDelayMs: 1000) {
-                try await PasskeyAuth.shared.register(inviteToken: token)
-            }
-            PasskeySessionStore.save(accessToken: result.accessToken)
-            applySession(
-                user: result.user,
-                isAdmin: false,
-                isInvite: true,
-                loggedIn: true
-            )
-            api.setBaseURL(ServerSettings.apiBase)  // domaine, pas lan
-            networkStatus = .online
-            hideToast()
-            await syncPending()
-        } catch {
-            showToast("Échec activation invitation : \(error.localizedDescription). Vérifie le lien et réessaie (nouveau lien recommandé).", variant: .error)
-        }
+        // Invitation system removed from native app (owner only, use main account + PWA web for others).
+        showToast("Invites désactivés sur l'app native. Utilise le PWA web (LAN ou VPN).", variant: .error)
     }
 
     private func fetchMeRefreshingPasskeyIfNeeded() async throws -> MeResponse {
-        do {
-            return try await api.me()
-        } catch BeerAPIError.forbidden where shouldRefreshPasskeySession {
-            await clearSessionState()
-            BeerSessionStore.clear()
-            KeychainStore.username = nil
-            throw BeerAPIError.forbidden
-        } catch BeerAPIError.unauthorized where shouldRefreshPasskeySession {
-            guard let username = KeychainStore.username ?? BeerSessionStore.restore()?.user else {
-                throw BeerAPIError.unauthorized
-            }
-            guard PasskeyAuth.biometricsAvailable else { throw BeerAPIError.unauthorized }
-            do {
-                let token = try await PasskeyAuth.shared.login(username: username)
-                PasskeySessionStore.save(accessToken: token)
-                return try await api.me()
-            } catch {
-                await clearSessionState()
-                BeerSessionStore.clear()
-                KeychainStore.username = nil
-                throw error
-            }
-        }
+        // No passkey/guest refresh anymore (owner main account only).
+        return try await api.me()
     }
 
     private func clearSessionState() async {
-        // Tue uniquement le matériel d'auth vivant (token passkey / état live).
-        // On garde BeerSessionStore + username keychain pour permettre:
-        // - le mode offline "session locale"
-        // - le refresh passkey auto au prochain bootstrap (via shouldRefresh + restore)
-        PasskeySessionStore.clear()
         user = nil
         isAdmin = false
         isInvite = false
         isLoggedIn = false
-        // username conservé pour hint re-auth passkey / pré-remplissage éventuel
     }
 
-    private var shouldRefreshPasskeySession: Bool {
-        PasskeySessionStore.accessToken != nil || BeerSessionStore.restore()?.isInvite == true
-    }
+    private var shouldRefreshPasskeySession: Bool { false }
 
     private static func parseJoinToken(from url: URL) -> String? {
         if url.scheme?.lowercased() == "plexibeer", url.host == "join" {
@@ -402,12 +347,7 @@ final class AppModel: ObservableObject {
     }
 
     func redeemInviteFromClipboard() async {
-        let text = UIPasteboard.general.string ?? ""
-        guard let token = Self.parseJoinToken(from: text) else {
-            showToast("Colle d'abord le lien d'invitation (Messages ou mail).", variant: .error)
-            return
-        }
-        await redeemInviteToken(token)
+        showToast("Invites désactivés sur l'app native (owner only). Utilise le PWA web sur LAN/VPN.", variant: .info)
     }
 
     func logout() async {
