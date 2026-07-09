@@ -507,8 +507,9 @@ fun BeerApp(context: Context) {
                 }
                 "history" -> {
                     Text("Historique", style = MaterialTheme.typography.titleMedium)
-                    if (stats != null) {
-                        Text("Total: ${stats.total} | Avg: ${stats.avgRating ?: "-"}", style = MaterialTheme.typography.bodySmall)
+                    val s = stats
+                    if (s != null) {
+                        Text("Total: ${s.total} | Avg: ${s.avgRating ?: "-"}", style = MaterialTheme.typography.bodySmall)
                     }
                     Row {
                         Button(onClick = { scope.launch { checkins = api.checkins(50) } }) { Text("Rafraîchir") }
