@@ -97,7 +97,6 @@ final class BeerAPI {
                 let (_, http, _) = try await performOnEndpoint(
                     lan,
                     request: probe,
-                    probe: true,
                     probe: true
                 )
                 if http.statusCode == 200 {
