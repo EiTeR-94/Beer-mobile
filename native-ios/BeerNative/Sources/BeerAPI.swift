@@ -474,19 +474,31 @@ final class BeerAPI {
         }
 
         // Internal server asset (relative path like "photos/..." or "static/...").
-        // Prefer direct LAN IP for owner to avoid domain issues and slow transport.
-        // Fallback to current base (domain) for VPN if LAN not reachable.
-        let assetBase = ServerSettings.lanApiBase
-        guard let resolved = ServerSettings.resolveAssetURL(p, base: assetBase) ?? ServerSettings.resolveAssetURL(p, base: baseURL) else {
+        // Always try LAN IP first for owner (fast direct, no domain transport).
+        // If fails (e.g. on VPN where LAN IP not reachable), fallback to current base.
+        guard let lanResolved = ServerSettings.resolveAssetURL(p, base: ServerSettings.lanApiBase) else {
             throw BeerAPIError.invalidURL
         }
-        var req = URLRequest(url: resolved)
-        // Theme 3: retry with backoff via central NetworkManager
-        return try await NetworkManager.shared.withRetry(maxAttempts: 3, baseDelayMs: 400) {
-            let (data, http, _) = try await self.performTransport(req)
-            try self.throwIfUnauthorized(http.statusCode)
-            if http.statusCode != 200 { throw BeerAPIError.server("Fichier HTTP \(http.statusCode)") }
-            return data
+        var req = URLRequest(url: lanResolved)
+        do {
+            return try await NetworkManager.shared.withRetry(maxAttempts: 3, baseDelayMs: 400) {
+                let (data, http, _) = try await self.performTransport(req)
+                try self.throwIfUnauthorized(http.statusCode)
+                if http.statusCode != 200 { throw BeerAPIError.server("Fichier HTTP \(http.statusCode)") }
+                return data
+            }
+        } catch {
+            // fallback to current base (domain for VPN)
+            guard let resolved = ServerSettings.resolveAssetURL(p, base: baseURL) else {
+                throw BeerAPIError.invalidURL
+            }
+            req = URLRequest(url: resolved)
+            return try await NetworkManager.shared.withRetry(maxAttempts: 3, baseDelayMs: 400) {
+                let (data, http, _) = try await self.performTransport(req)
+                try self.throwIfUnauthorized(http.statusCode)
+                if http.statusCode != 200 { throw BeerAPIError.server("Fichier HTTP \(http.statusCode)") }
+                return data
+            }
         }
     }
 
