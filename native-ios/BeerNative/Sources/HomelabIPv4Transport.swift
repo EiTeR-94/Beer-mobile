@@ -15,8 +15,6 @@ enum HomelabIPv4Transport {
     private static let tlsHost = ServerSettings.canonicalHost
     private static let timeoutSeconds: UInt64 = 60
 
-    static var useIPv6 = false  // always IPv4 for owner LAN/VPN
-
     static func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         try await withThrowingTaskGroup(of: (Data, HTTPURLResponse, URL).self) { group in
             group.addTask { try await performOnce(request) }
