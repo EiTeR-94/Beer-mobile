@@ -3,12 +3,9 @@ import Foundation
 /// Custom URLProtocol that forces IPv4 connections to the canonical domain on port 443.
 ///
 /// Reason: The Freebox AAAA (IPv6) record for eiter.freeboxos.fr is currently unreachable
-/// (TCP conn refused on the router's ::1). iOS (esp. 5G/cellular) often prefers IPv6,
-/// causing SSL/TLS failures ("SSL refusé").
+/// (points to the router). We force IPv4 + correct SNI to avoid SSL issues.
 /// 
-/// Used for BOTH:
-/// - LAN accounts (when they fall back to domain, though they prefer direct IP)
-/// - (5G guest path comment removed)
+/// Used for owner LAN/VPN access (prefers direct IP, falls back to domain if needed).
 ///
 /// By intercepting and delegating to HomelabIPv4Transport (IPv4 + correct SNI),
 /// we bypass the broken AAAA. Registered on the relevant URLSession configs.
@@ -42,7 +39,7 @@ final class PlexiIPv4URLProtocol: URLProtocol {
                 client?.urlProtocolDidFinishLoading(self)
             } catch {
                 // Toujours produire une erreur avec description claire pour éviter "erreur 0" générique
-                let desc = "Erreur transport IPv4: \(error.localizedDescription)"
+                let desc = "Erreur transport: \(error.localizedDescription)"
                 let urlErr = URLError(.unknown, userInfo: [NSLocalizedDescriptionKey: desc])
                 client?.urlProtocol(self, didFailWithError: urlErr)
             }

@@ -25,7 +25,7 @@ final class AppModel: ObservableObject {
 
     @Published var user: String?
     @Published var isAdmin = false
-    @Published var isInvite = false  // always false: no more invitation system on native app (owner main account only)
+    @Published var isInvite = false  // always false (owner main account only)
     @Published var isLoggedIn = false
     @Published var isLoading = true
     @Published var toast: ToastPayload?
@@ -179,12 +179,12 @@ final class AppModel: ObservableObject {
     func applySession(user: String?, isAdmin: Bool, isInvite: Bool, loggedIn: Bool) {
         self.user = user
         self.isAdmin = isAdmin
-        self.isInvite = false  // owner only, no guest mode in native app
+        self.isInvite = false  // owner main account only
         self.isLoggedIn = loggedIn
         if loggedIn, let user {
             BeerSessionStore.save(user: user, isAdmin: isAdmin, isInvite: false)
             KeychainStore.username = user
-            // (guest token clear removed)
+            // (no guest tokens)
         }
     }
 
@@ -271,7 +271,7 @@ final class AppModel: ObservableObject {
     }
 
     func login(username: String, password: String) async throws {
-        // No passkey/guest: owner main account.
+        // Owner main account.
         BeerSessionStore.clear()
         api.setBaseURL(ServerSettings.lanApiBase)
         let loginResp = try await api.login(username: username, password: password)
@@ -288,7 +288,7 @@ final class AppModel: ObservableObject {
     }
 
     func handleOpenURL(_ url: URL) async {
-        // No more guest join tokens for native app.
+        // No guest tokens.
     }
 
     private func fetchMe() async throws -> MeResponse {
@@ -303,7 +303,7 @@ final class AppModel: ObservableObject {
         isLoggedIn = false
     }
 
-    private var shouldRefreshPasskeySession: Bool { false } // removed
+    private var shouldRefreshPasskeySession: Bool { false }
 
     func logout() async {
         await api.logout()

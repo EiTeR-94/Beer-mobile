@@ -1,19 +1,16 @@
 import Foundation
 import Network
 
-/// Low-level IP (v4 or v6) + SNI transport (guest 5G logic removed).
+/// Low-level IP transport (LAN/VPN focus).
 ///
-/// We connect directly to the known server IP (IPv4 or the real IPv6) + correct SNI (domain)
-/// so TLS cert validates, bypassing the broken Freebox AAAA (which points to the box ::1 instead of the server).
-///
+/// Connects with correct SNI to handle Freebox IPv6 issues when using the domain.
 /// Activated via PlexiIPv4URLProtocol for https://eiter.freeboxos.fr on 443.
 ///
 /// See also: PlexiIPv4URLProtocol and ServerSettings.wanIPv4
 enum HomelabIPv4Transport {
     private static let wanIP = ServerSettings.wanIPv4
-    // wanIPv6 removed - owner-only native (no more 5G guest paths)
     private static let tlsHost = ServerSettings.canonicalHost
-    private static let timeoutSeconds: UInt64 = 60
+    private static let timeoutSeconds: UInt64 = 30  // reasonable for VPN/LAN latency
 
     static func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         try await withThrowingTaskGroup(of: (Data, HTTPURLResponse, URL).self) { group in
@@ -47,7 +44,7 @@ enum HomelabIPv4Transport {
         sec_protocol_options_set_tls_server_name(tls.securityProtocolOptions, tlsHost)
         let params = NWParameters(tls: tls, tcp: tcp)
 
-        let hostStr = wanIP  // IPv4 only now (owner-only, no 5G guest)
+        let hostStr = wanIP  // direct IPv4 (avoids Freebox IPv6 issues)
         let conn = NWConnection(host: NWEndpoint.Host(hostStr), port: 443, using: params)
         return try await withCheckedThrowingContinuation { cont in
             let queue = DispatchQueue(label: "fr.eiter.plexibeer.ipv4")
@@ -59,9 +56,9 @@ enum HomelabIPv4Transport {
                 cont.resume(with: result)
             }
 
-            // Connect timeout spécifique pour 5G (le handshake TCP+TLS peut être lent sur cellulaire)
+            // Connect timeout for VPN/slow links
             let connectTimeoutTask = Task {
-                try? await Task.sleep(nanoseconds: 30_000_000_000) // 30s pour le .ready sur 5G lent
+                try? await Task.sleep(nanoseconds: 20_000_000_000) // 20s
                 if !resumed {
                     finish(.failure(BeerAPIError.server("Timeout connexion (établissement lent). Réessaie ou passe en WiFi/VPN.")))
                 }
@@ -82,8 +79,7 @@ enum HomelabIPv4Transport {
                 case .failed(let err):
                     connectTimeoutTask.cancel()
                     finish(.failure(BeerAPIError.server("Erreur de connexion: \(err.localizedDescription) (code: \((err as NSError).code))")))
-                case .waiting(let err):
-                    // On continue d'attendre un peu (5G peut mettre du temps), le connect timeout gérera
+                case .waiting(_):
                     break
                 case .cancelled:
                     connectTimeoutTask.cancel()

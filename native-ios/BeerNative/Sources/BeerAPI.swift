@@ -13,7 +13,7 @@ enum BeerAPIError: LocalizedError {
         switch self {
         case .invalidURL: return "URL API invalide"
         case .unauthorized: return "Session expirée — reconnecte-toi"
-        case .forbidden: return "Accès refusé (VPN ou WiFi requis)"
+        case .forbidden: return "Accès refusé (connecte-toi en WiFi ou via le VPN)"
         case .server(let msg): return msg
         case .network(let err): return err.localizedDescription
         case .decode: return "Réponse serveur illisible"
@@ -30,7 +30,7 @@ final class BeerAPI {
     static let shared = BeerAPI()
     private static let nativeClientHeader = "X-PlexiBeer-Client"
     private static let nativeClientValue = "native-ios"
-    private static let nativeUserAgent = "PlexiBeer/3.3.4 (iPhone; native) [timeout-fix-lan]"
+    private static let nativeUserAgent = "PlexiBeer/3.3.5 (iPhone; native owner) [lan-vpn]"
 
     private let session: URLSession
     private let lanProbeSession: URLSession
@@ -40,7 +40,7 @@ final class BeerAPI {
     init(baseURL: URL = ServerSettings.lanApiBase) {
         self.baseURL = Self.canonicalBase(baseURL)
         let sharedCookies = HTTPCookieStorage.shared
-        func baseConfig(requestTimeout: TimeInterval = 20, resourceTimeout: TimeInterval = 90, shouldSetCookies: Bool = true) -> URLSessionConfiguration {
+        func baseConfig(requestTimeout: TimeInterval = 30, resourceTimeout: TimeInterval = 120, shouldSetCookies: Bool = true) -> URLSessionConfiguration {
             let config = URLSessionConfiguration.default
             config.httpCookieStorage = sharedCookies
             config.httpShouldSetCookies = shouldSetCookies
@@ -49,8 +49,7 @@ final class BeerAPI {
             config.timeoutIntervalForResource = resourceTimeout
             return config
         }
-        // Owner session (LAN/WiFi or VPN): custom IPv4 + TLS delegate for LAN IP certs and IPv6 bypass.
-        // No more guest/passkey 5G paths (owner only, main account via LAN or VPN).
+        // Owner session (LAN or VPN): custom IPv4 + TLS for LAN IP cert bypass.
         let ownerConfig = baseConfig(shouldSetCookies: false)
         ownerConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
         self.session = URLSession(
@@ -164,7 +163,7 @@ final class BeerAPI {
         return decoded
     }
 
-    // Guest/passkey/redeem functions removed - native app is now owner main account only (LAN/VPN).
+    // Guest/passkey functions removed (owner main account only).
     // These paths are no longer called from the app.
 
     func me() async throws -> MeResponse {
@@ -459,7 +458,7 @@ final class BeerAPI {
         if p.hasPrefix("http://") || p.hasPrefix("https://") {
             // External asset (e.g. Untappd search result labels, or other third-party images).
             // Use plain system networking — do NOT go through homelab transport, cookie injection,
-            // (guest path uses protocolClasses for IPv4 forcing)
+            // (IPv4 forcing for LAN cert bypass)
             guard let url = URL(string: p) else { throw BeerAPIError.invalidURL }
             // Theme 3: retry with backoff also for external photos (centralized)
             return try await NetworkManager.shared.withRetry(maxAttempts: 3, baseDelayMs: 400) {
@@ -740,7 +739,7 @@ final class BeerAPI {
     private func applyCommonHeaders(to req: inout URLRequest) {
         req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
         req.setValue(Self.nativeUserAgent, forHTTPHeaderField: "User-Agent")
-        // Main account uses cookie session (no Bearer for guests).
+        // Main account uses cookie session.
     }
 
     private func beerSessionCookieString() -> String? {
@@ -751,7 +750,7 @@ final class BeerAPI {
         return nil
     }
 
-    // All guest/passkey code removed. Owner main account only.
+    // Owner main account only (LAN/VPN).
 
     private func request(
         path: String,
@@ -848,7 +847,7 @@ final class BeerAPI {
     }
 
     private func performWan(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
-        // Guest 5G path: use plain guestSession (standard networking to domain).
+        // Fallback path (for domain access if needed).
         // No custom LAN IPv4 or TLS delegate.
         try await performOnEndpoint(ServerSettings.apiBase, request: request)
     }

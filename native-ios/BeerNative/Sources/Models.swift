@@ -444,4 +444,4 @@ struct OKResponse: Decodable {
     let error: String?
 }
 
-// Guest/passkey response structs removed - native app no longer uses invitation system.
+// (legacy guest structs removed)

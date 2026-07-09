@@ -2,10 +2,10 @@ import Foundation
 
 enum ServerSettings {
     static let canonicalHost = "eiter.freeboxos.fr"
-    /// IPv4 WAN fallback (kept for reference, but owner-only native now uses LAN/VPN only).
+    /// IPv4 fallback for domain access (owner uses LAN IP or VPN).
     static let wanIPv4 = "82.64.151.113"
 
-    /// URL for main account (owner only via LAN IP or VPN).
+    /// URL for main account (via LAN IP or VPN).
     static let apiBaseString = "https://\(canonicalHost)/beer/"
 
     static var apiBase: URL {
@@ -23,14 +23,13 @@ enum ServerSettings {
         [lanApiBase, apiBase]
     }
 
-    /// No longer used: guest/invite paths removed (owner only, main account).
+    /// Legacy (not used in owner-only native).
     static var passkeyBaseURLs: [URL] {
         []
     }
 
-    /// :8444 hub/LAN — probe court (hors LAN = fail fast, pas 15s de timeout).
-    /// Augmenté un peu pour VPN (latence + handshake). Theme 3 correction.
-    static let lanProbeTimeoutSec: TimeInterval = 10
+    /// Probe timeout for LAN/VPN. Short for quick fail, longer for VPN latency.
+    static let lanProbeTimeoutSec: TimeInterval = 15
 
     static func isLanEndpoint(_ url: URL) -> Bool {
         url.port == 8444

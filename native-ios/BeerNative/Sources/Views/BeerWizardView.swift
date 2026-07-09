@@ -238,7 +238,7 @@ struct BeerWizardView: View {
 
             if let product, !product.beerName.isEmpty {
                 BeerPreviewCard(product: product)
-                // Invités 5G : full features (même que web), via chemin standard domaine.
+                // (legacy 5G comment removed)
                 BeerSecondaryButton(title: "+ Ajouter à la liste « À boire »") {
                     Task { await addToWishlist(product) }
                 }
