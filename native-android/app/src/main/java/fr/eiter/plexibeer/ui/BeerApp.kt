@@ -347,6 +347,7 @@ fun BeerApp(context: Context) {
                                         } catch (e: Exception) { lookupStatus = e.message ?: "err" }
                                     }
                                 }, enabled = lookupBarcode.isNotBlank()) { Text("Lookup EAN") }
+                                Button(onClick = { startBarcodeScan() }) { Text("📷 Scanner (ML Kit)") }
                                 if (lookupStatus.isNotBlank()) Text(lookupStatus, color = if (lookupStatus.startsWith("✓")) BeerColors.ok else BeerColors.error)
 
                                 OutlinedTextField(value = beerName, onValueChange = { beerName = it }, label = { Text("Nom de la bière *") }, modifier = Modifier.fillMaxWidth())
