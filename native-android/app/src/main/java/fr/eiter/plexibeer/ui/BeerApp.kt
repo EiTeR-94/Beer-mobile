@@ -9,6 +9,7 @@ import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -75,6 +76,9 @@ fun BeerApp(context: Context) {
     var flavorTags by remember { mutableStateOf(listOf<String>()) }
     var hopTags by remember { mutableStateOf(listOf<String>()) }
     var busy by remember { mutableStateOf(false) }
+
+    // For wishlist add (hoisted to avoid recompose issues)
+    var newWishName by remember { mutableStateOf("") }
 
     // Load styles and flavors when entering add (like onAppear in iOS)
     LaunchedEffect(currentScreen) {
@@ -543,7 +547,6 @@ fun BeerApp(context: Context) {
                 "wishlist" -> {
                     Text("Wishlist", style = MaterialTheme.typography.titleMedium)
                     // Add to wishlist
-                    var newWishName by remember { mutableStateOf("") }
                     Row {
                         OutlinedTextField(value = newWishName, onValueChange = { newWishName = it }, label = { Text("Nom bière") }, modifier = Modifier.weight(1f))
                         Button(onClick = {
