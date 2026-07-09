@@ -126,21 +126,21 @@ fun BeerApp(context: Context) {
             scope.launch {
                 isLoading = true
                 try {
-                    val code = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val code = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         kotlinx.coroutines.suspendCancellableCoroutine<String?> { cont ->
                             try {
                                 val img = com.google.mlkit.vision.common.InputImage.fromFilePath(context, Uri.fromFile(f))
                                 val sc = com.google.mlkit.vision.barcode.BarcodeScanning.getClient()
                                 sc.process(img)
-                                    .addOnSuccessListener { bs ->
-                                        val code = bs.firstOrNull { b ->
+                                    .addOnSuccessListener { bs: List<com.google.mlkit.vision.barcode.common.Barcode> ->
+                                        val code = bs.firstOrNull { b: com.google.mlkit.vision.barcode.common.Barcode ->
                                             val f = b.format
                                             (f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_EAN_13 || f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_EAN_8 || f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_UPC_A || f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_UPC_E) && b.rawValue != null
-                                        }?.rawValue ?: bs.firstOrNull { it.rawValue != null }?.rawValue
+                                        }?.rawValue ?: bs.firstOrNull { b2: com.google.mlkit.vision.barcode.common.Barcode -> b2.rawValue != null }?.rawValue
                                         try { sc.close() } catch (_: Exception) {}
                                         cont.resume(code)
                                     }
-                                    .addOnFailureListener { ex ->
+                                    .addOnFailureListener { ex: Exception ->
                                         try { sc.close() } catch (_: Exception) {}
                                         cont.resumeWithException(ex)
                                     }
