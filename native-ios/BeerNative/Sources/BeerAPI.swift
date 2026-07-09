@@ -92,12 +92,14 @@ final class BeerAPI {
         // Try LAN first
         if let lan = candidates.first(where: { ServerSettings.isLanEndpoint($0) }) {
             do {
-                var healthProbe = URLRequest(url: try url("/api/health"))
+                // Build probe URL using the lan candidate itself, not current baseURL
+                guard let healthURL = URL(string: "api/health", relativeTo: lan) else { throw BeerAPIError.invalidURL }
+                var healthProbe = URLRequest(url: healthURL)
                 healthProbe.httpMethod = "GET"
                 let (_, http, _) = try await performOnEndpoint(
                     lan,
                     request: healthProbe,
-                    probe: true
+                    probe: false  // use full timeout for discover, to allow establishment on first connect
                 )
                 if http.statusCode == 200 {
                     baseURL = Self.canonicalBase(lan)
@@ -111,12 +113,14 @@ final class BeerAPI {
         // Fallback to domain (VPN)
         for candidate in candidates where !ServerSettings.isLanEndpoint(candidate) {
             do {
-                var healthProbe = URLRequest(url: try url("/api/health"))
+                // Build probe URL using the candidate itself
+                guard let healthURL = URL(string: "api/health", relativeTo: candidate) else { throw BeerAPIError.invalidURL }
+                var healthProbe = URLRequest(url: healthURL)
                 healthProbe.httpMethod = "GET"
                 let (_, http, _) = try await performOnEndpoint(
                     candidate,
                     request: healthProbe,
-                    probe: true
+                    probe: false
                 )
                 if http.statusCode == 200 {
                     baseURL = Self.canonicalBase(candidate)
