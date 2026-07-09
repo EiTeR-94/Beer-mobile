@@ -143,117 +143,8 @@ final class BeerAPI {
         return decoded
     }
 
-    func passkeyRegisterOptions(inviteToken: String) async throws -> PasskeyRegisterOptionsResponse {
-        let clean = inviteToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty else { throw BeerAPIError.server("Lien d'invitation invalide") }
-        let body = try JSONEncoder().encode(["invite_token": clean])
-        let (data, http, _) = try await wanRequest(
-            path: "/api/passkey/register/options",
-            method: "POST",
-            body: body,
-            contentType: "application/json"
-        )
-        if http.statusCode == 429 {
-            throw BeerAPIError.server("Trop de tentatives — réessaie dans une minute.")
-        }
-        guard let decoded = try? JSONDecoder().decode(PasskeyRegisterOptionsResponse.self, from: data) else {
-            throw BeerAPIError.decode
-        }
-        if http.statusCode >= 400 || decoded.ok == false {
-            throw BeerAPIError.server(decoded.error ?? Self.passkeyErrorMessage(http.statusCode))
-        }
-        guard !decoded.resolvedChallenge.isEmpty, !decoded.resolvedUserId.isEmpty else {
-            throw BeerAPIError.decode
-        }
-        return decoded
-    }
-
-    func passkeyRegisterVerify(inviteToken: String, credential: [String: Any]) async throws -> PasskeyVerifyResponse {
-        let clean = inviteToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty else { throw BeerAPIError.server("Lien d'invitation invalide") }
-        let payload: [String: Any] = ["invite_token": clean, "credential": credential]
-        let body = try JSONSerialization.data(withJSONObject: payload)
-        let (data, http, _) = try await wanRequest(
-            path: "/api/passkey/register/verify",
-            method: "POST",
-            body: body,
-            contentType: "application/json"
-        )
-        if http.statusCode == 429 {
-            throw BeerAPIError.server("Trop de tentatives — réessaie dans une minute.")
-        }
-        guard let decoded = try? JSONDecoder().decode(PasskeyVerifyResponse.self, from: data) else {
-            throw BeerAPIError.decode
-        }
-        if http.statusCode >= 400 || decoded.ok == false {
-            throw BeerAPIError.server(Self.mapPasskeyError(decoded.error, status: http.statusCode))
-        }
-        return decoded
-    }
-
-    func passkeyLoginOptions(username: String) async throws -> PasskeyLoginOptionsResponse {
-        let clean = username.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty else { throw BeerAPIError.server("Compte invité inconnu") }
-        let body = try JSONEncoder().encode(["username": clean])
-        let (data, http, _) = try await wanRequest(
-            path: "/api/passkey/login/options",
-            method: "POST",
-            body: body,
-            contentType: "application/json"
-        )
-        guard let decoded = try? JSONDecoder().decode(PasskeyLoginOptionsResponse.self, from: data) else {
-            throw BeerAPIError.decode
-        }
-        if http.statusCode >= 400 || decoded.ok == false {
-            throw BeerAPIError.server(decoded.error ?? Self.passkeyErrorMessage(http.statusCode))
-        }
-        guard !decoded.resolvedChallenge.isEmpty else { throw BeerAPIError.decode }
-        return decoded
-    }
-
-    func passkeyLoginVerify(credential: [String: Any]) async throws -> PasskeyVerifyResponse {
-        let body = try JSONSerialization.data(withJSONObject: ["credential": credential])
-        let (data, http, _) = try await wanRequest(
-            path: "/api/passkey/login/verify",
-            method: "POST",
-            body: body,
-            contentType: "application/json"
-        )
-        guard let decoded = try? JSONDecoder().decode(PasskeyVerifyResponse.self, from: data) else {
-            throw BeerAPIError.decode
-        }
-        if http.statusCode >= 400 || decoded.ok == false {
-            throw BeerAPIError.server(Self.mapPasskeyError(decoded.error, status: http.statusCode))
-        }
-        return decoded
-    }
-
-    func redeemInvite(token: String) async throws -> JoinInviteResponse {
-        let clean = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty else { throw BeerAPIError.server("Lien d'invitation invalide") }
-        let (data, http, _) = try await request(
-            path: "/api/join/\(clean)",
-            method: "POST",
-            body: Data()
-        )
-        if http.statusCode == 429 {
-            throw BeerAPIError.server("Trop de tentatives — réessaie dans une minute.")
-        }
-        guard let decoded = try? JSONDecoder().decode(JoinInviteResponse.self, from: data) else {
-            throw BeerAPIError.decode
-        }
-        if http.statusCode == 403 || decoded.ok == false {
-            let msg: String
-            switch decoded.error {
-            case "wrong_device": msg = "Cette invitation est liée à un autre appareil."
-            case "rate_limit": msg = "Trop de tentatives — réessaie dans une minute."
-            case "invalid": msg = "Cette invitation n'est pas valide ou a expiré."
-            default: msg = decoded.error ?? "Invitation refusée"
-            }
-            throw BeerAPIError.server(msg)
-        }
-        return decoded
-    }
+    // Guest/passkey/redeem functions removed - native app is now owner main account only (LAN/VPN).
+    // These paths are no longer called from the app.
 
     func me() async throws -> MeResponse {
         let (data, http, _) = try await request(path: "/api/me", method: "GET", body: nil)
@@ -562,9 +453,7 @@ final class BeerAPI {
         // Internal server asset (relative path like "photos/..." or "static/...").
         // Force LAN base for local accounts to avoid domain (eiter.freeboxos.fr) unreachable.
         var useBase = baseURL
-        if !shouldUsePasskeyBearer {
-            useBase = ServerSettings.lanApiBase
-        }
+        // Guest logic removed - always prefer LAN for owner.
         guard let resolved = ServerSettings.resolveAssetURL(p, base: useBase) else {
             throw BeerAPIError.invalidURL
         }
@@ -825,8 +714,7 @@ final class BeerAPI {
 
     // MARK: - HTTP
 
-    // No more guest/passkey: owner main account only (LAN or VPN).
-    var shouldUsePasskeyBearer: Bool { false }
+    // Guest system removed - owner main account only.
 
     private func applyCommonHeaders(to req: inout URLRequest) {
         req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
