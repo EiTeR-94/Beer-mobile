@@ -27,12 +27,12 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses || true
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Build Debug APK
-        uses: gradle/gradle-build-action@v2
-        with:
-          arguments: assembleDebug --stacktrace -x test
-          build-root-directory: native-android
-          cache-disabled: true
+        run: ./gradlew assembleDebug --stacktrace -x test
+        working-directory: native-android
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
