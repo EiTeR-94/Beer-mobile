@@ -543,6 +543,7 @@ fun BeerApp(context: Context) {
                             ) { Text("Enregistrer la dégustation") }
                         }
                     }
+                    else -> {}
                 }
 
                 if (error != null) {
@@ -716,7 +717,6 @@ private fun WishlistSheetContent(
             }
         }
     }
-}
 }
 
 private suspend fun refreshData(
