@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <external-path name="my_images" path="Pictures/" />
-    <cache-path name="cached_images" path="images/" />
+    <!-- Pour les photos et scans du wizard (cacheDir/beer/...) -->
+    <cache-path name="beer" path="beer/" />
+    <!-- fallback large -->
+    <cache-path name="cache" path="." />
 </paths>
