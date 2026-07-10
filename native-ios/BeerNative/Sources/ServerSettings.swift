@@ -51,26 +51,4 @@ enum ServerSettings {
         while s.hasSuffix("/") { s.removeLast() }
         return s + "/"
     }
-
-    /// Heuristic: are we likely on the local WiFi where direct LAN IP is reachable and preferred?
-    /// Used to avoid unnecessary fallback to domain+transport on slow-but-local networks.
-    static func isLikelyOnLocalWifi() -> Bool {
-        // Simple heuristic based on common setup; can be improved with NWPath in AppModel
-        // For now, assume if not explicitly remote, prefer LAN strategy.
-        // Real detection is done in AppModel.handlePathUpdate.
-        return true  // conservative for owner on supported networks
-    }
-
-    // VPN range from network.env (192.168.27.0/24)
-    private static let vpnRange = "192.168.27."
-
-    /// More fine detection: true LAN (local subnet) vs VPN.
-    static func isOnLocalLAN() -> Bool {
-        // This will be enhanced in AppModel with actual IP check.
-        return false // placeholder, real logic in AppModel
-    }
-
-    static func isOnVPN() -> Bool {
-        return false // placeholder
-    }
 }

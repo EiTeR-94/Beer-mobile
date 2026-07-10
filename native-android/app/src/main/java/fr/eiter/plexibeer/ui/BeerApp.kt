@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -42,7 +43,8 @@ fun BeerApp(context: Context) {
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    var currentScreen by remember { mutableStateOf("main") }
+    var currentScreen by remember { mutableStateOf("main") } // legacy, main = always wizard now
+    var currentSheet by remember { mutableStateOf<String?>(null) } // like iOS BeerSheet: history, gallery, wishlist...
 
     var checkins by remember { mutableStateOf(listOf<CheckinItem>()) }
     var wishlist by remember { mutableStateOf(listOf<WishlistItem>()) }
@@ -67,6 +69,7 @@ fun BeerApp(context: Context) {
     var untappdName by remember { mutableStateOf("") }
     var untappdResults by remember { mutableStateOf(listOf<UntappdHit>()) }
     var untappdError by remember { mutableStateOf<String?>(null) }
+    var selectedUntappdBid by remember { mutableStateOf<Int?>(null) }
     var styleOptions by remember { mutableStateOf(listOf<StyleOption>()) }
     var manualStyle by remember { mutableStateOf("") }
     var flavors by remember { mutableStateOf(setOf<String>()) }
@@ -80,27 +83,29 @@ fun BeerApp(context: Context) {
     // For wishlist add (hoisted to avoid recompose issues)
     var newWishName by remember { mutableStateOf("") }
 
-    // Load styles and flavors when entering add (like onAppear in iOS)
-    LaunchedEffect(currentScreen) {
-        if (currentScreen == "add") {
-            try {
-                styleOptions = api.styles()
-                val fh = api.flavorsAndHops()
-                flavorTags = fh.flavors ?: emptyList()
-                hopTags = fh.hops ?: emptyList()
-            } catch (_: Exception) {}
-        }
-        if (currentScreen == "history") {
-            scope.launch { 
-                checkins = api.checkins(50) 
+    // Load data when opening sheets (like iOS sheets bootstrap), and styles for wizard (always)
+    LaunchedEffect(Unit) {
+        try {
+            styleOptions = api.styles()
+            val fh = api.flavorsAndHops()
+            flavorTags = fh.flavors ?: emptyList()
+            hopTags = fh.hops ?: emptyList()
+        } catch (_: Exception) {}
+    }
+
+    // Load when sheet changes (mirrors .task / onChange in HistorySheetView etc)
+    LaunchedEffect(currentSheet) {
+        when (currentSheet) {
+            "history" -> scope.launch {
+                checkins = api.checkins(50)
                 stats = api.stats()
             }
-        }
-        if (currentScreen == "gallery") {
-            scope.launch { checkins = api.checkins(100) }
-        }
-        if (currentScreen == "wishlist") {
-            scope.launch { wishlist = api.wishlist() }
+            "gallery" -> scope.launch {
+                checkins = api.checkins(100)
+            }
+            "wishlist" -> scope.launch {
+                wishlist = api.wishlist()
+            }
         }
     }
 
@@ -121,12 +126,13 @@ fun BeerApp(context: Context) {
         }
     }
 
-    fun goToStep(s: Int) { if (s in 1..4) wizardStep = s }
+    fun goToStep(s: Int) { if (s in 1..3) wizardStep = s }  // 3 steps like iOS
 
     fun resetAddForm() {
         beerName = ""; brewery = ""; style = ""; comment = ""; rating = 3.5f
         photoFile = null; pendingPhotoFile = null; lookupBarcode = ""; lookupStatus = ""; wizardStep = 1
         untappdBrewery = ""; untappdName = ""; untappdResults = emptyList(); untappdError = null
+        selectedUntappdBid = null
         manualStyle = ""; flavors = emptySet(); hops = emptySet(); customFlavorInput = ""; customHopInput = ""
     }
 
@@ -263,7 +269,7 @@ fun BeerApp(context: Context) {
                 if (resp.ok == true || resp.user != null) {
                     user = resp.user ?: username
                     isLoggedIn = true
-                    currentScreen = "main"
+                    currentSheet = null
                     refreshData(api, checkins = { checkins = it }, wishlist = { wishlist = it }, stats = { stats = it })
                 } else {
                     error = resp.error ?: "Login échoué"
@@ -280,7 +286,7 @@ fun BeerApp(context: Context) {
             api.logout()
             isLoggedIn = false
             user = ""
-            currentScreen = "main"
+            currentSheet = null
         }
     }
 
@@ -290,7 +296,7 @@ fun BeerApp(context: Context) {
             try {
                 val r = (rating / 2f).coerceIn(0.25f, 5f).toDouble()
                 val bc = lookupBarcode.filter { it.isDigit() }.ifBlank { null }
-                val untappdBid = untappdResults.firstOrNull()?.bid
+                val untappdBid = selectedUntappdBid
                 val id = api.createCheckinMultipart(
                     beerName = beerName,
                     brewery = brewery,
@@ -307,7 +313,7 @@ fun BeerApp(context: Context) {
                 error = "Checkin ajouté ✓ (id=$id)"
                 refreshData(api, checkins = { checkins = it }, wishlist = { wishlist = it }, stats = { stats = it })
                 resetAddForm()
-                currentScreen = "history"
+                currentSheet = "history"   // open history sheet after submit (like iOS flow after save)
             } catch (e: Exception) {
                 if (e.message?.contains("déjà", ignoreCase = true) == true || e.message?.contains("duplicate", ignoreCase = true) == true) {
                     error = "Déjà dégustée. Force ? (non implémenté)"
@@ -319,10 +325,7 @@ fun BeerApp(context: Context) {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("🍺 Beer Log — Android (owner)", style = MaterialTheme.typography.headlineMedium)
-        Text("LAN/VPN uniquement — même chose que iOS", style = MaterialTheme.typography.bodySmall)
-
+    Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
         if (!isLoggedIn) {
             Spacer(Modifier.height(24.dp))
             var loginUser by remember { mutableStateOf("eiter") }
@@ -336,234 +339,266 @@ fun BeerApp(context: Context) {
             if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
             Text("Base LAN: ${ServerSettings.effectiveBase}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
         } else {
+            // === ROOT STRUCTURE aligned with iOS MainView ===
+            // Header user + logout
             Row {
                 Text("Connecté: $user", modifier = Modifier.weight(1f))
                 TextButton(onClick = { doLogout() }) { Text("Déconnexion") }
             }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { wizardStep = 1; resetAddForm() }) { Text("Nouveau / Reset Wizard") }
-                Button(onClick = { currentScreen = "history" }) { Text("Historique") }
-                Button(onClick = { currentScreen = "gallery" }) { Text("Galerie") }
-                Button(onClick = { currentScreen = "wishlist" }) { Text("Wishlist") }
+
+            // Header like iOS: title + grid of action buttons (ghost style)
+            // This is the key part that makes the UX "the same": wizard is the main content.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text("Beer Log", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text("scan · photo · note", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                Spacer(Modifier.height(8.dp))
+
+                // 3-col grid of buttons (approximates LazyVGrid in MainView)
+                Column {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(onClick = { currentSheet = "wishlist" }, modifier = Modifier.weight(1f)) { Text("À boire", maxLines = 1) }
+                        OutlinedButton(onClick = { currentSheet = "history" }, modifier = Modifier.weight(1f)) { Text("Historique", maxLines = 1) }
+                        OutlinedButton(onClick = { currentSheet = "gallery" }, modifier = Modifier.weight(1f)) { Text("Galerie", maxLines = 1) }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                        OutlinedButton(onClick = { /* gifts not yet */ }, modifier = Modifier.weight(1f), enabled = false) { Text("Idées cadeaux") }
+                        OutlinedButton(onClick = { currentSheet = "wishlist" }, modifier = Modifier.weight(1f)) { Text("Wishlist") }
+                        OutlinedButton(onClick = { wizardStep = 1; resetAddForm() }, modifier = Modifier.weight(1f)) { Text("Reset wizard") }
+                    }
+                }
             }
-            Spacer(Modifier.height(16.dp))
 
-            when (currentScreen) {
-                "main" -> {
-                    // The wizard is always shown like in iOS MainView
-                    Column {
-                        Text("Nouveau checkin - Étape $wizardStep / 4", style = MaterialTheme.typography.titleMedium)
-                        Text("lookup → photo → note → review", style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(8.dp))
 
-                        // Step nav pills
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(vertical = 8.dp)) {
-                            for (s in 1..4) {
-                                val label = when (s) {
-                                    1 -> "Lookup"
-                                    2 -> "Photo"
-                                    3 -> "Note"
-                                    4 -> "Review"
-                                    else -> ""
-                                }
-                                Button(
-                                    onClick = { if (s <= wizardStep) goToStep(s) },
-                                    modifier = Modifier.weight(1f)
-                                ) { Text(label, style = MaterialTheme.typography.labelSmall) }
-                            }
+            // THE WIZARD IS ALWAYS THE MAIN CONTENT (exactly like MainView + BeerWizardView in iOS)
+            // No more "currentScreen" swap hiding the wizard.
+            Column(modifier = Modifier.padding(horizontal = 8.dp)) {
+                Text("Nouveau checkin — Étape $wizardStep / 3", style = MaterialTheme.typography.titleMedium)
+                Text("bière → photo → note", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                // Step nav (closer to BeerStepNav: 1 Bière, 2 Photo, 3 Note)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+                    for (s in 1..3) {
+                        val label = when (s) {
+                            1 -> "1 Bière"
+                            2 -> "2 Photo"
+                            3 -> "3 Note"
+                            else -> ""
                         }
-
-                        when (wizardStep) {
-                            1 -> {
-                                // Step 1: Lookup / enter (closer to iOS)
-                                Text("Scan EAN optionnel — ou cherche sur Untappd.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-                                OutlinedTextField(value = lookupBarcode, onValueChange = { lookupBarcode = it }, label = { Text("Code-barres EAN (optionnel)") }, modifier = Modifier.fillMaxWidth())
-                                Row {
-                                    Button(onClick = { 
-                                        scope.launch {
-                                            lookupStatus = "Recherche..."
-                                            try {
-                                                val resp = api.lookup(lookupBarcode.filter { it.isDigit() })
-                                                if (resp.beerName != null) {
-                                                    beerName = resp.beerName ?: ""
-                                                    brewery = resp.brewery ?: ""
-                                                    style = resp.style ?: ""
-                                                    lookupStatus = "✓ Identifiée"
-                                                } else lookupStatus = resp.error ?: "Introuvable"
-                                            } catch (e: Exception) { lookupStatus = e.message ?: "err" }
-                                        }
-                                    }, enabled = lookupBarcode.isNotBlank()) { Text("Lookup EAN") }
-                                    Button(onClick = { startBarcodeScan() }) { Text("📷 Scanner (ML Kit)") }
-                                }
-                                if (lookupStatus.isNotBlank()) Text(lookupStatus)
-
-                                // Untappd search like iOS
-                                Text("Chercher sur Untappd", style = MaterialTheme.typography.titleSmall)
-                                OutlinedTextField(value = untappdBrewery, onValueChange = { untappdBrewery = it }, label = { Text("Brasserie (optionnel)") }, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = untappdName, onValueChange = { untappdName = it }, label = { Text("Nom de la bière") }, modifier = Modifier.fillMaxWidth())
-                                Button(onClick = {
-                                    scope.launch {
-                                        busy = true; untappdError = null
-                                        try {
-                                            val resp = api.searchUntappd(untappdBrewery, untappdName)
-                                            untappdResults = resp.results ?: emptyList()
-                                            if (untappdResults.isEmpty()) untappdError = "Aucun résultat"
-                                        } catch (e: Exception) { untappdError = e.message }
-                                        busy = false
-                                    }
-                                }, enabled = untappdName.length >= 2 || untappdBrewery.length >= 2) { Text(if (busy) "Recherche…" else "Chercher sur Untappd") }
-                                if (untappdError != null) Text(untappdError!!, color = MaterialTheme.colorScheme.error)
-                                untappdResults.forEach { hit ->
-                                    Button(onClick = {
-                                        beerName = hit.beerName
-                                        brewery = hit.brewery ?: ""
-                                        style = hit.styleFr ?: ""
-                                        untappdResults = emptyList()
-                                    }) {
-                                        Text("${hit.beerName} - ${hit.brewery ?: ""}")
-                                    }
-                                }
-
-                                OutlinedTextField(value = beerName, onValueChange = { beerName = it }, label = { Text("Nom de la bière *") }, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = brewery, onValueChange = { brewery = it }, label = { Text("Brasserie") }, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = style, onValueChange = { style = it }, label = { Text("Style") }, modifier = Modifier.fillMaxWidth())
-
-                                Button(onClick = { goToStep(2) }, enabled = beerName.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Continuer → Photo") }
-                            }
-                            2 -> {
-                                // Step 2: Photo
-                                Text("Photo de la bière / du verre")
-                                Button(onClick = { takePhoto() }, modifier = Modifier.fillMaxWidth()) { Text("📷 Prendre photo (full res)") }
-                                if (photoFile != null) {
-                                    Text("Photo prête")
-                                    AsyncImage(model = photoFile, contentDescription = null, modifier = Modifier.height(120.dp).fillMaxWidth())
-                                    TextButton(onClick = { photoFile = null }) { Text("Retirer") }
-                                }
-                                Row {
-                                    Button(onClick = { goToStep(1) }) { Text("← Retour") }
-                                    Spacer(Modifier.width(8.dp))
-                                    Button(onClick = { goToStep(3) }) { Text("Continuer → Note") }
-                                }
-                            }
-                            3 -> {
-                                // Step 3: Rating / comment + flavors/hops (closer to iOS)
-                                Text("Note (0.25-5)")
-                                Slider(value = rating, onValueChange = { rating = it }, valueRange = 0.25f..5f, steps = 19)
-                                Text("%.2f / 5".format(rating))
-                                OutlinedTextField(value = comment, onValueChange = { comment = it }, label = { Text("Commentaire") }, modifier = Modifier.fillMaxWidth())
-
-                                // Flavors
-                                Text("Flavors")
-                                Row {
-                                    OutlinedTextField(value = customFlavorInput, onValueChange = { customFlavorInput = it }, label = { Text("Custom flavor") }, modifier = Modifier.weight(1f))
-                                    Button(onClick = {
-                                        if (customFlavorInput.isNotBlank()) {
-                                            flavors = flavors + customFlavorInput.trim()
-                                            customFlavorInput = ""
-                                        }
-                                    }) { Text("+") }
-                                }
-                                if (flavors.isNotEmpty()) Text("Selected: ${flavors.joinToString()}")
-
-                                // Hops
-                                Text("Hops")
-                                Row {
-                                    OutlinedTextField(value = customHopInput, onValueChange = { customHopInput = it }, label = { Text("Custom hop") }, modifier = Modifier.weight(1f))
-                                    Button(onClick = {
-                                        if (customHopInput.isNotBlank()) {
-                                            hops = hops + customHopInput.trim()
-                                            customHopInput = ""
-                                        }
-                                    }) { Text("+") }
-                                }
-                                if (hops.isNotEmpty()) Text("Selected: ${hops.joinToString()}")
-
-                                Row {
-                                    Button(onClick = { goToStep(2) }) { Text("← Retour") }
-                                    Spacer(Modifier.width(8.dp))
-                                    Button(onClick = { goToStep(4) }) { Text("Continuer → Review") }
-                                }
-                            }
-                            4 -> {
-                                // Step 4: Review & submit
-                                Card(modifier = Modifier.fillMaxWidth()) {
-                                    Column(Modifier.padding(12.dp)) {
-                                        Text("${beerName} - ${brewery}", style = MaterialTheme.typography.titleSmall)
-                                        Text("Style: $style  |  Note: %.2f/5".format(rating))
-                                        if (comment.isNotBlank()) Text("Comment: $comment")
-                                        if (flavors.isNotEmpty()) Text("Flavors: ${flavors.joinToString()}")
-                                        if (hops.isNotEmpty()) Text("Hops: ${hops.joinToString()}")
-                                        if (photoFile != null) Text("📷 Photo incluse")
-                                    }
-                                }
-                                Row {
-                                    Button(onClick = { goToStep(3) }) { Text("← Retour") }
-                                    Spacer(Modifier.width(8.dp))
-                                    Button(onClick = { submitCheckin() }, enabled = beerName.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Enregistrer la dégustation") }
-                                }
-                            }
-                            else -> {}
-                        }
-                        if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
-                    }
-                }
-                "history" -> {
-                    Text("Historique", style = MaterialTheme.typography.titleMedium)
-                    val s = stats
-                    if (s != null) {
-                        Text("Total: ${s.total} | Avg: ${s.avgRating ?: "-"}", style = MaterialTheme.typography.bodySmall)
-                    }
-                    Row {
-                        Button(onClick = { scope.launch { checkins = api.checkins(50) } }) { Text("Rafraîchir") }
-                        Button(onClick = { /* TODO: filters */ }) { Text("Filtres") }
-                    }
-                    if (checkins.isEmpty()) {
-                        Text("Aucune dégustation. Note ta première bière !", style = MaterialTheme.typography.bodyMedium)
-                    } else {
-                        LazyColumn {
-                            items(checkins) { item ->
-                                Card(Modifier.padding(4.dp).fillMaxWidth().clickable { /* TODO: open detail like iOS CheckinDetailView */ }) {
-                                    Column(Modifier.padding(8.dp)) {
-                                        if (!item.photoURL.isNullOrBlank()) {
-                                            AsyncImage(model = item.photoURL, contentDescription = null, modifier = Modifier.height(100.dp).fillMaxWidth())
-                                        }
-                                        Text("${item.beerName} — ${item.brewery ?: ""}", style = MaterialTheme.typography.titleSmall)
-                                        Text("Note: ${item.rating} | ${item.style ?: ""}")
-                                        if (!item.comment.isNullOrBlank()) Text(item.comment ?: "")
-                                        if (item.flavors != null && item.flavors.isNotEmpty()) Text("Flavors: ${item.flavors.joinToString()}")
-                                        if (item.hops != null && item.hops.isNotEmpty()) Text("Hops: ${item.hops.joinToString()}")
-                                    }
-                                }
-                            }
+                        val isCurrent = s == wizardStep
+                        Button(
+                            onClick = { if (s <= wizardStep || s == wizardStep - 1) goToStep(s) },
+                            modifier = Modifier.weight(1f),
+                            colors = if (isCurrent)
+                                ButtonDefaults.buttonColors()
+                            else ButtonDefaults.outlinedButtonColors()
+                        ) {
+                            Text(label, style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
-                "gallery" -> {
-                    Text("Galerie", style = MaterialTheme.typography.titleMedium)
-                    Button(onClick = { scope.launch { checkins = api.checkins(100) } }) { Text("Rafraîchir") }
-                    val ps = checkins.filter { !it.photoURL.isNullOrBlank() }
-                    if (ps.isEmpty()) {
-                        Text("Aucune photo. Ajoute des checkins avec photos !")
-                    } else {
-                        LazyColumn {
-                            items(ps) { item ->
-                                Column {
-                                    AsyncImage(model = item.photoURL, contentDescription = null, modifier = Modifier.height(200.dp).fillMaxWidth())
-                                    Text("${item.beerName} — ${item.brewery ?: ""}")
-                                }
-                            }
-                        }
-                    }
-                }
-                "wishlist" -> {
-                    Text("Wishlist", style = MaterialTheme.typography.titleMedium)
-                    // Add to wishlist
-                    Row {
-                        OutlinedTextField(value = newWishName, onValueChange = { newWishName = it }, label = { Text("Nom bière") }, modifier = Modifier.weight(1f))
-                        Button(onClick = {
-                            if (newWishName.isNotBlank()) {
+
+                // === UNCONDITIONAL WIZARD (the main content of the app, like iOS) ===
+                // 3 steps to match iOS BeerWizardView + BeerStepNav
+                when (wizardStep) {
+                    1 -> {
+                        // Step 1: Lookup / scan / Untappd / manual (mirrors stepBeer)
+                        Text("Scan EAN optionnel — ou cherche directement sur Untappd.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                        OutlinedTextField(value = lookupBarcode, onValueChange = { lookupBarcode = it }, label = { Text("Code-barres EAN (optionnel)") }, modifier = Modifier.fillMaxWidth())
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = {
                                 scope.launch {
+                                    lookupStatus = "Recherche..."
+                                    try {
+                                        val resp = api.lookup(lookupBarcode.filter { it.isDigit() })
+                                        if (resp.beerName != null) {
+                                            beerName = resp.beerName ?: ""
+                                            brewery = resp.brewery ?: ""
+                                            style = resp.style ?: ""
+                                            lookupStatus = "✓ Identifiée"
+                                        } else lookupStatus = resp.error ?: "Introuvable"
+                                    } catch (e: Exception) { lookupStatus = e.message ?: "err" }
+                                }
+                            }, enabled = lookupBarcode.isNotBlank()) { Text("Lookup EAN") }
+                            Button(onClick = { startBarcodeScan() }) { Text("📷 Scanner (ML Kit)") }
+                        }
+                        if (lookupStatus.isNotBlank()) Text(lookupStatus, style = MaterialTheme.typography.bodySmall)
+
+                        // Untappd (same fields + results as iOS)
+                        Text("Chercher sur Untappd", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+                        OutlinedTextField(value = untappdBrewery, onValueChange = { untappdBrewery = it }, label = { Text("Brasserie (optionnel)") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = untappdName, onValueChange = { untappdName = it }, label = { Text("Nom de la bière") }, modifier = Modifier.fillMaxWidth())
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    busy = true; untappdError = null
+                                    try {
+                                        val resp = api.searchUntappd(untappdBrewery, untappdName)
+                                        untappdResults = resp.results ?: emptyList()
+                                        if (untappdResults.isEmpty()) untappdError = "Aucun résultat"
+                                    } catch (e: Exception) { untappdError = e.message }
+                                    busy = false
+                                }
+                            },
+                            enabled = untappdName.length >= 2 || untappdBrewery.length >= 2,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(if (busy) "Recherche…" else "Chercher sur Untappd") }
+                        if (untappdError != null) Text(untappdError!!, color = MaterialTheme.colorScheme.error)
+
+                        untappdResults.forEach { hit ->
+                            OutlinedButton(onClick = {
+                                beerName = hit.beerName
+                                brewery = hit.brewery ?: ""
+                                style = hit.styleFr ?: ""
+                                selectedUntappdBid = hit.bid
+                                untappdResults = emptyList()
+                                lookupStatus = "Untappd ✓"
+                            }, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                                Text("${hit.beerName} — ${hit.brewery ?: ""}")
+                            }
+                        }
+
+                        OutlinedTextField(value = beerName, onValueChange = { beerName = it }, label = { Text("Nom de la bière *") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = brewery, onValueChange = { brewery = it }, label = { Text("Brasserie") }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = style, onValueChange = { style = it }, label = { Text("Style") }, modifier = Modifier.fillMaxWidth())
+
+                        Button(onClick = { goToStep(2) }, enabled = beerName.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Continuer → Photo") }
+                    }
+                    2 -> {
+                        // Step 2: Photo (matches stepPhoto)
+                        Text("Photo du verre avec la canette à côté (optionnel).", style = MaterialTheme.typography.bodySmall)
+                        Button(onClick = { takePhotoFull() }, modifier = Modifier.fillMaxWidth()) { Text("📷 Prendre une photo") }
+                        if (photoFile != null) {
+                            Text("Photo prête ✓", modifier = Modifier.padding(top = 4.dp))
+                            AsyncImage(model = photoFile, contentDescription = null, modifier = Modifier.height(160.dp).fillMaxWidth())
+                            TextButton(onClick = { photoFile = null }) { Text("Retirer la photo") }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                            Button(onClick = { goToStep(1) }) { Text("← Retour") }
+                            Button(onClick = { goToStep(3) }, modifier = Modifier.weight(1f)) { Text("Continuer → Note") }
+                        }
+                    }
+                    3 -> {
+                        // Step 3: Note + flavors + hops + comment + submit (merged review into step 3 like iOS)
+                        Text("Note (0.25-5)", style = MaterialTheme.typography.titleSmall)
+                        Slider(value = rating, onValueChange = { rating = it }, valueRange = 0.25f..5f, steps = 19)
+                        Text("%.2f / 5".format(rating))
+
+                        OutlinedTextField(value = comment, onValueChange = { if (it.length <= 120) comment = it }, label = { Text("Commentaire (optionnel, 120 car.)") }, modifier = Modifier.fillMaxWidth())
+
+                        // Flavors (basic version of FlavorTagGrid + custom)
+                        Text("Goûts", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedTextField(value = customFlavorInput, onValueChange = { customFlavorInput = it }, label = { Text("Goût perso") }, modifier = Modifier.weight(1f))
+                            Button(onClick = {
+                                if (customFlavorInput.isNotBlank()) {
+                                    flavors = flavors + customFlavorInput.trim()
+                                    customFlavorInput = ""
+                                }
+                            }) { Text("+") }
+                        }
+                        if (flavors.isNotEmpty()) {
+                            Text("Sélectionnés: ${flavors.joinToString()}", style = MaterialTheme.typography.bodySmall)
+                        }
+
+                        // Hops
+                        Text("Houblons", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedTextField(value = customHopInput, onValueChange = { customHopInput = it }, label = { Text("Houblon perso") }, modifier = Modifier.weight(1f))
+                            Button(onClick = {
+                                if (customHopInput.isNotBlank()) {
+                                    hops = hops + customHopInput.trim()
+                                    customHopInput = ""
+                                }
+                            }) { Text("+") }
+                        }
+                        if (hops.isNotEmpty()) {
+                            Text("Sélectionnés: ${hops.joinToString()}", style = MaterialTheme.typography.bodySmall)
+                        }
+
+                        // Review card + actions
+                        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                            Column(Modifier.padding(12.dp)) {
+                                Text("${beerName.ifBlank { "(non identifiée)" }} — ${brewery}", style = MaterialTheme.typography.titleSmall)
+                                Text("Style: ${style.ifBlank { "—" }}  ·  Note: %.2f/5".format(rating))
+                                if (comment.isNotBlank()) Text("« $comment »")
+                                if (flavors.isNotEmpty()) Text("Goûts: ${flavors.joinToString()}")
+                                if (hops.isNotEmpty()) Text("Houblons: ${hops.joinToString()}")
+                                if (photoFile != null) Text("📷 Photo incluse")
+                            }
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { goToStep(2) }) { Text("← Retour") }
+                            Button(
+                                onClick = { submitCheckin() },
+                                enabled = beerName.isNotBlank(),
+                                modifier = Modifier.weight(1f)
+                            ) { Text("Enregistrer la dégustation") }
+                        }
+                    }
+                }
+
+                if (error != null) {
+                    Text(error!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+        }
+
+        // === SHEET OVERLAYS (equivalent to fullScreenCover in iOS) ===
+        // When a sheet is open we show it instead of (or on top of) the wizard.
+        // For now: full takeover with close button — makes navigation feel like sheets.
+        if (currentSheet != null) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(12.dp)
+                    .background(MaterialTheme.colorScheme.background)
+            ) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        when (currentSheet) {
+                            "history" -> "Historique"
+                            "gallery" -> "Galerie photos"
+                            "wishlist" -> "À boire / Wishlist"
+                            else -> "Détail"
+                        },
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = {
+                        currentSheet = null
+                        // refresh main data on close like iOS
+                        scope.launch {
+                            try { checkins = api.checkins(30); stats = api.stats(); wishlist = api.wishlist() } catch (_: Exception) {}
+                        }
+                    }) { Text("Fermer ✕") }
+                }
+                Spacer(Modifier.height(8.dp))
+
+                when (currentSheet) {
+                    "history" -> HistorySheetContent(
+                        checkins = checkins,
+                        stats = stats,
+                        onRefresh = { scope.launch { checkins = api.checkins(50); stats = api.stats() } }
+                    )
+                    "gallery" -> GallerySheetContent(
+                        checkins = checkins,
+                        onRefresh = { scope.launch { checkins = api.checkins(100) } }
+                    )
+                    "wishlist" -> WishlistSheetContent(
+                        wishlist = wishlist,
+                        newWishName = newWishName,
+                        onNewWishChange = { newWishName = it },
+                        onAdd = {
+                            scope.launch {
+                                if (newWishName.isNotBlank()) {
                                     try {
                                         api.addWishlist(newWishName, "", "Unknown")
                                         wishlist = api.wishlist()
@@ -571,33 +606,117 @@ fun BeerApp(context: Context) {
                                     } catch (e: Exception) { error = e.message }
                                 }
                             }
-                        }) { Text("Ajouter") }
-                    }
-                    Button(onClick = { scope.launch { wishlist = api.wishlist() } }) { Text("Rafraîchir") }
-                    if (wishlist.isEmpty()) {
-                        Text("Wishlist vide.")
-                    } else {
-                        LazyColumn {
-                            items(wishlist) { w ->
-                                Row {
-                                    Text("• ${w.beerName} (${w.brewery ?: ""})")
-                                    Spacer(Modifier.weight(1f))
-                                    Button(onClick = {
-                                        scope.launch {
-                                            api.deleteWishlist(w.id)
-                                            wishlist = api.wishlist()
-                                        }
-                                    }) { Text("X") }
-                                }
+                        },
+                        onDelete = { id ->
+                            scope.launch {
+                                api.deleteWishlist(id)
+                                wishlist = api.wishlist()
                             }
+                        },
+                        onRefresh = { scope.launch { wishlist = api.wishlist() } }
+                    )
+                    else -> Text("Sheet inconnue")
+                }
+            }
+        }
+
+        if (isLoading) CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+    }
+}
+
+// Extracted sheet contents for clarity (can be moved to own files later)
+@Composable
+private fun HistorySheetContent(
+    checkins: List<CheckinItem>,
+    stats: HistoryStats?,
+    onRefresh: () -> Unit
+) {
+    val s = stats
+    Column {
+        if (s != null && s.total > 0) {
+            Text("Total: ${s.total}  ·  Moyenne: ${s.avgRating ?: "—"}", style = MaterialTheme.typography.bodySmall)
+        }
+        Button(onClick = onRefresh, modifier = Modifier.padding(vertical = 4.dp)) { Text("Rafraîchir") }
+
+        if (checkins.isEmpty()) {
+            Text("Aucune dégustation. Note ta première bière depuis l'accueil !", modifier = Modifier.padding(16.dp))
+        } else {
+            LazyColumn {
+                items(checkins) { item ->
+                    Card(
+                        modifier = Modifier
+                            .padding(4.dp)
+                            .fillMaxWidth()
+                            .clickable { /* TODO: future CheckinDetail like iOS */ }
+                    ) {
+                        Column(Modifier.padding(8.dp)) {
+                            if (!item.photoURL.isNullOrBlank()) {
+                                AsyncImage(model = item.photoURL, contentDescription = null, modifier = Modifier.height(110.dp).fillMaxWidth())
+                            }
+                            Text("${item.beerName} — ${item.brewery ?: ""}", style = MaterialTheme.typography.titleSmall)
+                            Text("★ ${item.rating}  ·  ${item.style ?: ""}")
+                            if (!item.comment.isNullOrBlank()) Text(item.comment ?: "", style = MaterialTheme.typography.bodySmall)
+                            if (item.flavors?.isNotEmpty() == true) Text("Goûts: ${item.flavors.joinToString()}", style = MaterialTheme.typography.bodySmall)
+                            if (item.hops?.isNotEmpty() == true) Text("Houblons: ${item.hops.joinToString()}", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
-                else -> {}
             }
         }
-        if (isLoading) CircularProgressIndicator()
     }
+}
+
+@Composable
+private fun GallerySheetContent(checkins: List<CheckinItem>, onRefresh: () -> Unit) {
+    val photos = checkins.filter { !it.photoURL.isNullOrBlank() }
+    Column {
+        Text("${photos.size} photos", style = MaterialTheme.typography.bodySmall)
+        Button(onClick = onRefresh) { Text("Rafraîchir") }
+        if (photos.isEmpty()) {
+            Text("Aucune photo pour l'instant.")
+        } else {
+            LazyColumn {
+                items(photos) { item ->
+                    Column(modifier = Modifier.padding(bottom = 12.dp)) {
+                        AsyncImage(model = item.photoURL, contentDescription = null, modifier = Modifier.height(220.dp).fillMaxWidth())
+                        Text("${item.beerName} — ${item.brewery ?: ""}", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WishlistSheetContent(
+    wishlist: List<WishlistItem>,
+    newWishName: String,
+    onNewWishChange: (String) -> Unit,
+    onAdd: () -> Unit,
+    onDelete: (Int) -> Unit,
+    onRefresh: () -> Unit
+) {
+    Column {
+        Row {
+            OutlinedTextField(value = newWishName, onValueChange = onNewWishChange, label = { Text("Nom bière à ajouter") }, modifier = Modifier.weight(1f))
+            Button(onClick = onAdd, modifier = Modifier.padding(start = 8.dp)) { Text("Ajouter") }
+        }
+        Button(onClick = onRefresh, modifier = Modifier.padding(vertical = 4.dp)) { Text("Rafraîchir") }
+
+        if (wishlist.isEmpty()) {
+            Text("Liste « À boire » vide.")
+        } else {
+            LazyColumn {
+                items(wishlist) { w ->
+                    Row(modifier = Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("• ${w.beerName} (${w.brewery ?: ""})", modifier = Modifier.weight(1f))
+                        TextButton(onClick = { onDelete(w.id) }) { Text("Suppr") }
+                    }
+                }
+            }
+        }
+    }
+}
 }
 
 private suspend fun refreshData(
