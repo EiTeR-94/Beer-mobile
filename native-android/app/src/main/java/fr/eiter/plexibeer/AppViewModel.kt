@@ -121,20 +121,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (api.cookieJar.hasSession()) {
                 try {
                     val me = api.me()
-                    if (me.auth && me.user != null) {
+                    if (me.auth && !me.user.isNullOrBlank()) {
                         applySession(me.user, me.isAdmin, true)
-                        serverVersion = api.version()
+                        serverVersion = try {
+                            api.version()
+                        } catch (_: Exception) {
+                            ""
+                        }
                         syncPending()
                         return
                     }
-                    // me returned unauthenticated — clear only then
+                    // Server says not authenticated despite cookie
                     api.clearSession()
+                    BeerSessionStore.clear(getApplication())
                 } catch (e: Exception) {
-                    // Only wipe session on true auth failure (401), not SSL/timeout/5xx
                     val code = (e as? BeerAPI.ApiException)?.code ?: 0
                     if (code == 401) {
+                        // Real session death
                         api.clearSession()
+                        BeerSessionStore.clear(getApplication())
                     } else {
+                        // Network/SSL: keep cookie + restore identity offline
                         networkStatus = NetworkStatus.SERVER_UNREACHABLE
                         restoreOfflineSessionIfNeeded()
                         return
@@ -148,11 +155,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun restoreOfflineSessionIfNeeded() {
-        val restored = BeerSessionStore.restore(getApplication())
-        // Allow restore with cookie OR identity-only for offline browsing of cache
-        if (restored != null && (api.cookieJar.hasSession() || networkStatus != NetworkStatus.ONLINE)) {
-            applySession(restored.first, restored.second, true)
-        } else if (restored != null && api.cookieJar.hasSession()) {
+        val restored = BeerSessionStore.restore(getApplication()) ?: return
+        // With valid cookie: stay logged in even if me() couldn't run
+        // Without cookie but offline: still show UI for cache browsing
+        if (api.cookieJar.hasSession() || networkStatus != NetworkStatus.ONLINE) {
             applySession(restored.first, restored.second, true)
         }
     }
@@ -204,22 +210,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 BeerSessionStore.clear(getApplication())
-                api.clearSession()
+                // api.login clears cookie jar itself then captures Set-Cookie
                 api.setBaseURL(ServerSettings.LAN_API_BASE)
                 val resp = api.login(username, password)
+                // Verify session works immediately (same as iOS post-login me())
                 val me = try {
                     api.me()
-                } catch (_: Exception) {
-                    null
+                } catch (e: Exception) {
+                    // Cookie present but me() failed — surface real error
+                    throw Exception(
+                        "Session non utilisable après login: ${e.message ?: "inconnu"}",
+                        e
+                    )
                 }
                 applySession(
-                    resp.user ?: me?.user ?: username,
-                    resp.isAdmin ?: me?.isAdmin ?: false,
+                    resp.user ?: me.user ?: username,
+                    resp.isAdmin ?: me.isAdmin,
                     true
                 )
                 networkStatus = NetworkStatus.ONLINE
                 hideToast()
-                serverVersion = api.version()
+                serverVersion = try {
+                    api.version()
+                } catch (_: Exception) {
+                    ""
+                }
                 syncPending()
                 onDone(Result.success(Unit))
             } catch (e: Exception) {

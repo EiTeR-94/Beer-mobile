@@ -2,187 +2,174 @@ package fr.eiter.plexibeer
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
-import org.json.JSONArray
-import org.json.JSONObject
+import okhttp3.Response
 
 /**
- * Persistent cookie jar for beer_session (+ any other cookies),
- * mirroring iOS HTTPCookieStorage + explicit login Set-Cookie handling.
+ * Session beer_session — miroir iOS (HTTPCookieStorage + force Cookie header).
+ *
+ * Problème serveur : BEER_COOKIE_DOMAIN=eiter.freeboxos.fr
+ * → Set-Cookie Domain=eiter.freeboxos.fr même si on login sur 192.168.1.50
+ * → OkHttp rejette le cookie (domain ≠ host IP) avant CookieJar.
+ *
+ * Solution : parser Set-Cookie à la main, stocker le token, l'injecter sur chaque requête.
  */
 class SessionCookieJar(context: Context) : CookieJar {
     private val prefs: SharedPreferences =
-        context.applicationContext.getSharedPreferences("beer_session_cookies", Context.MODE_PRIVATE)
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     private val lock = Any()
-    private val store = mutableMapOf<String, MutableList<Cookie>>() // host -> cookies
+
+    @Volatile
+    private var token: String? = null
+
+    @Volatile
+    private var cookiePath: String = "/beer"
 
     init {
-        load()
+        token = prefs.getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() }
+        cookiePath = prefs.getString(KEY_PATH, "/beer") ?: "/beer"
+        if (token != null) {
+            Log.i(TAG, "session restored from prefs (token len=${token!!.length}, path=$cookiePath)")
+        }
     }
 
-    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-        if (cookies.isEmpty()) return
+    fun hasSession(): Boolean = !token.isNullOrBlank()
+
+    fun beerSessionCookieHeader(): String? {
+        val t = token ?: return null
+        return "beer_session=$t"
+    }
+
+    fun sessionToken(): String? = token
+
+    fun clear() {
         synchronized(lock) {
-            val host = url.host
-            val list = store.getOrPut(host) { mutableListOf() }
-            for (c in cookies) {
-                list.removeAll { it.name == c.name }
-                // expired cookie => remove
-                if (c.expiresAt > System.currentTimeMillis()) {
-                    list.add(c)
-                }
-            }
-            // Also index under LAN IP / domain so cookie works across candidates
-            for (alias in aliasHosts(host)) {
-                if (alias == host) continue
-                val al = store.getOrPut(alias) { mutableListOf() }
-                for (c in cookies) {
-                    al.removeAll { it.name == c.name }
-                    if (c.expiresAt > System.currentTimeMillis()) {
-                        val rebuilt = try {
-                            Cookie.Builder()
-                                .name(c.name)
-                                .value(c.value)
-                                .path(c.path)
-                                .expiresAt(c.expiresAt)
-                                .apply {
-                                    if (c.secure) secure()
-                                    if (c.httpOnly) httpOnly()
-                                    hostOnlyDomain(alias)
-                                }
-                                .build()
-                        } catch (_: Exception) {
-                            c
-                        }
-                        al.add(rebuilt)
+            token = null
+            cookiePath = "/beer"
+            prefs.edit().clear().apply()
+            Log.i(TAG, "session cleared")
+        }
+    }
+
+    /**
+     * Parse raw Set-Cookie headers (call on every successful login / any response).
+     * Does NOT depend on OkHttp domain matching.
+     */
+    fun ingestSetCookieHeaders(headers: List<String>) {
+        if (headers.isEmpty()) return
+        synchronized(lock) {
+            for (raw in headers) {
+                // "beer_session=xxx; path=/beer; ... Domain=..."
+                val nameValue = raw.substringBefore(';').trim()
+                val eq = nameValue.indexOf('=')
+                if (eq <= 0) continue
+                val name = nameValue.substring(0, eq).trim()
+                val value = nameValue.substring(eq + 1).trim()
+                if (name != COOKIE_NAME || value.isEmpty()) continue
+
+                // empty value / delete cookie
+                if (value == "null" || value.length < 8) {
+                    // short values might be delete markers
+                    val maxAge = Regex("""(?i)max-age=(\d+)""").find(raw)?.groupValues?.get(1)?.toLongOrNull()
+                    if (maxAge == 0L || value.isEmpty()) {
+                        token = null
+                        prefs.edit().remove(KEY_TOKEN).apply()
+                        Log.i(TAG, "session cookie deleted via Set-Cookie")
+                        continue
                     }
                 }
+
+                token = value
+                val pathMatch = Regex("""(?i);\s*path=([^;]+)""").find(raw)
+                if (pathMatch != null) {
+                    cookiePath = pathMatch.groupValues[1].trim().ifBlank { "/beer" }
+                }
+                prefs.edit()
+                    .putString(KEY_TOKEN, value)
+                    .putString(KEY_PATH, cookiePath)
+                    .apply()
+                Log.i(TAG, "session cookie saved (len=${value.length}, path=$cookiePath)")
             }
-            persist()
+        }
+    }
+
+    /** Convenience: read Set-Cookie from OkHttp Response */
+    fun ingestResponse(response: Response) {
+        ingestSetCookieHeaders(response.headers("Set-Cookie"))
+    }
+
+    fun saveToken(value: String, path: String = cookiePath) {
+        synchronized(lock) {
+            token = value
+            cookiePath = path.ifBlank { "/beer" }
+            prefs.edit()
+                .putString(KEY_TOKEN, value)
+                .putString(KEY_PATH, cookiePath)
+                .apply()
+        }
+    }
+
+    /**
+     * CookieJar contract: always emit beer_session for our hosts so OkHttp
+     * attaches it even if Domain on server cookie wouldn't match LAN IP.
+     */
+    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+        // Secondary path — usually empty for Domain-mismatched cookies.
+        for (c in cookies) {
+            if (c.name == COOKIE_NAME && c.value.isNotBlank()) {
+                saveToken(c.value, c.path)
+            }
         }
     }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
-        synchronized(lock) {
-            val now = System.currentTimeMillis()
-            val result = mutableListOf<Cookie>()
-            val hosts = linkedSetOf(url.host).apply { addAll(aliasHosts(url.host)) }
-            for (h in hosts) {
-                val list = store[h] ?: continue
-                list.removeAll { it.expiresAt <= now }
-                for (c in list) {
-                    // Prefer exact host match; always inject beer_session
-                    if (c.name == "beer_session" || c.matches(url) || ServerSettings.isLanHost(url.host)) {
-                        if (result.none { it.name == c.name }) {
-                            result.add(c)
-                        }
-                    }
-                }
-            }
-            // Force beer_session header path: ensure cookie present even if domain mismatch
-            if (result.none { it.name == "beer_session" }) {
-                findBeerSession()?.let { result.add(it) }
-            }
-            return result
+        val t = token ?: return emptyList()
+        if (!isBeerHost(url.host)) return emptyList()
+        return try {
+            val builder = Cookie.Builder()
+                .name(COOKIE_NAME)
+                .value(t)
+                .path(normalizePath(cookiePath))
+                .hostOnlyDomain(url.host)
+                .expiresAt(System.currentTimeMillis() + THIRTY_DAYS_MS)
+            // Always mark secure for HTTPS beer endpoints
+            if (url.isHttps) builder.secure()
+            builder.httpOnly()
+            listOf(builder.build())
+        } catch (e: Exception) {
+            Log.w(TAG, "build cookie for ${url.host}: ${e.message}")
+            emptyList()
         }
     }
 
-    fun beerSessionCookieHeader(): String? {
-        synchronized(lock) {
-            return findBeerSession()?.let { "beer_session=${it.value}" }
-        }
+    private fun normalizePath(p: String): String {
+        val s = p.trim().ifBlank { "/beer" }
+        return if (s.startsWith("/")) s else "/$s"
     }
 
-    fun hasSession(): Boolean = beerSessionCookieHeader() != null
-
-    fun clear() {
-        synchronized(lock) {
-            store.clear()
-            prefs.edit().clear().apply()
-        }
+    private fun isBeerHost(host: String): Boolean {
+        return host == "192.168.1.50" ||
+            host == ServerSettings.CANONICAL_HOST ||
+            host == ServerSettings.WAN_IPV4 ||
+            host.endsWith("freeboxos.fr") ||
+            ServerSettings.isLanHost(host)
     }
 
-    private fun findBeerSession(): Cookie? {
-        val now = System.currentTimeMillis()
-        for ((_, list) in store) {
-            val c = list.firstOrNull { it.name == "beer_session" && it.expiresAt > now }
-            if (c != null) return c
-        }
-        return null
-    }
-
-    private fun aliasHosts(host: String): List<String> {
-        return listOf(
-            host,
-            "192.168.1.50",
-            ServerSettings.CANONICAL_HOST,
-            ServerSettings.WAN_IPV4
-        ).distinct()
-    }
-
-    private fun persist() {
-        val arr = JSONArray()
-        for ((host, list) in store) {
-            for (c in list) {
-                val o = JSONObject()
-                o.put("host", host)
-                o.put("name", c.name)
-                o.put("value", c.value)
-                o.put("path", c.path)
-                o.put("secure", c.secure)
-                o.put("httpOnly", c.httpOnly)
-                o.put("expiresAt", c.expiresAt)
-                o.put("hostOnly", c.hostOnly)
-                o.put("domain", c.domain)
-                arr.put(o)
-            }
-        }
-        prefs.edit().putString("cookies", arr.toString()).apply()
-    }
-
-    private fun load() {
-        val raw = prefs.getString("cookies", null) ?: return
-        try {
-            val arr = JSONArray(raw)
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                val host = o.getString("host")
-                val builder = Cookie.Builder()
-                    .name(o.getString("name"))
-                    .value(o.getString("value"))
-                    .path(o.optString("path", "/"))
-                    .expiresAt(o.optLong("expiresAt", Long.MAX_VALUE / 2))
-                if (o.optBoolean("secure", true)) builder.secure()
-                if (o.optBoolean("httpOnly", true)) builder.httpOnly()
-                val domain = o.optString("domain", host)
-                try {
-                    if (o.optBoolean("hostOnly", true)) builder.hostOnlyDomain(host)
-                    else builder.domain(domain)
-                } catch (_: Exception) {
-                    try {
-                        builder.hostOnlyDomain(host)
-                    } catch (_: Exception) {
-                        continue
-                    }
-                }
-                val cookie = try {
-                    builder.build()
-                } catch (_: Exception) {
-                    continue
-                }
-                store.getOrPut(host) { mutableListOf() }.add(cookie)
-            }
-        } catch (_: Exception) {
-            // corrupt store
-            prefs.edit().clear().apply()
-        }
+    companion object {
+        private const val TAG = "BeerSession"
+        private const val PREFS = "beer_session_v2"
+        private const val KEY_TOKEN = "beer_session_token"
+        private const val KEY_PATH = "beer_session_path"
+        private const val COOKIE_NAME = "beer_session"
+        private const val THIRTY_DAYS_MS = 30L * 24 * 3600 * 1000
     }
 }
 
-/** Lightweight identity restore (username / admin) like BeerSessionStore. */
+/** Lightweight identity restore (username / admin) like BeerSessionStore iOS. */
 object BeerSessionStore {
     private const val PREFS = "beer_session_identity"
 

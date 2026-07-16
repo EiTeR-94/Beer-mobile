@@ -70,9 +70,10 @@ class BeerAPI private constructor(context: Context) {
     private fun applyHeaders(builder: Request.Builder) {
         builder.header(NATIVE_CLIENT_HEADER, NATIVE_CLIENT_VALUE)
         builder.header("User-Agent", USER_AGENT)
-        // Force beer_session like iOS beerSessionCookieString()
-        cookieJar.beerSessionCookieHeader()?.let {
-            builder.header("Cookie", it)
+        // Force beer_session like iOS beerSessionCookieString() —
+        // critical when Set-Cookie Domain=FQDN but we talk to LAN IP.
+        cookieJar.beerSessionCookieHeader()?.let { cookie ->
+            builder.header("Cookie", cookie)
         }
     }
 
@@ -90,8 +91,14 @@ class BeerAPI private constructor(context: Context) {
         allowUnauthorizedBody: Boolean = false
     ): Pair<String, Int> =
         withContext(Dispatchers.IO) {
+            // Re-apply cookie at send time (token may have been set after builder creation)
+            val finalReq = req.newBuilder().also { b ->
+                cookieJar.beerSessionCookieHeader()?.let { b.header("Cookie", it) }
+            }.build()
             val c = if (probe) probeClient else client
-            c.newCall(req).execute().use { resp ->
+            c.newCall(finalReq).execute().use { resp ->
+                // Always capture Set-Cookie (login / session refresh), even Domain-mismatched
+                cookieJar.ingestResponse(resp)
                 val body = resp.body?.string().orEmpty()
                 // Login/public endpoints may return 401 with a JSON error body we must parse
                 if (resp.code == 401 && !allowUnauthorizedBody) {
@@ -110,6 +117,7 @@ class BeerAPI private constructor(context: Context) {
                     } catch (_: Exception) {
                         null
                     }
+                    // Prefer server message over generic "Session expirée" for non-auth failures
                     throw ApiException(err ?: "Erreur serveur: ${resp.code}", resp.code)
                 }
                 body to resp.code
@@ -150,8 +158,14 @@ class BeerAPI private constructor(context: Context) {
         // Prefer LAN first like iOS
         setBaseURL(ServerSettings.LAN_API_BASE)
         discoverWorkingEndpoint()
+        // Fresh login: drop previous token so we never mix sessions
+        cookieJar.clear()
         val json = gson.toJson(mapOf("username" to username, "password" to password))
-        val req = requestBuilder("api/login")
+        // Build without Cookie header for login
+        val req = Request.Builder()
+            .url(absUrl("api/login"))
+            .header(NATIVE_CLIENT_HEADER, NATIVE_CLIENT_VALUE)
+            .header("User-Agent", USER_AGENT)
             .post(json.toRequestBody(JSON))
             .build()
         val (body, code) = execute(req, allowUnauthorizedBody = true)
@@ -159,6 +173,12 @@ class BeerAPI private constructor(context: Context) {
             ?: throw ApiException("Réponse login invalide (HTTP $code)")
         if (code == 401 || code >= 400 || !decoded.ok) {
             throw ApiException(decoded.error ?: "Identifiants incorrects", code)
+        }
+        // Hard fail if session cookie was not captured (would break all subsequent API calls)
+        if (!cookieJar.hasSession()) {
+            throw ApiException(
+                "Login OK mais cookie session absent (BEER_COOKIE_DOMAIN / Set-Cookie). Réessaie."
+            )
         }
         decoded
     }
