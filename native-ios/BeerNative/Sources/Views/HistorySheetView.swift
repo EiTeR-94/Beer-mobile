@@ -172,6 +172,12 @@ struct HistorySheetView: View {
                         Text("\(item.brewery ?? "—") · \(item.style ?? "Inconnu") · \(BeerFormatters.formatDate(item.createdAt))")
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.muted)
+                        if let loc = item.location?.trimmingCharacters(in: .whitespacesAndNewlines), !loc.isEmpty {
+                            Text("📍 \(loc)")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.muted)
+                                .lineLimit(2)
+                        }
                         if let flavors = item.flavors, !flavors.isEmpty {
                             Text(flavors.joined(separator: ", "))
                                 .font(.system(size: 12))

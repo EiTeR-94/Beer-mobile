@@ -484,8 +484,10 @@ final class AppModel: ObservableObject {
         hops: [String],
         comment: String,
         photoJPEG: Data?,
-        force: Bool
+        force: Bool,
+        location: String = ""
     ) async throws -> String {
+        let loc = String(location.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))
         let pending = PendingCheckin(
             id: UUID(),
             createdAt: Date(),
@@ -501,7 +503,8 @@ final class AppModel: ObservableObject {
             comment: comment,
             untappdBid: product.untappdBid.map(String.init) ?? "",
             force: force,
-            photoJPEGBase64: photoJPEG?.base64EncodedString()
+            photoJPEGBase64: photoJPEG?.base64EncodedString(),
+            location: loc.isEmpty ? nil : loc
         )
 
         let shouldQueueLocally = networkStatus != .online || !isOnline
@@ -524,7 +527,8 @@ final class AppModel: ObservableObject {
                 comment: pending.comment,
                 untappdBid: pending.untappdBid,
                 force: pending.force,
-                photoJPEG: photoJPEG
+                photoJPEG: photoJPEG,
+                location: pending.location ?? ""
             )
             if result.duplicate == true {
                 let pc = result.previousCheckin

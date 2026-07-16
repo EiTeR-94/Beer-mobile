@@ -113,9 +113,11 @@ struct CheckinItem: Identifiable, Codable, Hashable {
     let hops: [String]?
     let hiddenFromPartner: Bool?
     let untappdBid: Int?
+    /// Lieu / lien où la bière a été dégustée (optionnel).
+    let location: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, brewery, style, rating, comment, barcode, flavors, hops
+        case id, brewery, style, rating, comment, barcode, flavors, hops, location
         case beerName = "beer_name"
         case createdAt = "created_at"
         case photoURL = "photo_url"
@@ -341,6 +343,8 @@ struct PendingCheckin: Identifiable, Codable {
     var untappdBid: String
     var force: Bool
     var photoJPEGBase64: String?
+    /// Lieu / lien de dégustation (optionnel). Optional for legacy offline queue JSON.
+    var location: String?
 }
 
 struct PreviousCheckin: Decodable {

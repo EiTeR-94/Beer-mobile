@@ -317,13 +317,15 @@ final class BeerAPI {
         flavors: [String]?,
         hops: [String]?,
         comment: String?,
-        hiddenFromPartner: Bool?
+        hiddenFromPartner: Bool?,
+        location: String? = nil
     ) async throws {
         var payload: [String: Any] = [:]
         if let rating { payload["rating"] = rating }
         if let flavors { payload["flavors"] = flavors }
         if let hops { payload["hops"] = hops }
         if let comment { payload["comment"] = comment }
+        if let location { payload["location"] = location }
         if let hiddenFromPartner { payload["hidden_from_partner"] = hiddenFromPartner }
         let body = try JSONSerialization.data(withJSONObject: payload)
         let (data, http, _) = try await request(
@@ -714,7 +716,8 @@ final class BeerAPI {
         comment: String,
         untappdBid: String,
         force: Bool,
-        photoJPEG: Data? = nil
+        photoJPEG: Data? = nil,
+        location: String = ""
     ) async throws -> CreateCheckinResult {
         let boundary = "BeerBoundary-\(UUID().uuidString)"
         var req = URLRequest(url: try url("/api/checkins"))
@@ -722,6 +725,7 @@ final class BeerAPI {
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         let flavorJSON = (try? String(data: JSONEncoder().encode(flavors), encoding: .utf8)) ?? "[]"
         let hopsJSON = (try? String(data: JSONEncoder().encode(hops), encoding: .utf8)) ?? "[]"
+        let loc = String(location.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))
         req.httpBody = makeMultipart(
             boundary: boundary,
             fields: [
@@ -735,6 +739,7 @@ final class BeerAPI {
                 "flavors": flavorJSON,
                 "hops": hopsJSON,
                 "comment": comment,
+                "location": loc,
                 "untappd_bid": untappdBid,
                 "force": force ? "true" : "false",
             ],

@@ -10,6 +10,7 @@ struct CheckinEditView: View {
 
     @State private var rating: Double
     @State private var comment: String
+    @State private var location: String
     @State private var flavors = Set<String>()
     @State private var hops = Set<String>()
     @State private var flavorTags: [String] = []
@@ -28,6 +29,7 @@ struct CheckinEditView: View {
         self.onSaved = onSaved
         _rating = State(initialValue: item.rating)
         _comment = State(initialValue: item.comment ?? "")
+        _location = State(initialValue: item.location ?? "")
         _flavors = State(initialValue: Set(item.flavors ?? []))
         _hops = State(initialValue: Set(item.hops ?? []))
         _hidden = State(initialValue: item.hiddenFromPartner == true)
@@ -107,6 +109,21 @@ struct CheckinEditView: View {
 
                 BeerField(label: "Commentaire", text: $comment)
 
+                VStack(alignment: .leading, spacing: 6) {
+                    BeerField(
+                        label: "Lieu ou lien",
+                        text: $location,
+                        placeholder: "ex. Chez nous · https://maps…"
+                    )
+                    .onChange(of: location) { v in
+                        if v.count > 300 { location = String(v.prefix(300)) }
+                    }
+                    Text("\(location.count)/300")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.muted)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+
                 if let message {
                     Text(message).font(.footnote).foregroundStyle(Theme.error)
                 }
@@ -147,7 +164,8 @@ struct CheckinEditView: View {
                 flavors: Array(flavors),
                 hops: Array(hops),
                 comment: String(comment.prefix(120)),
-                hiddenFromPartner: app.isAdmin ? hidden : nil
+                hiddenFromPartner: app.isAdmin ? hidden : nil,
+                location: String(location.prefix(300))
             )
             if removePhoto { try await app.api.removeCheckinPhoto(id: item.id) }
             else if let newPhoto { try await app.api.replaceCheckinPhoto(id: item.id, jpeg: newPhoto) }

@@ -542,6 +542,12 @@ struct HistoryCardView: View {
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.muted)
                 }
+                if let loc = item.location?.trimmingCharacters(in: .whitespacesAndNewlines), !loc.isEmpty {
+                    Text("📍 \(loc)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.muted)
+                        .lineLimit(2)
+                }
                 if let comment = item.comment, !comment.isEmpty {
                     Text(comment)
                         .font(.system(size: 13))

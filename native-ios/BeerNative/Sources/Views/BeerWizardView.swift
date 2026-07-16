@@ -28,6 +28,8 @@ struct BeerWizardView: View {
     @State private var showTastingCamera = false
     @State private var photoData: Data?
     @State private var photoPreview: UIImage?
+    /// Lieu / lien où la bière a été dégustée (optionnel) — saisi à l'étape Photo.
+    @State private var location = ""
 
     @State private var rating = 3.0
     @State private var comment = ""
@@ -251,7 +253,7 @@ struct BeerWizardView: View {
 
     private var stepPhoto: some View {
         Group {
-            BeerLead(text: "Photo du verre avec la canette à côté (optionnel).")
+            BeerLead(text: "Photo du verre (optionnel) et lieu de dégustation.")
 
             Button { showTastingCamera = true } label: {
                 ZStack {
@@ -274,6 +276,31 @@ struct BeerWizardView: View {
                 }
             }
             .buttonStyle(.plain)
+
+            // Lieu / lien — idée couple : savoir où (et le quand vient de created_at)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Où as-tu dégusté ?")
+                    .font(.system(size: Theme.Font.tagTitle, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                Text("Nom du lieu et/ou lien (Maps, resto…) — optionnel.")
+                    .font(.system(size: Theme.Font.lead * 0.94))
+                    .foregroundStyle(Theme.muted)
+                BeerField(
+                    label: "Lieu ou lien",
+                    text: $location,
+                    placeholder: "ex. Chez nous · Brasserie X · https://maps…"
+                )
+                .onChange(of: location) { v in
+                    if v.count > 300 { location = String(v.prefix(300)) }
+                }
+                HStack {
+                    Spacer()
+                    Text("\(location.count)/300")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.muted)
+                }
+            }
+            .beerCard()
 
             BeerSecondaryButton(title: "← Retour") { step = 1 }
             BeerPrimaryButton(title: "Continuer → note") {
@@ -570,7 +597,8 @@ struct BeerWizardView: View {
                 hops: Array(hops),
                 comment: comment,
                 photoJPEG: photoData,
-                force: force
+                force: force,
+                location: location
             )
             if msg.hasPrefix("duplicate|") {
                 let parts = msg.split(separator: "|").map(String.init)
@@ -633,6 +661,7 @@ struct BeerWizardView: View {
         customStyle = ""
         photoData = nil
         photoPreview = nil
+        location = ""
         rating = 3.0
         comment = ""
         flavors = []

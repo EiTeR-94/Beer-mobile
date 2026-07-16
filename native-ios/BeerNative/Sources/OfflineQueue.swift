@@ -106,7 +106,8 @@ final class OfflineQueue: ObservableObject {
                     comment: item.comment,
                     untappdBid: item.untappdBid,
                     force: item.force,
-                    photoJPEG: photo
+                    photoJPEG: photo,
+                    location: item.location ?? ""
                 )
                 if result.ok == true || result.id != nil || result.duplicate == true {
                     remove(id: item.id)

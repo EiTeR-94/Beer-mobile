@@ -64,6 +64,10 @@ struct CheckinDetailView: View {
                         .foregroundStyle(Theme.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
+                    if let loc = item.location?.trimmingCharacters(in: .whitespacesAndNewlines), !loc.isEmpty {
+                        locationRow(loc)
+                    }
+
                     HStack(spacing: 6) {
                         Text("★★★★★").foregroundStyle(Theme.starOff)
                             .overlay(alignment: .leading) {
@@ -105,6 +109,57 @@ struct CheckinDetailView: View {
         }
         .background(Theme.bg)
         .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder
+    private func locationRow(_ loc: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text("📍")
+                .font(.system(size: 14))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Lieu")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.muted)
+                if let url = Self.openableURL(from: loc) {
+                    Link(destination: url) {
+                        Text(loc)
+                            .font(.system(size: 14))
+                            .foregroundStyle(Theme.accent)
+                            .multilineTextAlignment(.leading)
+                    }
+                } else {
+                    Text(loc)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Theme.text)
+                        .multilineTextAlignment(.leading)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.card)
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.border))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    /// Si le texte contient une URL http(s), la rend cliquable ; sinon nil.
+    private static func openableURL(from text: String) -> URL? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let u = URL(string: trimmed), let scheme = u.scheme?.lowercased(),
+           (scheme == "http" || scheme == "https"), u.host != nil {
+            return u
+        }
+        // Extract first http(s) URL embedded in free text
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
+            return nil
+        }
+        let range = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
+        let match = detector.firstMatch(in: trimmed, options: [], range: range)
+        guard let match, let url = match.url,
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else { return nil }
+        return url
     }
 
     private func toggleHidden() async {
