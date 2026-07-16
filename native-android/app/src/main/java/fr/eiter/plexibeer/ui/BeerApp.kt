@@ -166,8 +166,10 @@ private fun MainScreen(vm: AppViewModel) {
                 add("À boire" to { vm.openSheet(BeerSheet.WISHLIST) })
                 add("Historique" to { vm.openSheet(BeerSheet.HISTORY) })
                 add("Idées cadeaux" to { vm.openSheet(BeerSheet.GIFTS) })
-                if (vm.pendingCount > 0) {
-                    add("En attente (${vm.pendingCount})" to { vm.openSheet(BeerSheet.PENDING) })
+                // pendingCount is Compose state — live badge after offline enqueue
+                val pending = vm.pendingCount
+                if (pending > 0) {
+                    add("En attente ($pending)" to { vm.openSheet(BeerSheet.PENDING) })
                 }
                 add("Déconnexion" to { vm.logout() })
             }
@@ -188,6 +190,14 @@ private fun MainScreen(vm: AppViewModel) {
         if (vm.networkStatus != NetworkStatus.ONLINE || vm.pendingCount > 0) {
             Box(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
                 NetworkStatusBar(vm.networkStatus, vm.pendingCount, vm.lastEndpointLatencyMs)
+            }
+            if (vm.networkStatus != NetworkStatus.ONLINE && vm.pendingCount > 0) {
+                Text(
+                    "Mode offline — ${vm.pendingCount} en file, sync auto au retour réseau",
+                    color = BeerColors.muted,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+                )
             }
         }
 
@@ -910,8 +920,7 @@ private fun HistorySheet(vm: AppViewModel) {
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val pageSize = 10
-    val historyContext = LocalContext.current
-    val cache = remember(historyContext) { OfflineCache(historyContext) }
+    val cache = vm.listCache
 
     suspend fun load(append: Boolean) {
         if (loading) return
@@ -931,8 +940,11 @@ private fun HistorySheet(vm: AppViewModel) {
             hasMore = page.size >= pageSize
             if (!append) {
                 stats = api.stats()
-                cache.saveCheckins(items)
-                stats?.let { cache.saveStats(it) }
+                // Ne cache la page « unfiltered » complète que sans filtres
+                if (filterStyle.isEmpty() && filterRating <= 0f && filterPeriod.isEmpty()) {
+                    cache.saveCheckins(items)
+                    stats?.let { cache.saveStats(it) }
+                }
             }
         } catch (e: Exception) {
             if (!append) {
@@ -940,9 +952,9 @@ private fun HistorySheet(vm: AppViewModel) {
                 if (cached.isNotEmpty()) {
                     items = cached
                     stats = cache.loadStats()
-                    error = "Hors ligne — cache local"
+                    error = "Hors ligne — cache local (${vm.networkStatus.label.lowercase()})"
                 } else {
-                    error = e.message
+                    error = e.message ?: "Impossible de charger (pas de cache)"
                 }
             } else {
                 error = e.message
@@ -953,7 +965,21 @@ private fun HistorySheet(vm: AppViewModel) {
     }
 
     LaunchedEffect(Unit) {
-        styles = try { api.styles() } catch (_: Exception) { emptyList() }
+        // Styles: live then cache
+        styles = try {
+            api.styles().also { if (it.isNotEmpty()) cache.saveStyles(it) }
+        } catch (_: Exception) {
+            cache.loadStyles()
+        }
+        // Affiche le cache immédiatement si hors ligne
+        if (vm.networkStatus != NetworkStatus.ONLINE) {
+            val cached = cache.loadCheckins()
+            if (cached.isNotEmpty()) {
+                items = cached
+                stats = cache.loadStats()
+                error = "Hors ligne — cache local"
+            }
+        }
         load(false)
     }
     LaunchedEffect(filterStyle, filterRating, filterPeriod) {
@@ -1050,17 +1076,22 @@ private fun HistorySheet(vm: AppViewModel) {
                                 scope.launch {
                                     try {
                                         if (vm.networkStatus != NetworkStatus.ONLINE) {
-                                            vm.offline.enqueueDelete(item.id)
-                                            vm.showToast("Suppression en file", ToastPayload.Variant.INFO)
+                                            vm.enqueueDeleteCheckin(item.id)
                                         } else {
-                                            api.deleteCheckin(item.id)
-                                            vm.showToast("Supprimé", ToastPayload.Variant.SUCCESS)
+                                            try {
+                                                api.deleteCheckin(item.id)
+                                                vm.listCache.invalidateHistory()
+                                                vm.showToast("Supprimé", ToastPayload.Variant.SUCCESS)
+                                            } catch (e: Exception) {
+                                                if (e is java.io.IOException) {
+                                                    vm.enqueueDeleteCheckin(item.id)
+                                                } else {
+                                                    throw e
+                                                }
+                                            }
                                         }
                                         load(false)
                                     } catch (e: Exception) {
-                                        if (e is java.io.IOException) {
-                                            vm.offline.enqueueDelete(item.id)
-                                        }
                                         vm.showToast(e.message ?: "Erreur", ToastPayload.Variant.ERROR)
                                     }
                                 }
@@ -1168,20 +1199,38 @@ private fun GallerySheet(vm: AppViewModel) {
     val api = vm.api
     var items by remember { mutableStateOf(listOf<CheckinItem>()) }
     var loading by remember { mutableStateOf(true) }
+    var offlineHint by remember { mutableStateOf<String?>(null) }
+    val cache = vm.listCache
 
     LaunchedEffect(Unit) {
+        val cached = cache.loadCheckins().filter { !it.photoURL.isNullOrBlank() }
+        if (cached.isNotEmpty()) {
+            items = cached
+        }
         try {
-            items = api.checkins(limit = 100, offset = 0).filter { !it.photoURL.isNullOrBlank() }
+            val live = api.checkins(limit = 100, offset = 0)
+            cache.saveCheckins(live)
+            items = live.filter { !it.photoURL.isNullOrBlank() }
+            offlineHint = null
+            vm.prewarmRecentPhotos()
         } catch (_: Exception) {
+            offlineHint = if (items.isEmpty()) {
+                "Hors ligne — aucune photo en cache (ouvre la galerie en Wi‑Fi une fois)"
+            } else {
+                "Hors ligne — galerie en cache"
+            }
         }
         loading = false
     }
 
     SheetScaffold("Galerie photos", onClose = { vm.closeSheet() }) {
-        if (loading) {
+        offlineHint?.let {
+            Text(it, color = BeerColors.accent, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
+        }
+        if (loading && items.isEmpty()) {
             CircularProgressIndicator(color = BeerColors.accent, modifier = Modifier.align(Alignment.CenterHorizontally))
         } else if (items.isEmpty()) {
-            BeerEmptyState("📷", "Aucune photo", "Ajoute une photo à ta prochaine dégustation.")
+            BeerEmptyState("📷", "Aucune photo", "Ouvre la galerie en Wi‑Fi une fois pour la mettre en cache.")
         } else {
             Text("${items.size} photos", color = BeerColors.muted, fontSize = 12.sp)
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1215,25 +1264,43 @@ private fun WishlistSheet(vm: AppViewModel) {
     var items by remember { mutableStateOf(listOf<WishlistItem>()) }
     var newName by remember { mutableStateOf("") }
     var newBrewery by remember { mutableStateOf("") }
+    var offlineHint by remember { mutableStateOf<String?>(null) }
+    val cache = vm.listCache
 
     suspend fun reload() {
-        items = try {
-            api.wishlist()
+        try {
+            val live = api.wishlist()
+            cache.saveWishlist(live)
+            items = live
+            offlineHint = null
         } catch (_: Exception) {
-            emptyList()
+            val cached = cache.loadWishlist()
+            items = cached
+            offlineHint = if (cached.isEmpty()) {
+                "Hors ligne — liste non en cache"
+            } else {
+                "Hors ligne — wishlist en cache"
+            }
         }
     }
 
-    LaunchedEffect(Unit) { reload() }
+    LaunchedEffect(Unit) {
+        val cached = cache.loadWishlist()
+        if (cached.isNotEmpty()) items = cached
+        reload()
+    }
 
     SheetScaffold("À boire", onClose = { vm.closeSheet() }) {
         Text("Tes souhaits personnels (bières à goûter).", color = BeerColors.muted, fontSize = 13.sp)
+        offlineHint?.let {
+            Text(it, color = BeerColors.accent, fontSize = 12.sp)
+        }
         Spacer(Modifier.height(8.dp))
         BeerField("Nom bière", newName, { newName = it })
         Spacer(Modifier.height(6.dp))
         BeerField("Brasserie (optionnel)", newBrewery, { newBrewery = it })
         Spacer(Modifier.height(8.dp))
-        BeerPrimaryButton("Ajouter", enabled = newName.length >= 2) {
+        BeerPrimaryButton("Ajouter", enabled = newName.length >= 2 && vm.networkStatus == NetworkStatus.ONLINE) {
             scope.launch {
                 try {
                     api.addWishlist(newName.trim(), newBrewery.trim())
@@ -1289,24 +1356,25 @@ private fun GiftsSheet(vm: AppViewModel) {
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
 
-    val giftsContext = LocalContext.current
-    val cache = remember(giftsContext) { OfflineCache(giftsContext) }
+    val cache = vm.listCache
     LaunchedEffect(Unit) {
+        cache.loadCouple()?.let { cached ->
+            gifts = cached.giftIdeas.orEmpty()
+            users = cached.users.orEmpty()
+            partner = users.firstOrNull { it.username != vm.user }?.username.orEmpty()
+        }
         try {
             val data = api.coupleStats()
             gifts = data.giftIdeas.orEmpty()
             users = data.users.orEmpty()
             partner = users.firstOrNull { it.username != vm.user }?.username.orEmpty()
             cache.saveCouple(data)
+            error = null
         } catch (e: Exception) {
-            val cached = cache.loadCouple()
-            if (cached != null) {
-                gifts = cached.giftIdeas.orEmpty()
-                users = cached.users.orEmpty()
-                partner = users.firstOrNull { it.username != vm.user }?.username.orEmpty()
-                error = "Hors ligne — cache local"
+            if (gifts.isEmpty()) {
+                error = e.message ?: "Hors ligne — pas de cache cadeaux"
             } else {
-                error = e.message
+                error = "Hors ligne — idées cadeaux en cache"
             }
         }
         loading = false
@@ -1397,16 +1465,25 @@ private fun GiftsSheet(vm: AppViewModel) {
 
 @Composable
 private fun PendingSheet(vm: AppViewModel) {
-    val scope = rememberCoroutineScope()
     SheetScaffold("En attente", onClose = { vm.closeSheet() }) {
-        BeerPrimaryButton("Synchroniser maintenant") {
-            scope.launch {
-                vm.syncPending()
-                vm.showToast("Sync tentée", ToastPayload.Variant.INFO)
-            }
+        Text(
+            when (vm.networkStatus) {
+                NetworkStatus.ONLINE -> "Réseau OK — tu peux synchroniser."
+                NetworkStatus.OFFLINE -> "Pas de réseau — les notes restent sur l'appareil."
+                NetworkStatus.SERVER_UNREACHABLE -> "Serveur injoignable — file conservée."
+            },
+            color = BeerColors.muted,
+            fontSize = 12.sp
+        )
+        Spacer(Modifier.height(8.dp))
+        BeerPrimaryButton(
+            "Synchroniser maintenant",
+            enabled = vm.networkStatus == NetworkStatus.ONLINE && vm.pendingCount > 0
+        ) {
+            vm.requestSync()
         }
         Spacer(Modifier.height(8.dp))
-        Text("Créations en attente", color = BeerColors.text, fontWeight = FontWeight.SemiBold)
+        Text("Créations en attente (${vm.pendingItems.size})", color = BeerColors.text, fontWeight = FontWeight.SemiBold)
         if (vm.pendingItems.isEmpty()) {
             Text("Aucune dégustation en attente.", color = BeerColors.muted)
         } else {
@@ -1414,6 +1491,9 @@ private fun PendingSheet(vm: AppViewModel) {
                 BeerCard {
                     Text(p.beerName, color = BeerColors.text, fontWeight = FontWeight.Bold)
                     Text("${p.brewery} · ${p.style} · ★${formatRating(p.rating)}", color = BeerColors.muted, fontSize = 12.sp)
+                    p.location?.takeIf { it.isNotBlank() }?.let {
+                        Text("📍 $it", color = BeerColors.muted, fontSize = 12.sp)
+                    }
                     TextButton(onClick = { vm.removePending(p.id) }) {
                         Text("Supprimer", color = BeerColors.error)
                     }

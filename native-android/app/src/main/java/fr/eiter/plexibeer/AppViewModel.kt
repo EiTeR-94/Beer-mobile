@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -22,7 +23,15 @@ import java.io.File
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     val api = BeerAPI.getInstance(app)
-    val offline = OfflineQueue(app)
+    val imageCache = ImageCache.getInstance(app)
+    val listCache = OfflineCache(app)
+
+    val offline = OfflineQueue(app) {
+        // Always post to main for Compose state
+        viewModelScope.launch {
+            refreshOfflineUi()
+        }
+    }
 
     var user by mutableStateOf<String?>(null)
         private set
@@ -46,15 +55,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var lastEndpointLatencyMs by mutableStateOf<Long?>(null)
         private set
 
-    val pendingCount: Int get() = offline.pendingCount
-    val pendingItems: List<PendingCheckin> get() = offline.items
-    val pendingDeletes: List<Int> get() = offline.pendingDeletes
+    /** Badge « En attente » — state Compose (pas juste un getter). */
+    var pendingCount by mutableIntStateOf(0)
+        private set
+    var pendingItems by mutableStateOf<List<PendingCheckin>>(emptyList())
+        private set
+    var pendingDeletes by mutableStateOf<List<Int>>(emptyList())
+        private set
 
     private var toastJob: Job? = null
     private var syncInProgress = false
     private var connectivityCallback: ConnectivityManager.NetworkCallback? = null
+    private var lastOfflineToastAt = 0L
 
     init {
+        refreshOfflineUi()
         viewModelScope.launch { bootstrap() }
         registerConnectivity()
     }
@@ -64,17 +79,32 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         unregisterConnectivity()
     }
 
+    private fun refreshOfflineUi() {
+        pendingCount = offline.pendingCount
+        pendingItems = offline.items
+        pendingDeletes = offline.pendingDeletes
+    }
+
     private fun registerConnectivity() {
         val cm = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                viewModelScope.launch {
-                    probeAndSync()
+                viewModelScope.launch { probeAndSync() }
+            }
+
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                val ok = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                if (ok) {
+                    viewModelScope.launch { probeAndSync() }
                 }
             }
 
             override fun onLost(network: Network) {
-                networkStatus = NetworkStatus.OFFLINE
+                if (!isNetworkAvailable()) {
+                    networkStatus = NetworkStatus.OFFLINE
+                    maybeToastOffline()
+                }
             }
         }
         connectivityCallback = cb
@@ -94,12 +124,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun isNetworkAvailable(): Boolean {
+    fun isNetworkAvailable(): Boolean {
         val cm = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val net = cm.activeNetwork ?: return false
         val caps = cm.getNetworkCapabilities(net) ?: return false
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
+
+    /** true si on peut tenter l'API (pas OFFLINE pur). */
+    fun isEffectivelyOnline(): Boolean = networkStatus == NetworkStatus.ONLINE
 
     suspend fun bootstrap() {
         isLoading = true
@@ -107,6 +140,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (!isNetworkAvailable()) {
                 networkStatus = NetworkStatus.OFFLINE
                 restoreOfflineSessionIfNeeded()
+                if (isLoggedIn) {
+                    showToast(
+                        "Mode hors ligne",
+                        ToastPayload.Variant.INFO,
+                        detail = "Tes notes seront sync au retour réseau",
+                        durationMs = 3500
+                    )
+                }
                 return
             }
             val t0 = System.currentTimeMillis()
@@ -115,13 +156,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (ep == null) {
                 networkStatus = NetworkStatus.SERVER_UNREACHABLE
                 restoreOfflineSessionIfNeeded()
+                if (isLoggedIn) {
+                    showToast(
+                        "Serveur injoignable",
+                        ToastPayload.Variant.WARN,
+                        detail = "Cache local + file d'attente actifs",
+                        durationMs = 3500
+                    )
+                }
                 return
             }
             networkStatus = NetworkStatus.ONLINE
             if (api.cookieJar.hasSession()) {
                 try {
                     val me = api.me()
-                    // api/me: "auth" = auth enabled on server, not "logged in". Trust user field.
                     if (!me.user.isNullOrBlank()) {
                         applySession(me.user!!, me.isAdmin, true)
                         serverVersion = try {
@@ -130,19 +178,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             ""
                         }
                         syncPending()
+                        prewarmRecentPhotos()
+                        listCache.prune(16)
                         return
                     }
-                    // Server says not authenticated despite cookie
                     api.clearSession()
                     BeerSessionStore.clear(getApplication())
                 } catch (e: Exception) {
                     val code = (e as? BeerAPI.ApiException)?.code ?: 0
                     if (code == 401) {
-                        // Real session death
                         api.clearSession()
                         BeerSessionStore.clear(getApplication())
                     } else {
-                        // Network/SSL: keep cookie + restore identity offline
                         networkStatus = NetworkStatus.SERVER_UNREACHABLE
                         restoreOfflineSessionIfNeeded()
                         return
@@ -157,8 +204,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun restoreOfflineSessionIfNeeded() {
         val restored = BeerSessionStore.restore(getApplication()) ?: return
-        // With valid cookie: stay logged in even if me() couldn't run
-        // Without cookie but offline: still show UI for cache browsing
         if (api.cookieJar.hasSession() || networkStatus != NetworkStatus.ONLINE) {
             applySession(restored.first, restored.second, true)
         }
@@ -173,7 +218,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun showToast(message: String, variant: ToastPayload.Variant = ToastPayload.Variant.INFO, detail: String? = null, durationMs: Long = 2800) {
+    fun showToast(
+        message: String,
+        variant: ToastPayload.Variant = ToastPayload.Variant.INFO,
+        detail: String? = null,
+        durationMs: Long = 2800
+    ) {
         toastJob?.cancel()
         toast = ToastPayload(message, variant, detail)
         toastJob = viewModelScope.launch {
@@ -185,6 +235,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun hideToast() {
         toastJob?.cancel()
         toast = null
+    }
+
+    private fun maybeToastOffline() {
+        val now = System.currentTimeMillis()
+        if (now - lastOfflineToastAt < 15_000) return
+        lastOfflineToastAt = now
+        if (isLoggedIn) {
+            showToast(
+                "Réseau perdu",
+                ToastPayload.Variant.WARN,
+                detail = "Tu peux continuer à noter — sync plus tard",
+                durationMs = 3200
+            )
+        }
     }
 
     fun hapticTick() {
@@ -211,14 +275,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 BeerSessionStore.clear(getApplication())
-                // api.login clears cookie jar itself then captures Set-Cookie
                 api.setBaseURL(ServerSettings.LAN_API_BASE)
                 val resp = api.login(username, password)
-                // Verify session works immediately (same as iOS post-login me())
                 val me = try {
                     api.me()
                 } catch (e: Exception) {
-                    // Cookie present but me() failed — surface real error
                     throw Exception(
                         "Session non utilisable après login: ${e.message ?: "inconnu"}",
                         e
@@ -237,6 +298,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     ""
                 }
                 syncPending()
+                prewarmRecentPhotos()
                 onDone(Result.success(Unit))
             } catch (e: Exception) {
                 onDone(Result.failure(e))
@@ -295,12 +357,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun removePending(id: String) {
         offline.remove(id)
-        // trigger recomposition
-        showToast("File mise à jour", ToastPayload.Variant.INFO)
+        showToast("Retiré de la file", ToastPayload.Variant.INFO)
     }
 
     fun removePendingDelete(id: Int) {
         offline.removePendingDelete(id)
+    }
+
+    fun requestSync() {
+        viewModelScope.launch { probeAndSync() }
     }
 
     private suspend fun probeAndSync() {
@@ -314,6 +379,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         networkStatus = if (ep != null) NetworkStatus.ONLINE else NetworkStatus.SERVER_UNREACHABLE
         if (isLoggedIn && networkStatus == NetworkStatus.ONLINE) {
             syncPending()
+            prewarmRecentPhotos()
         }
     }
 
@@ -325,14 +391,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val n = offline.flush(api)
             if (n > 0) {
                 showToast("$n action(s) synchronisée(s)", ToastPayload.Variant.SUCCESS)
+                listCache.invalidateHistory()
             }
         } finally {
             syncInProgress = false
+            refreshOfflineUi()
+        }
+    }
+
+    /** Précharge les photos récentes pour la galerie hors ligne (best effort). */
+    fun prewarmRecentPhotos() {
+        if (!isLoggedIn || networkStatus != NetworkStatus.ONLINE) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val recent = api.checkins(limit = 24, offset = 0)
+                listCache.saveCheckins(recent)
+                for (item in recent) {
+                    val p = item.photoURL ?: continue
+                    if (imageCache.has(p)) continue
+                    try {
+                        val bytes = api.downloadAsset(p)
+                        imageCache.put(p, bytes)
+                    } catch (_: Exception) {
+                    }
+                }
+            } catch (_: Exception) {
+            }
         }
     }
 
     /**
-     * Save checkin with offline fallback — mirrors AppModel.saveCheckin.
+     * Save checkin with offline fallback.
      * Returns status string; "duplicate|..." on duplicate.
      */
     suspend fun saveCheckin(
@@ -346,7 +435,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         location: String = ""
     ): String {
         val loc = location.trim().take(300)
-        // Compress before offline enqueue so flush doesn't upload multi-MB originals
         val compressedPhoto = photoFile?.takeIf { it.exists() }?.let { f ->
             try {
                 ImageUtils.compressFile(f)
@@ -372,12 +460,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             location = loc.ifBlank { null }
         )
 
-        if (networkStatus != NetworkStatus.ONLINE || !isNetworkAvailable()) {
+        val offlineNow = networkStatus != NetworkStatus.ONLINE || !isNetworkAvailable()
+        if (offlineNow) {
             offline.enqueue(pending)
             return "Enregistré sur l'appareil — sync au retour réseau"
         }
 
-        try {
+        return try {
             val bytes = compressedPhoto?.takeIf { it.exists() }?.let {
                 ImageUtils.compressJPEG(it.readBytes())
             }
@@ -403,6 +492,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
             if (result.ok == true || result.id != null) {
                 hapticTick()
+                listCache.invalidateHistory()
+                // Cache photo locale si on vient d'uploader
+                if (bytes != null && result.id != null) {
+                    // path unknown until reload — prewarm list later
+                    viewModelScope.launch { prewarmRecentPhotos() }
+                }
                 return "Enregistré ✓"
             }
             throw BeerAPI.ApiException(result.error ?: "Échec")
@@ -416,14 +511,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun enqueueDeleteCheckin(id: Int) {
+        offline.enqueueDelete(id)
+        listCache.invalidateHistory()
+        showToast("Suppression en file — sync au retour réseau", ToastPayload.Variant.INFO)
+    }
+
     private fun isNetworkFailure(e: Exception): Boolean {
         val msg = e.message.orEmpty()
-        if (e is java.net.UnknownHostException || e is java.net.SocketTimeoutException || e is java.io.IOException) {
+        if (e is java.net.UnknownHostException ||
+            e is java.net.SocketTimeoutException ||
+            e is java.io.IOException
+        ) {
             return true
+        }
+        // Ne pas traiter 401/403 comme réseau
+        if (e is BeerAPI.ApiException && e.code in listOf(401, 403, 400, 409, 422)) {
+            return false
         }
         return msg.contains("Timeout", true) ||
             msg.contains("Unable to resolve", true) ||
             msg.contains("Failed to connect", true) ||
-            msg.contains("Connection", true)
+            msg.contains("Connection", true) ||
+            msg.contains("Connection reset", true) ||
+            msg.contains("Software caused connection", true) ||
+            msg.contains("Network is unreachable", true) ||
+            msg.contains("SSL", true) && msg.contains("fail", true)
     }
 }

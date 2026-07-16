@@ -6,11 +6,13 @@ import com.google.gson.reflect.TypeToken
 import java.io.File
 
 /**
- * Offline queue mirroring iOS OfflineQueue:
- * - pending checkin creates (with local photo path)
- * - pending deletes
+ * File offline (créations + suppressions), persistée disque.
+ * [onChanged] notifie l'UI (badge « En attente ») après chaque mutation.
  */
-class OfflineQueue(context: Context) {
+class OfflineQueue(
+    context: Context,
+    private val onChanged: (() -> Unit)? = null
+) {
     private val dir = File(context.applicationContext.filesDir, "offline").apply { mkdirs() }
     private val createsFile = File(dir, "pending-checkins.json")
     private val deletesFile = File(dir, "pending-deletes.json")
@@ -37,6 +39,7 @@ class OfflineQueue(context: Context) {
             items = readList(createsFile)
             pendingDeletes = readIntList(deletesFile)
         }
+        notifyChanged()
     }
 
     fun enqueue(item: PendingCheckin) {
@@ -47,17 +50,21 @@ class OfflineQueue(context: Context) {
                         it.comment == item.comment &&
                         kotlin.math.abs(it.createdAtMs - item.createdAtMs) < 180_000
                 }) return
-            // copy photo into offline photos dir
             var final = item
             val src = item.photoPath?.let { File(it) }
             if (src != null && src.exists()) {
                 val dest = File(photosDir, "${item.id}.jpg")
-                src.copyTo(dest, overwrite = true)
-                final = item.copy(photoPath = dest.absolutePath)
+                try {
+                    src.copyTo(dest, overwrite = true)
+                    final = item.copy(photoPath = dest.absolutePath)
+                } catch (_: Exception) {
+                    // keep original path
+                }
             }
             items = items + final
             persistCreates()
         }
+        notifyChanged()
     }
 
     fun remove(id: String) {
@@ -65,10 +72,16 @@ class OfflineQueue(context: Context) {
             val removed = items.filter { it.id == id }
             items = items.filterNot { it.id == id }
             removed.forEach { p ->
-                p.photoPath?.let { File(it).delete() }
+                p.photoPath?.let { path ->
+                    try {
+                        File(path).delete()
+                    } catch (_: Exception) {
+                    }
+                }
             }
             persistCreates()
         }
+        notifyChanged()
     }
 
     fun enqueueDelete(checkinId: Int) {
@@ -78,6 +91,7 @@ class OfflineQueue(context: Context) {
                 persistDeletes()
             }
         }
+        notifyChanged()
     }
 
     fun removePendingDelete(checkinId: Int) {
@@ -85,10 +99,12 @@ class OfflineQueue(context: Context) {
             pendingDeletes = pendingDeletes.filterNot { it == checkinId }
             persistDeletes()
         }
+        notifyChanged()
     }
 
     /**
-     * Flush pending work. Returns number of successful actions.
+     * Envoie les actions en attente. Retourne le nombre d'actions réussies.
+     * S'arrête au premier échec réseau (les suivantes restent en file).
      */
     suspend fun flush(api: BeerAPI): Int {
         var okCount = 0
@@ -112,25 +128,19 @@ class OfflineQueue(context: Context) {
                     hops = item.hops,
                     comment = item.comment,
                     untappdBid = item.untappdBid,
-                    force = item.force, // never auto-force: same as iOS
+                    force = item.force,
                     photoJPEG = photoCompressed,
                     location = item.location.orEmpty()
                 )
-                // Success OR intentional force duplicate path
-                if (result.ok == true || result.id != null) {
+                // Succès ou doublon déjà traité côté serveur → sortir de la file
+                if (result.ok == true || result.id != null || result.duplicate == true) {
                     remove(item.id)
                     okCount++
-                } else if (result.duplicate == true && item.force) {
-                    // already forced and still duplicate-flagged but may have id
-                    remove(item.id)
-                    okCount++
-                } else if (result.duplicate == true) {
-                    // drop stuck non-forced duplicate to avoid infinite loop; user can re-note
-                    remove(item.id)
-                    okCount++
+                } else {
+                    break
                 }
             } catch (_: Exception) {
-                break // stop on network errors
+                break
             }
         }
         val deletes = synchronized(lock) { pendingDeletes.toList() }
@@ -146,12 +156,25 @@ class OfflineQueue(context: Context) {
         return okCount
     }
 
+    private fun notifyChanged() {
+        try {
+            onChanged?.invoke()
+        } catch (_: Exception) {
+        }
+    }
+
     private fun persistCreates() {
-        createsFile.writeText(gson.toJson(items))
+        try {
+            createsFile.writeText(gson.toJson(items))
+        } catch (_: Exception) {
+        }
     }
 
     private fun persistDeletes() {
-        deletesFile.writeText(gson.toJson(pendingDeletes))
+        try {
+            deletesFile.writeText(gson.toJson(pendingDeletes))
+        } catch (_: Exception) {
+        }
     }
 
     private fun readList(file: File): List<PendingCheckin> {

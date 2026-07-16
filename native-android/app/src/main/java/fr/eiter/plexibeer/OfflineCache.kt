@@ -5,53 +5,119 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.io.File
 
-/** Lightweight disk cache for read-only browsing offline (mirrors BeerOfflineCache spirit). */
+/**
+ * Cache lecture hors ligne (historique, stats, galerie, wishlist, cadeaux, styles).
+ * Enveloppe avec timestamp comme iOS BeerOfflineCache.
+ */
 class OfflineCache(context: Context) {
-    private val dir = File(context.applicationContext.filesDir, "cache").apply { mkdirs() }
+    private val dir = File(context.applicationContext.filesDir, "offline-cache").apply { mkdirs() }
     private val gson = Gson()
 
-    fun saveCheckins(items: List<CheckinItem>) = write("checkins.json", items)
-    fun loadCheckins(): List<CheckinItem> {
-        val f = File(dir, "checkins.json")
-        if (!f.exists()) return emptyList()
-        return try {
-            val type = object : TypeToken<List<CheckinItem>>() {}.type
-            gson.fromJson(f.readText(), type) ?: emptyList()
-        } catch (_: Exception) {
-            emptyList()
-        }
+    companion object {
+        const val KEY_CHECKINS = "history_checkins"
+        const val KEY_STATS = "history_stats"
+        const val KEY_COUPLE = "gifts"
+        const val KEY_WISHLIST = "wishlist"
+        const val KEY_STYLES = "styles"
+        /** 7 jours — bars / week-end sans ouvrir l'app */
+        const val MAX_AGE_MS = 7L * 24 * 3600 * 1000
+        /** 24 h pour stats (moins critiques) */
+        const val MAX_AGE_STATS_MS = 24L * 3600 * 1000
     }
 
-    fun saveStats(stats: HistoryStats) = write("stats.json", stats)
-    fun loadStats(): HistoryStats? = readOne("stats.json", HistoryStats::class.java)
+    private data class Envelope(
+        val savedAtMs: Long = System.currentTimeMillis(),
+        val payloadJson: String = ""
+    )
 
-    fun saveCouple(stats: CoupleStats) = write("couple.json", stats)
-    fun loadCouple(): CoupleStats? = readOne("couple.json", CoupleStats::class.java)
+    fun saveCheckins(items: List<CheckinItem>) = save(KEY_CHECKINS, items)
+    fun loadCheckins(maxAgeMs: Long = MAX_AGE_MS): List<CheckinItem> =
+        loadList(KEY_CHECKINS, maxAgeMs) ?: emptyList()
 
-    fun saveWishlist(items: List<WishlistItem>) = write("wishlist.json", items)
-    fun loadWishlist(): List<WishlistItem> {
-        val f = File(dir, "wishlist.json")
-        if (!f.exists()) return emptyList()
-        return try {
-            val type = object : TypeToken<List<WishlistItem>>() {}.type
-            gson.fromJson(f.readText(), type) ?: emptyList()
-        } catch (_: Exception) {
-            emptyList()
-        }
-    }
+    fun saveStats(stats: HistoryStats) = save(KEY_STATS, stats)
+    fun loadStats(maxAgeMs: Long = MAX_AGE_STATS_MS): HistoryStats? =
+        loadOne(KEY_STATS, HistoryStats::class.java, maxAgeMs)
 
-    private fun write(name: String, obj: Any) {
+    fun saveCouple(stats: CoupleStats) = save(KEY_COUPLE, stats)
+    fun loadCouple(maxAgeMs: Long = MAX_AGE_MS): CoupleStats? =
+        loadOne(KEY_COUPLE, CoupleStats::class.java, maxAgeMs)
+
+    fun saveWishlist(items: List<WishlistItem>) = save(KEY_WISHLIST, items)
+    fun loadWishlist(maxAgeMs: Long = MAX_AGE_MS): List<WishlistItem> =
+        loadList(KEY_WISHLIST, maxAgeMs) ?: emptyList()
+
+    fun saveStyles(items: List<StyleOption>) = save(KEY_STYLES, items)
+    fun loadStyles(maxAgeMs: Long = MAX_AGE_MS): List<StyleOption> =
+        loadList(KEY_STYLES, maxAgeMs) ?: emptyList()
+
+    fun remove(key: String) {
         try {
-            File(dir, name).writeText(gson.toJson(obj))
+            File(dir, "$key.json").delete()
         } catch (_: Exception) {
         }
     }
 
-    private fun <T> readOne(name: String, clazz: Class<T>): T? {
-        val f = File(dir, name)
+    fun invalidateHistory() {
+        remove(KEY_CHECKINS)
+        remove(KEY_STATS)
+    }
+
+    fun prune(maxFiles: Int = 20) {
+        try {
+            val files = dir.listFiles()?.sortedByDescending { it.lastModified() } ?: return
+            files.drop(maxFiles).forEach { it.delete() }
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun save(name: String, obj: Any) {
+        try {
+            val env = Envelope(
+                savedAtMs = System.currentTimeMillis(),
+                payloadJson = gson.toJson(obj)
+            )
+            File(dir, "$name.json").writeText(gson.toJson(env))
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun readEnvelope(name: String, maxAgeMs: Long?): Envelope? {
+        val f = File(dir, "$name.json")
         if (!f.exists()) return null
         return try {
-            gson.fromJson(f.readText(), clazz)
+            val env = gson.fromJson(f.readText(), Envelope::class.java) ?: return null
+            if (maxAgeMs != null && System.currentTimeMillis() - env.savedAtMs > maxAgeMs) {
+                f.delete()
+                return null
+            }
+            if (env.payloadJson.isBlank()) return null
+            env
+        } catch (_: Exception) {
+            // Legacy format: raw JSON without envelope
+            try {
+                val raw = f.readText()
+                if (raw.isBlank()) return null
+                Envelope(savedAtMs = f.lastModified(), payloadJson = raw)
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
+    private inline fun <reified T> loadList(name: String, maxAgeMs: Long?): List<T>? {
+        val env = readEnvelope(name, maxAgeMs) ?: return null
+        return try {
+            val type = object : TypeToken<List<T>>() {}.type
+            gson.fromJson(env.payloadJson, type)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun <T> loadOne(name: String, clazz: Class<T>, maxAgeMs: Long?): T? {
+        val env = readEnvelope(name, maxAgeMs) ?: return null
+        return try {
+            gson.fromJson(env.payloadJson, clazz)
         } catch (_: Exception) {
             null
         }

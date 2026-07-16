@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import fr.eiter.plexibeer.BeerAPI
 import fr.eiter.plexibeer.BeerProduct
+import fr.eiter.plexibeer.ImageCache
 import fr.eiter.plexibeer.NetworkStatus
 import fr.eiter.plexibeer.ToastPayload
 import fr.eiter.plexibeer.ui.theme.BeerColors
@@ -419,7 +420,10 @@ fun BeerEmptyState(icon: String, title: String, subtitle: String) {
     }
 }
 
-/** Authenticated image loader for server photos (cookies + LAN TLS). */
+/**
+ * Photos serveur avec cache disque offline.
+ * 1) cache local  2) download + store  3) fallback emoji
+ */
 @Composable
 fun BeerAuthImage(
     path: String?,
@@ -428,6 +432,7 @@ fun BeerAuthImage(
     contentDescription: String? = null
 ) {
     val context = LocalContext.current
+    val imageCache = remember(context) { ImageCache.getInstance(context) }
     var bytes by remember(path) { mutableStateOf<ByteArray?>(null) }
     var failed by remember(path) { mutableStateOf(false) }
 
@@ -438,13 +443,20 @@ fun BeerAuthImage(
             failed = true
             return@LaunchedEffect
         }
-        // External URL — coil direct
+        // External URL (Untappd labels) — Coil ; pas de cookie homelab
         if (path.startsWith("http://") || path.startsWith("https://")) {
-            // leave bytes null and use path as model below
+            return@LaunchedEffect
+        }
+        // Cache d'abord (bars sans réseau)
+        val cached = withContext(Dispatchers.IO) { imageCache.get(path) }
+        if (cached != null) {
+            bytes = cached
             return@LaunchedEffect
         }
         try {
-            bytes = withContext(Dispatchers.IO) { api.downloadAsset(path) }
+            val downloaded = withContext(Dispatchers.IO) { api.downloadAsset(path) }
+            withContext(Dispatchers.IO) { imageCache.put(path, downloaded) }
+            bytes = downloaded
         } catch (_: Exception) {
             failed = true
         }
