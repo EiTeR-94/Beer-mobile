@@ -344,7 +344,7 @@ struct PendingCheckin: Identifiable, Codable {
     var force: Bool
     var photoJPEGBase64: String?
     /// Lieu / lien de dégustation (optionnel). Optional for legacy offline queue JSON.
-    var location: String?
+    var location: String? = nil
 }
 
 struct PreviousCheckin: Decodable {
