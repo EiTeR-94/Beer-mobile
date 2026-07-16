@@ -121,8 +121,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (api.cookieJar.hasSession()) {
                 try {
                     val me = api.me()
-                    if (me.auth && !me.user.isNullOrBlank()) {
-                        applySession(me.user, me.isAdmin, true)
+                    // api/me: "auth" = auth enabled on server, not "logged in". Trust user field.
+                    if (!me.user.isNullOrBlank()) {
+                        applySession(me.user!!, me.isAdmin, true)
                         serverVersion = try {
                             api.version()
                         } catch (_: Exception) {
