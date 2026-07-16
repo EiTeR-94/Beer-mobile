@@ -95,7 +95,9 @@ data class CheckinItem(
     val flavors: List<String>? = null,
     val hops: List<String>? = null,
     @SerializedName("hidden_from_partner") val hiddenFromPartner: Boolean? = null,
-    @SerializedName("untappd_bid") val untappdBid: Int? = null
+    @SerializedName("untappd_bid") val untappdBid: Int? = null,
+    /** Lieu / lien de dégustation (optionnel). */
+    val location: String? = null
 )
 
 data class HistoryStats(
@@ -212,7 +214,9 @@ data class PendingCheckin(
     val untappdBid: String = "",
     val force: Boolean = false,
     /** Absolute path to local JPEG, or null */
-    val photoPath: String? = null
+    val photoPath: String? = null,
+    /** Lieu / lien de dégustation (optionnel). */
+    val location: String? = null
 )
 
 enum class NetworkStatus(val label: String) {

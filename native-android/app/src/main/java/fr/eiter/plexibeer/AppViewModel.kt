@@ -342,8 +342,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         hops: List<String>,
         comment: String,
         photoFile: File?,
-        force: Boolean
+        force: Boolean,
+        location: String = ""
     ): String {
+        val loc = location.trim().take(300)
         // Compress before offline enqueue so flush doesn't upload multi-MB originals
         val compressedPhoto = photoFile?.takeIf { it.exists() }?.let { f ->
             try {
@@ -366,7 +368,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             comment = comment,
             untappdBid = product.untappdBid?.toString().orEmpty(),
             force = force,
-            photoPath = photoPath
+            photoPath = photoPath,
+            location = loc.ifBlank { null }
         )
 
         if (networkStatus != NetworkStatus.ONLINE || !isNetworkAvailable()) {
@@ -391,7 +394,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 comment = pending.comment,
                 untappdBid = pending.untappdBid,
                 force = force,
-                photoJPEG = bytes
+                photoJPEG = bytes,
+                location = loc
             )
             if (result.duplicate == true) {
                 val pc = result.previousCheckin

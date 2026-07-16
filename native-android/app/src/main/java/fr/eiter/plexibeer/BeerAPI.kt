@@ -282,13 +282,15 @@ class BeerAPI private constructor(context: Context) {
         flavors: List<String>? = null,
         hops: List<String>? = null,
         comment: String? = null,
-        hiddenFromPartner: Boolean? = null
+        hiddenFromPartner: Boolean? = null,
+        location: String? = null
     ) {
         val payload = mutableMapOf<String, Any?>()
         if (rating != null) payload["rating"] = rating
         if (flavors != null) payload["flavors"] = flavors
         if (hops != null) payload["hops"] = hops
         if (comment != null) payload["comment"] = comment
+        if (location != null) payload["location"] = location.take(300)
         if (hiddenFromPartner != null) payload["hidden_from_partner"] = hiddenFromPartner
         val json = gson.toJson(payload)
         val req = requestBuilder("api/checkins/$id")
@@ -394,8 +396,10 @@ class BeerAPI private constructor(context: Context) {
         comment: String,
         untappdBid: String,
         force: Boolean,
-        photoJPEG: ByteArray? = null
+        photoJPEG: ByteArray? = null,
+        location: String = ""
     ): CreateCheckinResult = withContext(Dispatchers.IO) {
+        val loc = location.trim().take(300)
         val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
         builder.addFormDataPart("barcode", barcode)
         builder.addFormDataPart("beer_name", beerName)
@@ -407,6 +411,7 @@ class BeerAPI private constructor(context: Context) {
         builder.addFormDataPart("flavors", gson.toJson(flavors))
         builder.addFormDataPart("hops", gson.toJson(hops))
         builder.addFormDataPart("comment", comment.take(120))
+        builder.addFormDataPart("location", loc)
         builder.addFormDataPart("untappd_bid", untappdBid)
         builder.addFormDataPart("force", if (force) "true" else "false")
         if (photoJPEG != null && photoJPEG.isNotEmpty()) {
@@ -439,7 +444,8 @@ class BeerAPI private constructor(context: Context) {
         untappdBid: Int? = null,
         flavors: List<String> = emptyList(),
         hops: List<String> = emptyList(),
-        force: Boolean = false
+        force: Boolean = false,
+        location: String = ""
     ): Int {
         val bytes = photoFile?.takeIf { it.exists() }?.readBytes()
         val result = createCheckin(
@@ -455,7 +461,8 @@ class BeerAPI private constructor(context: Context) {
             comment = comment.orEmpty(),
             untappdBid = untappdBid?.toString().orEmpty(),
             force = force,
-            photoJPEG = bytes
+            photoJPEG = bytes,
+            location = location
         )
         if (result.duplicate == true) {
             throw ApiException(

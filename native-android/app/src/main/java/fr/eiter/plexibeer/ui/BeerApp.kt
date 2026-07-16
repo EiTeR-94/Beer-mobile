@@ -237,6 +237,8 @@ private fun BeerWizard(vm: AppViewModel) {
     var customStyle by remember { mutableStateOf("") }
     var styleOptions by remember { mutableStateOf(listOf<StyleOption>()) }
     var photoFile by remember { mutableStateOf<File?>(null) }
+    /** Lieu / lien de dégustation (optionnel) — saisi à l'étape Photo, comme iOS. */
+    var location by remember { mutableStateOf("") }
     var rating by remember { mutableFloatStateOf(3f) }
     var comment by remember { mutableStateOf("") }
     var flavors by remember { mutableStateOf(setOf<String>()) }
@@ -282,6 +284,7 @@ private fun BeerWizard(vm: AppViewModel) {
         product = null
         scanStatus = "Cadre le code-barres ou prends une photo"
         photoFile = null
+        location = ""
         rating = 3f
         comment = ""
         flavors = emptySet()
@@ -393,7 +396,8 @@ private fun BeerWizard(vm: AppViewModel) {
                 hops = hops.toList(),
                 comment = comment,
                 photoFile = photoFile,
-                force = force
+                force = force,
+                location = location
             )
             if (msg.startsWith("duplicate|")) {
                 val parts = msg.split("|")
@@ -679,7 +683,7 @@ private fun BeerWizard(vm: AppViewModel) {
             }
 
             2 -> {
-                BeerLead("Photo du verre avec la canette à côté (optionnel).")
+                BeerLead("Photo du verre (optionnel) et lieu de dégustation.")
                 Box(
                     Modifier
                         .fillMaxWidth()
@@ -706,6 +710,29 @@ private fun BeerWizard(vm: AppViewModel) {
                         Text("Retirer la photo", color = BeerColors.error)
                     }
                 }
+
+                BeerCard {
+                    Text("Où as-tu dégusté ?", color = BeerColors.text, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Nom du lieu et/ou lien (Maps, resto…) — optionnel.",
+                        color = BeerColors.muted,
+                        fontSize = 12.sp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    BeerField(
+                        label = "Lieu ou lien",
+                        value = location,
+                        onChange = { if (it.length <= 300) location = it },
+                        placeholder = "ex. Chez nous · Brasserie X · https://maps…"
+                    )
+                    Text(
+                        "${location.length}/300",
+                        color = BeerColors.muted,
+                        fontSize = 11.sp,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
                 BeerSecondaryButton("← Retour") { vm.wizardStep = 1 }
                 BeerPrimaryButton("Continuer → note") { vm.wizardStep = 3 }
             }
@@ -1117,6 +1144,9 @@ private fun HistoryCard(
                     color = BeerColors.muted,
                     fontSize = 12.sp
                 )
+                item.location?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                    Text("📍 $it", color = BeerColors.muted, fontSize = 12.sp, maxLines = 2)
+                }
                 item.flavors?.takeIf { it.isNotEmpty() }?.let {
                     Text(it.joinToString(", "), color = BeerColors.muted, fontSize = 12.sp)
                 }
@@ -1429,6 +1459,13 @@ private fun CheckinDetailSheet(vm: AppViewModel, item: CheckinItem) {
                 "${item.brewery ?: "—"} · ${item.style ?: "?"} · ${formatDate(item.createdAt)}",
                 color = BeerColors.muted
             )
+            item.location?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                Spacer(Modifier.height(8.dp))
+                BeerCard {
+                    Text("Lieu", color = BeerColors.muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Text("📍 $it", color = BeerColors.text, fontSize = 14.sp)
+                }
+            }
             item.comment?.takeIf { it.isNotBlank() }?.let {
                 Spacer(Modifier.height(8.dp))
                 Text("« $it »", color = BeerColors.text)
@@ -1471,6 +1508,7 @@ private fun CheckinEditSheet(vm: AppViewModel, item: CheckinItem) {
     val scope = rememberCoroutineScope()
     var rating by remember { mutableFloatStateOf(item.rating.toFloat()) }
     var comment by remember { mutableStateOf(item.comment.orEmpty()) }
+    var location by remember { mutableStateOf(item.location.orEmpty()) }
     var flavors by remember { mutableStateOf(item.flavors.orEmpty().toSet()) }
     var hops by remember { mutableStateOf(item.hops.orEmpty().toSet()) }
     var flavorTags by remember { mutableStateOf(listOf<String>()) }
@@ -1546,6 +1584,12 @@ private fun CheckinEditSheet(vm: AppViewModel, item: CheckinItem) {
                 }
             }
             BeerField("Commentaire", comment, { if (it.length <= 120) comment = it })
+            BeerField(
+                label = "Lieu ou lien",
+                value = location,
+                onChange = { if (it.length <= 300) location = it },
+                placeholder = "ex. Chez nous · https://maps…"
+            )
             if (vm.isAdmin) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Masqué partenaire", color = BeerColors.text, modifier = Modifier.weight(1f))
@@ -1579,7 +1623,8 @@ private fun CheckinEditSheet(vm: AppViewModel, item: CheckinItem) {
                             flavors = flavors.toList(),
                             hops = hops.toList(),
                             comment = comment,
-                            hiddenFromPartner = if (vm.isAdmin) hidden else null
+                            hiddenFromPartner = if (vm.isAdmin) hidden else null,
+                            location = location.take(300)
                         )
                         if (removePhoto) {
                             try { vm.api.removeCheckinPhoto(item.id) } catch (_: Exception) {}

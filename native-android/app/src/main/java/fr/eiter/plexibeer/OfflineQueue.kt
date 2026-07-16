@@ -113,7 +113,8 @@ class OfflineQueue(context: Context) {
                     comment = item.comment,
                     untappdBid = item.untappdBid,
                     force = item.force, // never auto-force: same as iOS
-                    photoJPEG = photoCompressed
+                    photoJPEG = photoCompressed,
+                    location = item.location.orEmpty()
                 )
                 // Success OR intentional force duplicate path
                 if (result.ok == true || result.id != null) {
