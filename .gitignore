@@ -4,6 +4,7 @@ ios/App/build/
 ios/DerivedData/
 .DS_Store
 *.ipa
+*.apk
 *.xcarchive
 .env
 .env.local
@@ -13,3 +14,10 @@ dist/
 www/mobile-env.js
 native-ios/BeerNative.xcodeproj/
 native-ios/Config/Build.xcconfig
+
+# Android local build
+native-android/local.properties
+native-android/.gradle/
+native-android/**/build/
+native-android/.idea/
+native-android/*.iml

@@ -3,28 +3,27 @@ package fr.eiter.plexibeer
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.activity.viewModels
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import fr.eiter.plexibeer.ui.BeerApp
+import fr.eiter.plexibeer.ui.theme.BeerColors
 import fr.eiter.plexibeer.ui.theme.PlexiBeerTheme
 
 class MainActivity : ComponentActivity() {
+    private val vm: AppViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Use effective LAN base by default (good for real device / LDPlayer / MuMu on same LAN)
         ServerSettings.useEffectiveBaseIfNeeded()
-
         setContent {
             PlexiBeerTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+                    color = BeerColors.bg
                 ) {
-                    BeerApp(context = this@MainActivity)
+                    BeerApp(vm = vm)
                 }
             }
         }

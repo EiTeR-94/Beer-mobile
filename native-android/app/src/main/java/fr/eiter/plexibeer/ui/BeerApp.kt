@@ -2,663 +2,1049 @@ package fr.eiter.plexibeer.ui
 
 import android.Manifest
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import fr.eiter.plexibeer.*
+import fr.eiter.plexibeer.ui.theme.BeerColors
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 @Composable
-fun BeerApp(context: Context) {
-    val scope = rememberCoroutineScope()
-    val api = remember { BeerAPI.getInstance(context) }
+fun BeerApp(vm: AppViewModel) {
+    val context = LocalContext.current
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(BeerColors.bg)
+    ) {
+        when {
+            vm.isLoading -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = BeerColors.accent)
+                }
+            }
+            !vm.isLoggedIn -> LoginScreen(vm)
+            else -> MainScreen(vm)
+        }
+        ToastOverlay(vm.toast)
+    }
+}
 
-    var isLoggedIn by remember { mutableStateOf(false) }
-    var user by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
+@Composable
+private fun LoginScreen(vm: AppViewModel) {
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    var currentScreen by remember { mutableStateOf("main") } // legacy, main = always wizard now
-    var currentSheet by remember { mutableStateOf<String?>(null) } // like iOS BeerSheet: history, gallery, wishlist...
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(48.dp))
+        Text("🍺", fontSize = 48.sp)
+        Text("Beer Log", style = MaterialTheme.typography.headlineLarge, color = BeerColors.text)
+        Text("Journal de dégustation privé", color = BeerColors.muted, fontSize = 13.sp)
+        Spacer(Modifier.height(32.dp))
 
-    var checkins by remember { mutableStateOf(listOf<CheckinItem>()) }
-    var wishlist by remember { mutableStateOf(listOf<WishlistItem>()) }
-    var stats by remember { mutableStateOf<HistoryStats?>(null) }
+        BeerField("Utilisateur", username, { username = it }, "ton compte")
+        Spacer(Modifier.height(10.dp))
+        Column(Modifier.fillMaxWidth()) {
+            Text("Mot de passe", color = BeerColors.muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp))
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = BeerColors.text,
+                    unfocusedTextColor = BeerColors.text,
+                    focusedBorderColor = BeerColors.accent,
+                    unfocusedBorderColor = BeerColors.border,
+                    cursorColor = BeerColors.accent,
+                    focusedContainerColor = BeerColors.fieldBg,
+                    unfocusedContainerColor = BeerColors.fieldBg
+                ),
+                shape = RoundedCornerShape(10.dp)
+            )
+        }
+        Spacer(Modifier.height(16.dp))
+        error?.let {
+            Text(it, color = BeerColors.error, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
+        }
+        BeerPrimaryButton(
+            title = if (busy) "Connexion…" else "Se connecter",
+            enabled = username.isNotBlank() && password.isNotBlank(),
+            busy = busy
+        ) {
+            busy = true
+            error = null
+            vm.login(username.trim(), password) { result ->
+                busy = false
+                result.onFailure { e -> error = e.message ?: "Connexion impossible" }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Text("Scan · photo · note · historique", color = BeerColors.muted, fontSize = 12.sp)
+        Text("Wi‑Fi maison ou VPN Plexi requis", color = BeerColors.muted, fontSize = 11.sp)
+    }
+}
 
-    // Add form state (wizard-like screen)
-    var beerName by remember { mutableStateOf("") }
-    var brewery by remember { mutableStateOf("") }
-    var style by remember { mutableStateOf("") }
-    var rating by remember { mutableStateOf(3.5f) }
-    var comment by remember { mutableStateOf("") }
-    var photoFile by remember { mutableStateOf<File?>(null) }
-    var lookupBarcode by remember { mutableStateOf("") }
-    var lookupStatus by remember { mutableStateOf("") }
-    var wizardStep by remember { mutableStateOf(1) }
+@Composable
+private fun MainScreen(vm: AppViewModel) {
+    BackHandler(enabled = vm.sheet != null) { vm.closeSheet() }
 
-    var pendingPhotoFile by remember { mutableStateOf<File?>(null) }
-    var pendingScanFile by remember { mutableStateOf<File?>(null) }
+    Column(Modifier.fillMaxSize()) {
+        // Header
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f)) {
+                    Text("Beer Log", style = MaterialTheme.typography.headlineSmall, color = BeerColors.text)
+                    Text(
+                        if (vm.serverVersion.isNotBlank()) "v${vm.serverVersion} · scan · photo · note"
+                        else "scan · photo · note",
+                        color = BeerColors.muted,
+                        fontSize = 12.sp
+                    )
+                }
+                vm.user?.let { u ->
+                    Text(
+                        u,
+                        color = BeerColors.muted,
+                        fontSize = 11.sp,
+                        modifier = Modifier
+                            .border(1.dp, BeerColors.border, RoundedCornerShape(999.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            // 3-col button grid like iOS
+            val buttons = buildList {
+                if (vm.isAdmin) {
+                    add("Patch notes" to { vm.openSheet(BeerSheet.PATCHNOTES) })
+                    add("Admin" to { vm.openSheet(BeerSheet.ADMIN) })
+                }
+                add("À boire" to { vm.openSheet(BeerSheet.WISHLIST) })
+                add("Historique" to { vm.openSheet(BeerSheet.HISTORY) })
+                add("Idées cadeaux" to { vm.openSheet(BeerSheet.GIFTS) })
+                if (vm.pendingCount > 0) {
+                    add("En attente (${vm.pendingCount})" to { vm.openSheet(BeerSheet.PENDING) })
+                }
+                add("Déconnexion" to { vm.logout() })
+            }
+            buttons.chunked(3).forEach { row ->
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    row.forEach { (title, action) ->
+                        BeerGhostButton(title, action, Modifier.weight(1f))
+                    }
+                    // pad incomplete rows
+                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
 
-    // Additional state for closer iOS parity
+        if (vm.networkStatus != NetworkStatus.ONLINE || vm.pendingCount > 0) {
+            Box(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+                NetworkStatusBar(vm.networkStatus, vm.pendingCount, vm.lastEndpointLatencyMs)
+            }
+        }
+
+        BeerStepNav(vm.wizardStep) { vm.wizardStep = it }
+
+        Box(Modifier.weight(1f)) {
+            BeerWizard(vm)
+        }
+    }
+
+    // Sheets as full-screen overlays
+    when (vm.sheet) {
+        BeerSheet.HISTORY -> HistorySheet(vm)
+        BeerSheet.GALLERY -> GallerySheet(vm)
+        BeerSheet.WISHLIST -> WishlistSheet(vm)
+        BeerSheet.GIFTS -> GiftsSheet(vm)
+        BeerSheet.PENDING -> PendingSheet(vm)
+        BeerSheet.DETAIL -> vm.selectedCheckin?.let { CheckinDetailSheet(vm, it) }
+        BeerSheet.EDIT -> vm.editingCheckin?.let { CheckinEditSheet(vm, it) }
+        BeerSheet.PATCHNOTES -> PatchnotesSheet(vm)
+        BeerSheet.ADMIN -> AdminStubSheet(vm)
+        null -> {}
+    }
+}
+
+// ───────────────────────── Wizard ─────────────────────────
+
+@Composable
+private fun BeerWizard(vm: AppViewModel) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val api = vm.api
+
+    var product by remember { mutableStateOf<BeerProduct?>(null) }
+    var scanStatus by remember { mutableStateOf("Cadre le code-barres ou prends une photo") }
+    var busy by remember { mutableStateOf(false) }
     var untappdBrewery by remember { mutableStateOf("") }
     var untappdName by remember { mutableStateOf("") }
     var untappdResults by remember { mutableStateOf(listOf<UntappdHit>()) }
     var untappdError by remember { mutableStateOf<String?>(null) }
-    var selectedUntappdBid by remember { mutableStateOf<Int?>(null) }
-    var styleOptions by remember { mutableStateOf(listOf<StyleOption>()) }
+    var showManual by remember { mutableStateOf(false) }
+    var showEanManual by remember { mutableStateOf(false) }
+    var manualEan by remember { mutableStateOf("") }
+    var manualName by remember { mutableStateOf("") }
+    var manualBrewery by remember { mutableStateOf("") }
     var manualStyle by remember { mutableStateOf("") }
+    var customStyle by remember { mutableStateOf("") }
+    var styleOptions by remember { mutableStateOf(listOf<StyleOption>()) }
+    var photoFile by remember { mutableStateOf<File?>(null) }
+    var rating by remember { mutableFloatStateOf(3f) }
+    var comment by remember { mutableStateOf("") }
     var flavors by remember { mutableStateOf(setOf<String>()) }
     var hops by remember { mutableStateOf(setOf<String>()) }
-    var customFlavorInput by remember { mutableStateOf("") }
-    var customHopInput by remember { mutableStateOf("") }
     var flavorTags by remember { mutableStateOf(listOf<String>()) }
     var hopTags by remember { mutableStateOf(listOf<String>()) }
-    var busy by remember { mutableStateOf(false) }
+    var showFlavors by remember { mutableStateOf(true) }
+    var showHops by remember { mutableStateOf(true) }
+    var customFlavor by remember { mutableStateOf("") }
+    var customHop by remember { mutableStateOf("") }
+    var saving by remember { mutableStateOf(false) }
+    var showDuplicate by remember { mutableStateOf(false) }
+    var duplicateDetail by remember { mutableStateOf("") }
+    var pendingCapture by remember { mutableStateOf<File?>(null) }
+    var captureMode by remember { mutableStateOf("photo") } // photo | scan
 
-    // For wishlist add (hoisted to avoid recompose issues)
-    var newWishName by remember { mutableStateOf("") }
+    // Apply prefill from retaste / wishlist
+    LaunchedEffect(vm.wizardProduct) {
+        vm.wizardProduct?.let {
+            product = it
+            scanStatus = "Prérempli ✓"
+        }
+    }
 
-    // Load data when opening sheets (like iOS sheets bootstrap), and styles for wizard (always)
     LaunchedEffect(Unit) {
-        try {
-            styleOptions = api.styles()
-            val fh = api.flavorsAndHops()
-            flavorTags = fh.flavors ?: emptyList()
-            hopTags = fh.hops ?: emptyList()
-        } catch (_: Exception) {}
+        styleOptions = api.styles()
     }
 
-    // Load when sheet changes (mirrors .task / onChange in HistorySheetView etc)
-    LaunchedEffect(currentSheet) {
-        when (currentSheet) {
-            "history" -> scope.launch {
-                checkins = api.checkins(50)
-                stats = api.stats()
-            }
-            "gallery" -> scope.launch {
-                checkins = api.checkins(100)
-            }
-            "wishlist" -> scope.launch {
-                wishlist = api.wishlist()
+    LaunchedEffect(vm.wizardStep, product) {
+        if (vm.wizardStep == 3 && product != null) {
+            try {
+                val fh = api.flavors(product!!.displayStyle, product!!.summary)
+                flavorTags = (fh.suggestedFlavors ?: fh.flavors).orEmpty()
+                hopTags = (fh.suggestedHops ?: fh.hops).orEmpty()
+                showFlavors = fh.showFlavorsBlock != false
+                showHops = fh.showHopsBlock != false
+            } catch (_: Exception) {
             }
         }
     }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (!granted) {
-            error = "Permission caméra refusée"
-        }
-        // after grant, user re-taps the button (scan or photo)
+    fun resetWizard() {
+        product = null
+        scanStatus = "Cadre le code-barres ou prends une photo"
+        photoFile = null
+        rating = 3f
+        comment = ""
+        flavors = emptySet()
+        hops = emptySet()
+        untappdResults = emptyList()
+        untappdError = null
+        manualEan = ""
+        manualName = ""
+        manualBrewery = ""
+        manualStyle = ""
+        customStyle = ""
+        vm.clearWizardPrefill()
+        vm.wizardStep = 1
     }
 
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == android.app.Activity.RESULT_OK) {
-            error = "Photo prise (simplifié pour test)."
-        }
-    }
-
-    fun goToStep(s: Int) { if (s in 1..3) wizardStep = s }  // 3 steps like iOS
-
-    fun resetAddForm() {
-        beerName = ""; brewery = ""; style = ""; comment = ""; rating = 3.5f
-        photoFile = null; pendingPhotoFile = null; lookupBarcode = ""; lookupStatus = ""; wizardStep = 1
-        untappdBrewery = ""; untappdName = ""; untappdResults = emptyList(); untappdError = null
-        selectedUntappdBid = null
-        manualStyle = ""; flavors = emptySet(); hops = emptySet(); customFlavorInput = ""; customHopInput = ""
-    }
-
-    fun takePhoto() {
-        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        cameraLauncher.launch(intent)
-    }
-
-    // TakePicture for full res used by scan (and could for photo)
-    val takePictureLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
-    ) { success ->
-        if (success && pendingPhotoFile != null) {
-            photoFile = pendingPhotoFile
+    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val f = pendingCapture
+        pendingCapture = null
+        if (!ok || f == null) return@rememberLauncherForActivityResult
+        if (captureMode == "photo") {
+            photoFile = f
+            vm.showToast("Photo prête ✓", ToastPayload.Variant.SUCCESS)
         } else {
-            pendingPhotoFile = null
-        }
-    }
-
-    fun createTempFile(ctx: Context, prefix: String): File {
-        val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val dir = File(ctx.cacheDir, "beer").apply { mkdirs() }
-        return File(dir, "${prefix}_${ts}.jpg")
-    }
-
-    fun launchPhotoCapture(ctx: Context) {
-        try {
-            val f = createTempFile(ctx, "photo")
-            val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", f)
-            pendingPhotoFile = f
-            takePictureLauncher.launch(uri)
-        } catch (e: Exception) { error = "Prep photo: ${e.message}" }
-    }
-
-    // ML Kit barcode scan support
-    val barcodeScanLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
-    ) { success ->
-        val f = pendingScanFile
-        pendingScanFile = null
-        if (success && f != null) {
             scope.launch {
-                isLoading = true
+                busy = true
+                scanStatus = "Décodage photo…"
                 try {
-                    val code = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        kotlinx.coroutines.suspendCancellableCoroutine<String?> { cont ->
-                            try {
-                                val img = com.google.mlkit.vision.common.InputImage.fromFilePath(context, Uri.fromFile(f))
-                                val sc = com.google.mlkit.vision.barcode.BarcodeScanning.getClient()
-                                sc.process(img)
-                                    .addOnSuccessListener { bs: List<com.google.mlkit.vision.barcode.common.Barcode> ->
-                                        val code = bs.firstOrNull { b: com.google.mlkit.vision.barcode.common.Barcode ->
-                                            val f = b.format
-                                            (f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_EAN_13 || f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_EAN_8 || f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_UPC_A || f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_UPC_E) && b.rawValue != null
-                                        }?.rawValue ?: bs.firstOrNull { b2: com.google.mlkit.vision.barcode.common.Barcode -> b2.rawValue != null }?.rawValue
-                                        try { sc.close() } catch (_: Exception) {}
-                                        cont.resume(code)
-                                    }
-                                    .addOnFailureListener { ex: Exception ->
-                                        try { sc.close() } catch (_: Exception) {}
-                                        cont.resumeWithException(ex)
-                                    }
-                                cont.invokeOnCancellation { try { sc.close() } catch (_: Exception) {} }
-                            } catch (e: Exception) {
-                                cont.resumeWithException(e)
-                            }
-                        }
-                    }
-                    if (!code.isNullOrBlank()) {
-                        lookupBarcode = code
-                        lookupStatus = "Scan ML Kit OK — lookup..."
-                        try {
-                            val resp = api.lookup(code.filter { c -> c.isDigit() })
-                            if (resp.ok && !resp.beerName.isNullOrBlank()) {
-                                beerName = resp.beerName ?: beerName
-                                brewery = resp.brewery ?: brewery
-                                style = resp.style ?: style
-                                lookupStatus = "✓ Identifiée via scan: ${resp.beerName}"
-                            } else {
-                                lookupStatus = resp.error ?: "Scanné $code (introuvable, manuel OK)"
-                            }
-                        } catch (e: Exception) {
-                            lookupStatus = "Lookup échec après scan: ${e.message}"
+                    val jpeg = ImageUtils.compressJPEG(f.readBytes())
+                    // Try ML Kit first, then server scan-photo
+                    val mlCode = tryMlKitBarcode(context, f)
+                    if (!mlCode.isNullOrBlank()) {
+                        manualEan = mlCode
+                        val res = api.lookup(mlCode.filter { it.isDigit() })
+                        if (res.ok) {
+                            product = res.asProduct(mlCode)
+                            scanStatus = "Bière identifiée ✓"
+                            vm.showToast("Code-barres lu ✓", ToastPayload.Variant.SUCCESS, mlCode)
+                        } else {
+                            scanStatus = res.error ?: "Scanné $mlCode (introuvable)"
+                            product = BeerProduct(barcode = mlCode, beerName = "")
                         }
                     } else {
-                        lookupStatus = "ML Kit n'a pas lu de code-barres valide."
+                        val scan = api.scanPhoto(jpeg)
+                        if (scan.ok) {
+                            val digits = scan.barcode.orEmpty()
+                            manualEan = digits
+                            product = scan.asProduct(digits)
+                            scanStatus = "Bière identifiée ✓"
+                            vm.showToast("Code-barres lu ✓", ToastPayload.Variant.SUCCESS, digits.ifBlank { null })
+                        } else {
+                            scanStatus = scan.error ?: "Code illisible"
+                        }
                     }
                 } catch (e: Exception) {
-                    lookupStatus = "Erreur ML Kit: ${e.message}"
+                    scanStatus = e.message ?: "Erreur scan"
                 } finally {
-                    isLoading = false
+                    busy = false
                     try { f.delete() } catch (_: Exception) {}
                 }
             }
         }
     }
 
-    fun launchScanCapture(ctx: Context) {
+    fun launchCamera(mode: String) {
+        captureMode = mode
+        val p = Manifest.permission.CAMERA
+        if (ContextCompat.checkSelfPermission(context, p) != PackageManager.PERMISSION_GRANTED) {
+            vm.showToast("Autorise la caméra puis réessaie", ToastPayload.Variant.WARN)
+            return
+        }
         try {
-            val f = createTempFile(ctx, "scan")
-            val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", f)
-            pendingScanFile = f
-            barcodeScanLauncher.launch(uri)
+            val dir = File(context.cacheDir, "beer").apply { mkdirs() }
+            val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val f = File(dir, "${mode}_$ts.jpg")
+            val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", f)
+            pendingCapture = f
+            takePicture.launch(uri)
         } catch (e: Exception) {
-            error = "Prep scan: ${e.message}"; pendingScanFile = null
+            vm.showToast("Caméra: ${e.message}", ToastPayload.Variant.ERROR)
         }
     }
 
-    fun startBarcodeScan() {
+    val camPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) launchCamera(captureMode) else vm.showToast("Permission caméra refusée", ToastPayload.Variant.ERROR)
+    }
+
+    fun ensureCamera(mode: String) {
+        captureMode = mode
         val p = Manifest.permission.CAMERA
         if (ContextCompat.checkSelfPermission(context, p) == PackageManager.PERMISSION_GRANTED) {
-            launchScanCapture(context)
+            launchCamera(mode)
         } else {
-            permissionLauncher.launch(p)
+            camPerm.launch(p)
         }
     }
 
-    fun takePhotoFull() {
-        val p = Manifest.permission.CAMERA
-        if (ContextCompat.checkSelfPermission(context, p) == PackageManager.PERMISSION_GRANTED) {
-            launchPhotoCapture(context)
-        } else {
-            permissionLauncher.launch(p)
+    suspend fun doSave(force: Boolean) {
+        val p = product ?: return
+        if (p.beerName.isBlank()) {
+            vm.showToast("Nom de bière requis", ToastPayload.Variant.WARN)
+            return
         }
-    }
-
-    fun doLogin(username: String, password: String) {
-        scope.launch {
-            isLoading = true
-            error = null
-            try {
-                api.discoverWorkingEndpoint()
-                val resp = api.login(username, password)
-                if (resp.ok == true || resp.user != null) {
-                    user = resp.user ?: username
-                    isLoggedIn = true
-                    currentSheet = null
-                    refreshData(api, checkins = { checkins = it }, wishlist = { wishlist = it }, stats = { stats = it })
-                } else {
-                    error = resp.error ?: "Login échoué"
-                }
-            } catch (e: Exception) {
-                error = "Erreur: ${e.message ?: "connexion (LAN/VPN ?)"}"
+        saving = true
+        try {
+            val msg = vm.saveCheckin(
+                product = p,
+                rating = rating.toDouble(),
+                flavors = flavors.toList(),
+                hops = hops.toList(),
+                comment = comment,
+                photoFile = photoFile,
+                force = force
+            )
+            if (msg.startsWith("duplicate|")) {
+                val parts = msg.split("|")
+                duplicateDetail = "Déjà notée: ${parts.getOrNull(1)} ★${parts.getOrNull(2)} (${parts.getOrNull(3)})"
+                showDuplicate = true
+            } else {
+                vm.showToast(msg, ToastPayload.Variant.SUCCESS)
+                resetWizard()
             }
-            isLoading = false
+        } catch (e: Exception) {
+            vm.showToast(e.message ?: "Échec", ToastPayload.Variant.ERROR)
+        } finally {
+            saving = false
         }
     }
 
-    fun doLogout() {
-        scope.launch {
-            api.logout()
-            isLoggedIn = false
-            user = ""
-            currentSheet = null
-        }
-    }
-
-    fun submitCheckin() {
-        scope.launch {
-            isLoading = true
-            try {
-                val r = (rating / 2f).coerceIn(0.25f, 5f).toDouble()
-                val bc = lookupBarcode.filter { it.isDigit() }.ifBlank { null }
-                val untappdBid = selectedUntappdBid
-                val id = api.createCheckinMultipart(
-                    beerName = beerName,
-                    brewery = brewery,
-                    style = style.ifBlank { "Unknown" },
-                    rating = r,
-                    comment = comment.ifBlank { null },
-                    photoFile = photoFile,
-                    barcode = bc ?: "",
-                    untappdBid = untappdBid,
-                    flavors = flavors.toList(),
-                    hops = hops.toList(),
-                    force = false
+    if (showDuplicate) {
+        AlertDialog(
+            onDismissRequest = { showDuplicate = false },
+            title = { Text("Déjà dégustée") },
+            text = {
+                Text(
+                    if (duplicateDetail.isBlank()) "Ajouter cette nouvelle note à ton historique ?"
+                    else duplicateDetail
                 )
-                error = "Checkin ajouté ✓ (id=$id)"
-                refreshData(api, checkins = { checkins = it }, wishlist = { wishlist = it }, stats = { stats = it })
-                resetAddForm()
-                currentSheet = "history"   // open history sheet after submit (like iOS flow after save)
-            } catch (e: Exception) {
-                if (e.message?.contains("déjà", ignoreCase = true) == true || e.message?.contains("duplicate", ignoreCase = true) == true) {
-                    error = "Déjà dégustée. Force ? (non implémenté)"
-                } else {
-                    error = "Erreur ajout: ${e.message}"
-                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDuplicate = false
+                    scope.launch { doSave(force = true) }
+                }) { Text("Noter à nouveau") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDuplicate = false }) { Text("Annuler") }
             }
-            isLoading = false
-        }
+        )
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-        if (!isLoggedIn) {
-            Spacer(Modifier.height(24.dp))
-            var loginUser by remember { mutableStateOf("eiter") }
-            var loginPass by remember { mutableStateOf("") }
-            OutlinedTextField(value = loginUser, onValueChange = { loginUser = it }, label = { Text("Utilisateur owner") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = loginPass, onValueChange = { loginPass = it }, label = { Text("Mot de passe") }, modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(12.dp))
-            Button(onClick = { doLogin(loginUser, loginPass) }, modifier = Modifier.fillMaxWidth(), enabled = !isLoading) {
-                Text(if (isLoading) "Connexion..." else "Se connecter")
-            }
-            if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
-            Text("Base LAN: ${ServerSettings.effectiveBase}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
-        } else {
-            // === ROOT STRUCTURE aligned with iOS MainView ===
-            // Header user + logout
-            Row {
-                Text("Connecté: $user", modifier = Modifier.weight(1f))
-                TextButton(onClick = { doLogout() }) { Text("Déconnexion") }
-            }
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        when (vm.wizardStep) {
+            1 -> {
+                BeerLead("Scan EAN optionnel — ou cherche directement sur Untappd.")
 
-            // Header like iOS: title + grid of action buttons (ghost style)
-            // This is the key part that makes the UX "the same": wizard is the main content.
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            ) {
-                Text("Beer Log", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("scan · photo · note", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-                Spacer(Modifier.height(8.dp))
-
-                // 3-col grid of buttons (approximates LazyVGrid in MainView)
-                Column {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                        OutlinedButton(onClick = { currentSheet = "wishlist" }, modifier = Modifier.weight(1f)) { Text("À boire", maxLines = 1) }
-                        OutlinedButton(onClick = { currentSheet = "history" }, modifier = Modifier.weight(1f)) { Text("Historique", maxLines = 1) }
-                        OutlinedButton(onClick = { currentSheet = "gallery" }, modifier = Modifier.weight(1f)) { Text("Galerie", maxLines = 1) }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                        OutlinedButton(onClick = { /* gifts not yet */ }, modifier = Modifier.weight(1f), enabled = false) { Text("Idées cadeaux") }
-                        OutlinedButton(onClick = { currentSheet = "wishlist" }, modifier = Modifier.weight(1f)) { Text("Wishlist") }
-                        OutlinedButton(onClick = { wizardStep = 1; resetAddForm() }, modifier = Modifier.weight(1f)) { Text("Reset wizard") }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // THE WIZARD IS ALWAYS THE MAIN CONTENT (exactly like MainView + BeerWizardView in iOS)
-            // No more "currentScreen" swap hiding the wizard.
-            Column(modifier = Modifier.padding(horizontal = 8.dp)) {
-                Text("Nouveau checkin — Étape $wizardStep / 3", style = MaterialTheme.typography.titleMedium)
-                Text("bière → photo → note", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-                // Step nav (closer to BeerStepNav: 1 Bière, 2 Photo, 3 Note)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(vertical = 8.dp)) {
-                    for (s in 1..3) {
-                        val label = when (s) {
-                            1 -> "1 Bière"
-                            2 -> "2 Photo"
-                            3 -> "3 Note"
-                            else -> ""
-                        }
-                        val isCurrent = s == wizardStep
-                        Button(
-                            onClick = { if (s <= wizardStep || s == wizardStep - 1) goToStep(s) },
-                            modifier = Modifier.weight(1f),
-                            colors = if (isCurrent)
-                                ButtonDefaults.buttonColors()
-                            else ButtonDefaults.outlinedButtonColors()
-                        ) {
-                            Text(label, style = MaterialTheme.typography.labelSmall)
+                // Scan area
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(BeerColors.photoBg)
+                        .border(1.dp, BeerColors.border, RoundedCornerShape(16.dp))
+                        .clickable { ensureCamera("scan") },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("📷", fontSize = 32.sp)
+                        Text("Scanner / Prendre photo EAN", color = BeerColors.muted, fontSize = 13.sp)
+                        if (busy) {
+                            Spacer(Modifier.height(8.dp))
+                            CircularProgressIndicator(Modifier.size(20.dp), color = BeerColors.accent, strokeWidth = 2.dp)
                         }
                     }
                 }
+                Text(scanStatus, color = BeerColors.muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth())
 
-                // === UNCONDITIONAL WIZARD (the main content of the app, like iOS) ===
-                // 3 steps to match iOS BeerWizardView + BeerStepNav
-                when (wizardStep) {
-                    1 -> {
-                        // Step 1: Lookup / scan / Untappd / manual (mirrors stepBeer)
-                        Text("Scan EAN optionnel — ou cherche directement sur Untappd.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-                        OutlinedTextField(value = lookupBarcode, onValueChange = { lookupBarcode = it }, label = { Text("Code-barres EAN (optionnel)") }, modifier = Modifier.fillMaxWidth())
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = {
-                                scope.launch {
-                                    lookupStatus = "Recherche..."
-                                    try {
-                                        val resp = api.lookup(lookupBarcode.filter { it.isDigit() })
-                                        if (resp.beerName != null) {
-                                            beerName = resp.beerName ?: ""
-                                            brewery = resp.brewery ?: ""
-                                            style = resp.style ?: ""
-                                            lookupStatus = "✓ Identifiée"
-                                        } else lookupStatus = resp.error ?: "Introuvable"
-                                    } catch (e: Exception) { lookupStatus = e.message ?: "err" }
+                BeerCard {
+                    Text("Chercher sur Untappd", color = BeerColors.text, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Top 5 résultats. Utilise Brasserie + Nom pour affiner.",
+                        color = BeerColors.muted,
+                        fontSize = 12.sp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    BeerField("Brasserie (optionnel)", untappdBrewery, { untappdBrewery = it }, "ex. Les Intenables")
+                    Spacer(Modifier.height(6.dp))
+                    BeerField("Nom de la bière", untappdName, { untappdName = it }, "ex. Mama Whipa")
+                    Spacer(Modifier.height(8.dp))
+                    BeerPrimaryButton(
+                        title = if (busy) "Recherche…" else "Chercher sur Untappd",
+                        enabled = untappdName.length >= 2 || untappdBrewery.length >= 2,
+                        busy = busy
+                    ) {
+                        scope.launch {
+                            busy = true
+                            untappdError = null
+                            try {
+                                val q = listOf(untappdBrewery, untappdName).filter { it.isNotBlank() }.joinToString(" ")
+                                val resp = api.searchUntappd(q)
+                                untappdResults = resp.results.orEmpty()
+                                if (untappdResults.isEmpty()) untappdError = resp.error ?: "Aucun résultat"
+                            } catch (e: Exception) {
+                                untappdError = e.message
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    }
+                    untappdError?.let { Text(it, color = BeerColors.error, fontSize = 12.sp) }
+                    untappdResults.forEach { hit ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .border(1.dp, BeerColors.border, RoundedCornerShape(10.dp))
+                                .clickable {
+                                    scope.launch {
+                                        busy = true
+                                        try {
+                                            val fetched = api.untappdFetch(
+                                                bid = hit.bid,
+                                                beerName = hit.beerName,
+                                                brewery = hit.brewery.orEmpty()
+                                            )
+                                            product = if (fetched.ok) {
+                                                fetched.asProduct("").let { pr ->
+                                                    if (pr.untappdBid == null) pr.copy(untappdBid = hit.bid) else pr
+                                                }
+                                            } else BeerProduct(
+                                                beerName = hit.beerName,
+                                                brewery = hit.brewery.orEmpty(),
+                                                style = hit.styleFr ?: "Unknown",
+                                                untappdBid = hit.bid
+                                            )
+                                            // Link EAN ↔ Untappd when we already scanned a barcode (iOS linkProduct)
+                                            val bc = product?.barcode?.filter { it.isDigit() }.orEmpty()
+                                            if (bc.length >= 8) {
+                                                try {
+                                                    api.linkProduct(
+                                                        bid = hit.bid,
+                                                        barcode = bc,
+                                                        beerName = product!!.beerName,
+                                                        brewery = product!!.brewery
+                                                    )
+                                                } catch (_: Exception) {
+                                                }
+                                            }
+                                            scanStatus = "Untappd ✓"
+                                            untappdResults = emptyList()
+                                            vm.showToast("Bière sélectionnée ✓", ToastPayload.Variant.SUCCESS)
+                                        } catch (e: Exception) {
+                                            product = BeerProduct(
+                                                beerName = hit.beerName,
+                                                brewery = hit.brewery.orEmpty(),
+                                                style = hit.styleFr ?: "Unknown",
+                                                untappdBid = hit.bid
+                                            )
+                                            scanStatus = "Untappd ✓ (sans fetch)"
+                                            untappdResults = emptyList()
+                                        } finally {
+                                            busy = false
+                                        }
+                                    }
                                 }
-                            }, enabled = lookupBarcode.isNotBlank()) { Text("Lookup EAN") }
-                            Button(onClick = { startBarcodeScan() }) { Text("📷 Scanner (ML Kit)") }
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (!hit.photoURL.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = hit.photoURL,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Spacer(Modifier.width(10.dp))
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text(hit.beerName, color = BeerColors.text, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Text(
+                                    listOfNotNull(hit.brewery, hit.styleFr).joinToString(" · "),
+                                    color = BeerColors.muted,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            Text("›", color = BeerColors.muted)
                         }
-                        if (lookupStatus.isNotBlank()) Text(lookupStatus, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
 
-                        // Untappd (same fields + results as iOS)
-                        Text("Chercher sur Untappd", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
-                        OutlinedTextField(value = untappdBrewery, onValueChange = { untappdBrewery = it }, label = { Text("Brasserie (optionnel)") }, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(value = untappdName, onValueChange = { untappdName = it }, label = { Text("Nom de la bière") }, modifier = Modifier.fillMaxWidth())
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    busy = true; untappdError = null
-                                    try {
-                                        val resp = api.searchUntappd(untappdBrewery, untappdName)
-                                        untappdResults = resp.results ?: emptyList()
-                                        if (untappdResults.isEmpty()) untappdError = "Aucun résultat"
-                                    } catch (e: Exception) { untappdError = e.message }
+                // Manual entry
+                BeerCard {
+                    Text(
+                        if (showManual) "▼ Saisie manuelle (secours)" else "▶ Saisie manuelle (secours)",
+                        color = BeerColors.muted,
+                        modifier = Modifier.clickable { showManual = !showManual }
+                    )
+                    if (showManual) {
+                        Spacer(Modifier.height(8.dp))
+                        BeerField("Nom de la bière", manualName, { manualName = it })
+                        Spacer(Modifier.height(6.dp))
+                        BeerField("Brasserie", manualBrewery, { manualBrewery = it })
+                        Spacer(Modifier.height(6.dp))
+                        BeerField("Style", manualStyle, { manualStyle = it }, "ex. IPA")
+                        if (styleOptions.isNotEmpty()) {
+                            Text("Styles serveur: tape le nom exact ou libre", color = BeerColors.muted, fontSize = 11.sp)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        BeerSecondaryButton("Continuer") {
+                            if (manualName.isBlank()) {
+                                vm.showToast("Nom requis", ToastPayload.Variant.WARN)
+                            } else {
+                                val p = BeerProduct(
+                                    beerName = manualName.trim(),
+                                    brewery = manualBrewery.trim(),
+                                    style = manualStyle.ifBlank { "Unknown" },
+                                    barcode = manualEan.filter { it.isDigit() }
+                                )
+                                product = p
+                                scanStatus = "Saisie manuelle ✓"
+                                // Persist product for future EAN lookup (iOS saveProduct)
+                                if (p.barcode.length >= 8) {
+                                    scope.launch {
+                                        try {
+                                            api.saveProduct(p.barcode, p.beerName, p.brewery, p.style)
+                                        } catch (_: Exception) {
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                BeerCard {
+                    Text(
+                        if (showEanManual) "▼ Code illisible ? Saisie EAN" else "▶ Code illisible ? Saisie EAN",
+                        color = BeerColors.muted,
+                        modifier = Modifier.clickable { showEanManual = !showEanManual }
+                    )
+                    if (showEanManual) {
+                        Spacer(Modifier.height(8.dp))
+                        BeerField("Code EAN", manualEan, { manualEan = it }, "ex. 5411680001111", KeyboardType.Number)
+                        Spacer(Modifier.height(8.dp))
+                        BeerSecondaryButton("Identifier par EAN") {
+                            scope.launch {
+                                val digits = manualEan.filter { it.isDigit() }
+                                if (digits.length < 8) {
+                                    scanStatus = "Code trop court"
+                                    return@launch
+                                }
+                                busy = true
+                                scanStatus = "Recherche…"
+                                try {
+                                    val res = api.lookup(digits)
+                                    if (res.ok) {
+                                        product = res.asProduct(digits)
+                                        scanStatus = "Bière identifiée ✓"
+                                        vm.showToast("Bière identifiée ✓", ToastPayload.Variant.SUCCESS)
+                                    } else {
+                                        scanStatus = res.error ?: "Introuvable"
+                                        product = BeerProduct(barcode = digits)
+                                    }
+                                } catch (e: Exception) {
+                                    scanStatus = e.message ?: "Erreur"
+                                } finally {
                                     busy = false
                                 }
-                            },
-                            enabled = untappdName.length >= 2 || untappdBrewery.length >= 2,
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text(if (busy) "Recherche…" else "Chercher sur Untappd") }
-                        if (untappdError != null) Text(untappdError!!, color = MaterialTheme.colorScheme.error)
-
-                        untappdResults.forEach { hit ->
-                            OutlinedButton(onClick = {
-                                beerName = hit.beerName
-                                brewery = hit.brewery ?: ""
-                                style = hit.styleFr ?: ""
-                                selectedUntappdBid = hit.bid
-                                untappdResults = emptyList()
-                                lookupStatus = "Untappd ✓"
-                            }, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                                Text("${hit.beerName} — ${hit.brewery ?: ""}")
                             }
                         }
-
-                        OutlinedTextField(value = beerName, onValueChange = { beerName = it }, label = { Text("Nom de la bière *") }, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(value = brewery, onValueChange = { brewery = it }, label = { Text("Brasserie") }, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(value = style, onValueChange = { style = it }, label = { Text("Style") }, modifier = Modifier.fillMaxWidth())
-
-                        Button(onClick = { goToStep(2) }, enabled = beerName.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Continuer → Photo") }
                     }
-                    2 -> {
-                        // Step 2: Photo (matches stepPhoto)
-                        Text("Photo du verre avec la canette à côté (optionnel).", style = MaterialTheme.typography.bodySmall)
-                        Button(onClick = { takePhotoFull() }, modifier = Modifier.fillMaxWidth()) { Text("📷 Prendre une photo") }
-                        if (photoFile != null) {
-                            Text("Photo prête ✓", modifier = Modifier.padding(top = 4.dp))
-                            AsyncImage(model = photoFile, contentDescription = null, modifier = Modifier.height(160.dp).fillMaxWidth())
-                            TextButton(onClick = { photoFile = null }) { Text("Retirer la photo") }
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                            Button(onClick = { goToStep(1) }) { Text("← Retour") }
-                            Button(onClick = { goToStep(3) }, modifier = Modifier.weight(1f)) { Text("Continuer → Note") }
+                }
+
+                product?.takeIf { it.beerName.isNotBlank() }?.let { p ->
+                    BeerPreviewCard(p)
+                    BeerSecondaryButton("+ Ajouter à la liste « À boire »") {
+                        scope.launch {
+                            try {
+                                api.addWishlist(p.beerName, p.brewery, p.style, p.barcode)
+                                vm.showToast("Ajouté à À boire ✓", ToastPayload.Variant.SUCCESS)
+                            } catch (e: Exception) {
+                                vm.showToast(e.message ?: "Échec", ToastPayload.Variant.ERROR)
+                            }
                         }
                     }
-                    3 -> {
-                        // Step 3: Note + flavors + hops + comment + submit (merged review into step 3 like iOS)
-                        Text("Note (0.25-5)", style = MaterialTheme.typography.titleSmall)
-                        Slider(value = rating, onValueChange = { rating = it }, valueRange = 0.25f..5f, steps = 19)
-                        Text("%.2f / 5".format(rating))
+                    BeerPrimaryButton("Continuer → photo") { vm.wizardStep = 2 }
+                }
+            }
 
-                        OutlinedTextField(value = comment, onValueChange = { if (it.length <= 120) comment = it }, label = { Text("Commentaire (optionnel, 120 car.)") }, modifier = Modifier.fillMaxWidth())
+            2 -> {
+                BeerLead("Photo du verre avec la canette à côté (optionnel).")
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(BeerColors.card)
+                        .border(2.dp, BeerColors.border, RoundedCornerShape(16.dp))
+                        .clickable { ensureCamera("photo") },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (photoFile != null) {
+                        AsyncImage(
+                            model = photoFile,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize().padding(8.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    } else {
+                        Text("📷 Prendre une photo", color = BeerColors.muted)
+                    }
+                }
+                if (photoFile != null) {
+                    TextButton(onClick = { photoFile = null }) {
+                        Text("Retirer la photo", color = BeerColors.error)
+                    }
+                }
+                BeerSecondaryButton("← Retour") { vm.wizardStep = 1 }
+                BeerPrimaryButton("Continuer → note") { vm.wizardStep = 3 }
+            }
 
-                        // Flavors (basic version of FlavorTagGrid + custom)
-                        Text("Goûts", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            OutlinedTextField(value = customFlavorInput, onValueChange = { customFlavorInput = it }, label = { Text("Goût perso") }, modifier = Modifier.weight(1f))
-                            Button(onClick = {
-                                if (customFlavorInput.isNotBlank()) {
-                                    flavors = flavors + customFlavorInput.trim()
-                                    customFlavorInput = ""
-                                }
-                            }) { Text("+") }
+            else -> {
+                val p = product
+                if (p != null && p.beerName.isNotBlank()) {
+                    BeerLead(p.beerName)
+                } else {
+                    BeerLead("Pas de bière identifiée — retourne à l'étape 1.")
+                }
+
+                BeerCard {
+                    UntappdRatingSlider(rating, { rating = it }, onTick = { vm.hapticTick() })
+                }
+
+                if (showFlavors) {
+                    if (flavorTags.isNotEmpty()) {
+                        BeerCard {
+                            FlavorTagGrid(
+                                title = if (p != null && p.displayStyle != "Unknown") "Goûts ${p.displayStyle}" else "Goûts",
+                                tags = flavorTags,
+                                selected = flavors,
+                                maxCount = 8
+                            ) { tag ->
+                                flavors = if (tag in flavors) flavors - tag else flavors + tag
+                            }
+                        }
+                    }
+                    BeerCard {
+                        Text("Goûts perso", color = BeerColors.text, fontWeight = FontWeight.SemiBold)
+                        CustomTagInput("ex. pneus, sucrée…", customFlavor, { customFlavor = it }) {
+                            val t = customFlavor.trim()
+                            if (t.isNotBlank() && flavors.size < 8) {
+                                flavors = flavors + t
+                                customFlavor = ""
+                            }
                         }
                         if (flavors.isNotEmpty()) {
-                            Text("Sélectionnés: ${flavors.joinToString()}", style = MaterialTheme.typography.bodySmall)
+                            Text("Sélectionnés: ${flavors.joinToString()}", color = BeerColors.muted, fontSize = 12.sp)
                         }
+                        Text("Libre — 8 goûts max", color = BeerColors.muted, fontSize = 11.sp)
+                    }
+                }
 
-                        // Hops
-                        Text("Houblons", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            OutlinedTextField(value = customHopInput, onValueChange = { customHopInput = it }, label = { Text("Houblon perso") }, modifier = Modifier.weight(1f))
-                            Button(onClick = {
-                                if (customHopInput.isNotBlank()) {
-                                    hops = hops + customHopInput.trim()
-                                    customHopInput = ""
-                                }
-                            }) { Text("+") }
+                if (showHops) {
+                    if (hopTags.isNotEmpty()) {
+                        BeerCard {
+                            FlavorTagGrid("Houblons", hopTags, hops, 6) { tag ->
+                                hops = if (tag in hops) hops - tag else hops + tag
+                            }
+                        }
+                    }
+                    BeerCard {
+                        Text("Houblons perso", color = BeerColors.text, fontWeight = FontWeight.SemiBold)
+                        CustomTagInput("ex. Citra, Mosaic…", customHop, { customHop = it }) {
+                            val t = customHop.trim()
+                            if (t.isNotBlank() && hops.size < 6) {
+                                hops = hops + t
+                                customHop = ""
+                                scope.launch { try { api.addHop(t) } catch (_: Exception) {} }
+                            }
                         }
                         if (hops.isNotEmpty()) {
-                            Text("Sélectionnés: ${hops.joinToString()}", style = MaterialTheme.typography.bodySmall)
-                        }
-
-                        // Review card + actions
-                        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
-                            Column(Modifier.padding(12.dp)) {
-                                Text("${beerName.ifBlank { "(non identifiée)" }} — ${brewery}", style = MaterialTheme.typography.titleSmall)
-                                Text("Style: ${style.ifBlank { "—" }}  ·  Note: %.2f/5".format(rating))
-                                if (comment.isNotBlank()) Text("« $comment »")
-                                if (flavors.isNotEmpty()) Text("Goûts: ${flavors.joinToString()}")
-                                if (hops.isNotEmpty()) Text("Houblons: ${hops.joinToString()}")
-                                if (photoFile != null) Text("📷 Photo incluse")
-                            }
-                        }
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { goToStep(2) }) { Text("← Retour") }
-                            Button(
-                                onClick = { submitCheckin() },
-                                enabled = beerName.isNotBlank(),
-                                modifier = Modifier.weight(1f)
-                            ) { Text("Enregistrer la dégustation") }
+                            Text("Sélectionnés: ${hops.joinToString()}", color = BeerColors.muted, fontSize = 12.sp)
                         }
                     }
-                    else -> {}
                 }
 
-                if (error != null) {
-                    Text(error!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
+                BeerCard {
+                    Text("Commentaire (optionnel, 120 car.)", color = BeerColors.text, fontWeight = FontWeight.SemiBold)
+                    OutlinedTextField(
+                        value = comment,
+                        onValueChange = { if (it.length <= 120) comment = it },
+                        placeholder = { Text("Terrasse, avec elle, à refaire…", color = BeerColors.muted.copy(alpha = 0.6f)) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = BeerColors.text,
+                            unfocusedTextColor = BeerColors.text,
+                            focusedBorderColor = BeerColors.accent,
+                            unfocusedBorderColor = BeerColors.border,
+                            cursorColor = BeerColors.accent,
+                            focusedContainerColor = BeerColors.fieldBg,
+                            unfocusedContainerColor = BeerColors.fieldBg
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                    Text("${comment.length}/120", color = BeerColors.muted, fontSize = 11.sp, modifier = Modifier.align(Alignment.End))
+                }
+
+                BeerSecondaryButton("← Retour") { vm.wizardStep = 2 }
+                BeerPrimaryButton(
+                    title = if (saving) "Enregistrement…" else "Enregistrer",
+                    enabled = product != null && product!!.beerName.isNotBlank() && rating >= 0.25f,
+                    busy = saving
+                ) {
+                    scope.launch { doSave(force = false) }
+                }
+
+                TextButton(onClick = { resetWizard() }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                    Text("Reset wizard", color = BeerColors.muted)
+                }
+            }
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+private suspend fun tryMlKitBarcode(context: Context, file: File): String? =
+    withContext(Dispatchers.IO) {
+        try {
+            suspendCancellableCoroutine { cont ->
+                try {
+                    val img = com.google.mlkit.vision.common.InputImage.fromFilePath(context, Uri.fromFile(file))
+                    val sc = com.google.mlkit.vision.barcode.BarcodeScanning.getClient()
+                    sc.process(img)
+                        .addOnSuccessListener { bs ->
+                            val code = bs.firstOrNull { b ->
+                                val f = b.format
+                                (f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_EAN_13 ||
+                                    f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_EAN_8 ||
+                                    f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_UPC_A ||
+                                    f == com.google.mlkit.vision.barcode.common.Barcode.FORMAT_UPC_E) &&
+                                    b.rawValue != null
+                            }?.rawValue ?: bs.firstOrNull { it.rawValue != null }?.rawValue
+                            try { sc.close() } catch (_: Exception) {}
+                            cont.resume(code)
+                        }
+                        .addOnFailureListener { ex ->
+                            try { sc.close() } catch (_: Exception) {}
+                            cont.resume(null)
+                        }
+                    cont.invokeOnCancellation { try { sc.close() } catch (_: Exception) {} }
+                } catch (e: Exception) {
+                    cont.resume(null)
+                }
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+// ───────────────────────── Sheets ─────────────────────────
+
+@Composable
+private fun SheetScaffold(title: String, onClose: () -> Unit, trailing: (@Composable () -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(BeerColors.bg)
+            .padding(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(title, style = MaterialTheme.typography.headlineSmall, color = BeerColors.text, modifier = Modifier.weight(1f))
+            trailing?.invoke()
+            TextButton(onClick = onClose) { Text("Fermer ✕", color = BeerColors.muted) }
+        }
+        Spacer(Modifier.height(8.dp))
+        content()
+    }
+}
+
+@Composable
+private fun HistorySheet(vm: AppViewModel) {
+    val api = vm.api
+    val scope = rememberCoroutineScope()
+    var items by remember { mutableStateOf(listOf<CheckinItem>()) }
+    var stats by remember { mutableStateOf<HistoryStats?>(null) }
+    var styles by remember { mutableStateOf(listOf<StyleOption>()) }
+    var filterStyle by remember { mutableStateOf("") }
+    var filterRating by remember { mutableFloatStateOf(0f) }
+    var filterPeriod by remember { mutableStateOf("") }
+    var offset by remember { mutableIntStateOf(0) }
+    var hasMore by remember { mutableStateOf(true) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val pageSize = 10
+    val historyContext = LocalContext.current
+    val cache = remember(historyContext) { OfflineCache(historyContext) }
+
+    suspend fun load(append: Boolean) {
+        if (loading) return
+        loading = true
+        error = null
+        try {
+            val off = if (append) offset else 0
+            val page = api.checkins(
+                style = filterStyle,
+                minRating = filterRating.toDouble(),
+                period = filterPeriod,
+                limit = pageSize,
+                offset = off
+            )
+            items = if (append) items + page else page
+            offset = off + page.size
+            hasMore = page.size >= pageSize
+            if (!append) {
+                stats = api.stats()
+                cache.saveCheckins(items)
+                stats?.let { cache.saveStats(it) }
+            }
+        } catch (e: Exception) {
+            if (!append) {
+                val cached = cache.loadCheckins()
+                if (cached.isNotEmpty()) {
+                    items = cached
+                    stats = cache.loadStats()
+                    error = "Hors ligne — cache local"
+                } else {
+                    error = e.message
+                }
+            } else {
+                error = e.message
+            }
+        } finally {
+            loading = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        styles = try { api.styles() } catch (_: Exception) { emptyList() }
+        load(false)
+    }
+    LaunchedEffect(filterStyle, filterRating, filterPeriod) {
+        offset = 0
+        load(false)
+    }
+
+    SheetScaffold(
+        title = "Historique",
+        onClose = { vm.closeSheet() },
+        trailing = {
+            TextButton(onClick = {
+                vm.closeSheet()
+                vm.openSheet(BeerSheet.GALLERY)
+            }) { Text("📷 Galerie", color = BeerColors.accent) }
+        }
+    ) {
+        stats?.takeIf { it.total > 0 }?.let { s ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                StatCell("${s.total}", "dégust.", Modifier.weight(1f))
+                StatCell(formatRating(s.avgRating ?: 0.0), "moyenne", Modifier.weight(1f))
+                StatCell(s.topStyles?.firstOrNull()?.style ?: "—", "top style", Modifier.weight(1f))
+                StatCell(s.last?.beerName ?: "—", "dernière", Modifier.weight(1f), small = true)
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        // Filters
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(
+                selected = filterRating >= 4f,
+                onClick = { filterRating = if (filterRating >= 4f) 0f else 4f },
+                label = { Text("★4+") }
+            )
+            FilterChip(
+                selected = filterPeriod == "30d",
+                onClick = { filterPeriod = if (filterPeriod == "30d") "" else "30d" },
+                label = { Text("30j") }
+            )
+            FilterChip(
+                selected = filterPeriod == "7d",
+                onClick = { filterPeriod = if (filterPeriod == "7d") "" else "7d" },
+                label = { Text("7j") }
+            )
+        }
+        if (styles.isNotEmpty()) {
+            var expanded by remember { mutableStateOf(false) }
+            TextButton(onClick = { expanded = true }) {
+                Text(if (filterStyle.isBlank()) "Style: tous" else "Style: $filterStyle", color = BeerColors.muted)
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                DropdownMenuItem(text = { Text("Tous") }, onClick = { filterStyle = ""; expanded = false })
+                styles.take(40).forEach { st ->
+                    DropdownMenuItem(text = { Text(st.label.ifBlank { st.value }) }, onClick = {
+                        filterStyle = st.value
+                        expanded = false
+                    })
                 }
             }
         }
 
-        // === SHEET OVERLAYS (equivalent to fullScreenCover in iOS) ===
-        // When a sheet is open we show it instead of (or on top of) the wizard.
-        // For now: full takeover with close button — makes navigation feel like sheets.
-        if (currentSheet != null) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(12.dp)
-                    .background(MaterialTheme.colorScheme.background)
-            ) {
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        when (currentSheet) {
-                            "history" -> "Historique"
-                            "gallery" -> "Galerie photos"
-                            "wishlist" -> "À boire / Wishlist"
-                            else -> "Détail"
-                        },
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.weight(1f)
-                    )
-                    TextButton(onClick = {
-                        currentSheet = null
-                        // refresh main data on close like iOS
-                        scope.launch {
-                            try { checkins = api.checkins(30); stats = api.stats(); wishlist = api.wishlist() } catch (_: Exception) {}
-                        }
-                    }) { Text("Fermer ✕") }
-                }
-                Spacer(Modifier.height(8.dp))
+        error?.let { Text(it, color = BeerColors.error, fontSize = 12.sp) }
 
-                when (currentSheet) {
-                    "history" -> HistorySheetContent(
-                        checkins = checkins,
-                        stats = stats,
-                        onRefresh = { scope.launch { checkins = api.checkins(50); stats = api.stats() } }
-                    )
-                    "gallery" -> GallerySheetContent(
-                        checkins = checkins,
-                        onRefresh = { scope.launch { checkins = api.checkins(100) } }
-                    )
-                    "wishlist" -> WishlistSheetContent(
-                        wishlist = wishlist,
-                        newWishName = newWishName,
-                        onNewWishChange = { newWishName = it },
-                        onAdd = {
-                            scope.launch {
-                                if (newWishName.isNotBlank()) {
+        when {
+            loading && items.isEmpty() -> {
+                Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = BeerColors.accent)
+                }
+            }
+            items.isEmpty() -> {
+                val hasFilters = filterStyle.isNotEmpty() || filterRating > 0 || filterPeriod.isNotEmpty()
+                BeerEmptyState(
+                    if (hasFilters) "🔍" else "🍺",
+                    if (hasFilters) "Aucun résultat" else "Aucune dégustation",
+                    if (hasFilters) "Ajuste les filtres." else "Note ta première bière depuis l'accueil."
+                )
+            }
+            else -> {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.weight(1f, fill = true)) {
+                    items(items, key = { it.id }) { item ->
+                        HistoryCard(vm, item,
+                            onOpen = {
+                                vm.selectedCheckin = item
+                                vm.openSheet(BeerSheet.DETAIL)
+                            },
+                            onEdit = {
+                                vm.editingCheckin = item
+                                vm.openSheet(BeerSheet.EDIT)
+                            },
+                            onDelete = {
+                                // confirmation handled inside HistoryCard
+                            },
+                            onConfirmDelete = {
+                                scope.launch {
                                     try {
-                                        api.addWishlist(newWishName, "", "Unknown")
-                                        wishlist = api.wishlist()
-                                        newWishName = ""
-                                    } catch (e: Exception) { error = e.message }
+                                        if (vm.networkStatus != NetworkStatus.ONLINE) {
+                                            vm.offline.enqueueDelete(item.id)
+                                            vm.showToast("Suppression en file", ToastPayload.Variant.INFO)
+                                        } else {
+                                            api.deleteCheckin(item.id)
+                                            vm.showToast("Supprimé", ToastPayload.Variant.SUCCESS)
+                                        }
+                                        load(false)
+                                    } catch (e: Exception) {
+                                        if (e is java.io.IOException) {
+                                            vm.offline.enqueueDelete(item.id)
+                                        }
+                                        vm.showToast(e.message ?: "Erreur", ToastPayload.Variant.ERROR)
+                                    }
                                 }
                             }
-                        },
-                        onDelete = { id ->
-                            scope.launch {
-                                api.deleteWishlist(id)
-                                wishlist = api.wishlist()
+                        )
+                    }
+                    if (hasMore) {
+                        item {
+                            BeerSecondaryButton(if (loading) "Chargement…" else "Charger 10 de plus") {
+                                scope.launch { load(true) }
                             }
-                        },
-                        onRefresh = { scope.launch { wishlist = api.wishlist() } }
-                    )
-                    else -> Text("Sheet inconnue")
-                }
-            }
-        }
-
-        if (isLoading) CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
-    }
-}
-
-// Extracted sheet contents for clarity (can be moved to own files later)
-@Composable
-private fun HistorySheetContent(
-    checkins: List<CheckinItem>,
-    stats: HistoryStats?,
-    onRefresh: () -> Unit
-) {
-    val s = stats
-    Column {
-        if (s != null && s.total > 0) {
-            Text("Total: ${s.total}  ·  Moyenne: ${s.avgRating ?: "—"}", style = MaterialTheme.typography.bodySmall)
-        }
-        Button(onClick = onRefresh, modifier = Modifier.padding(vertical = 4.dp)) { Text("Rafraîchir") }
-
-        if (checkins.isEmpty()) {
-            Text("Aucune dégustation. Note ta première bière depuis l'accueil !", modifier = Modifier.padding(16.dp))
-        } else {
-            LazyColumn {
-                items(checkins) { item ->
-                    Card(
-                        modifier = Modifier
-                            .padding(4.dp)
-                            .fillMaxWidth()
-                            .clickable { /* TODO: future CheckinDetail like iOS */ }
-                    ) {
-                        Column(Modifier.padding(8.dp)) {
-                            if (!item.photoURL.isNullOrBlank()) {
-                                AsyncImage(model = item.photoURL, contentDescription = null, modifier = Modifier.height(110.dp).fillMaxWidth())
-                            }
-                            Text("${item.beerName} — ${item.brewery ?: ""}", style = MaterialTheme.typography.titleSmall)
-                            Text("★ ${item.rating}  ·  ${item.style ?: ""}")
-                            if (!item.comment.isNullOrBlank()) Text(item.comment ?: "", style = MaterialTheme.typography.bodySmall)
-                            if (item.flavors?.isNotEmpty() == true) Text("Goûts: ${item.flavors.joinToString()}", style = MaterialTheme.typography.bodySmall)
-                            if (item.hops?.isNotEmpty() == true) Text("Houblons: ${item.hops.joinToString()}", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -668,19 +1054,123 @@ private fun HistorySheetContent(
 }
 
 @Composable
-private fun GallerySheetContent(checkins: List<CheckinItem>, onRefresh: () -> Unit) {
-    val photos = checkins.filter { !it.photoURL.isNullOrBlank() }
-    Column {
-        Text("${photos.size} photos", style = MaterialTheme.typography.bodySmall)
-        Button(onClick = onRefresh) { Text("Rafraîchir") }
-        if (photos.isEmpty()) {
-            Text("Aucune photo pour l'instant.")
+private fun StatCell(value: String, label: String, modifier: Modifier = Modifier, small: Boolean = false) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(BeerColors.card)
+            .border(1.dp, BeerColors.border, RoundedCornerShape(10.dp))
+            .padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(value, color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = if (small) 11.sp else 14.sp, maxLines = 2)
+        Text(label, color = BeerColors.muted, fontSize = 11.sp)
+    }
+}
+
+@Composable
+private fun HistoryCard(
+    vm: AppViewModel,
+    item: CheckinItem,
+    onOpen: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit = {},
+    onConfirmDelete: () -> Unit = onDelete
+) {
+    var confirmDelete by remember { mutableStateOf(false) }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Supprimer ?") },
+            text = { Text("Supprimer « ${item.beerName} » de l'historique ?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    onConfirmDelete()
+                }) { Text("Supprimer", color = BeerColors.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("Annuler") }
+            }
+        )
+    }
+    BeerCard {
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onOpen),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            BeerAuthImage(
+                path = item.photoURL,
+                api = vm.api,
+                modifier = Modifier.size(88.dp).clip(RoundedCornerShape(10.dp))
+            )
+            Column(Modifier.weight(1f)) {
+                Row {
+                    Text(item.beerName, color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                    if (vm.isAdmin && item.hiddenFromPartner == true) {
+                        Text("privé", color = BeerColors.accent, fontSize = 10.sp)
+                    }
+                }
+                Text("★ ${formatRating(item.rating)}", color = BeerColors.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "${item.brewery ?: "—"} · ${item.style ?: "Inconnu"} · ${formatDate(item.createdAt)}",
+                    color = BeerColors.muted,
+                    fontSize = 12.sp
+                )
+                item.flavors?.takeIf { it.isNotEmpty() }?.let {
+                    Text(it.joinToString(", "), color = BeerColors.muted, fontSize = 12.sp)
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onEdit) { Text("Modifier", color = BeerColors.accent) }
+            TextButton(onClick = {
+                vm.startRetaste(item)
+            }) { Text("Re-noter", color = BeerColors.text) }
+            TextButton(onClick = { confirmDelete = true }) { Text("Suppr.", color = BeerColors.error) }
+        }
+    }
+}
+
+@Composable
+private fun GallerySheet(vm: AppViewModel) {
+    val api = vm.api
+    var items by remember { mutableStateOf(listOf<CheckinItem>()) }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        try {
+            items = api.checkins(limit = 100, offset = 0).filter { !it.photoURL.isNullOrBlank() }
+        } catch (_: Exception) {
+        }
+        loading = false
+    }
+
+    SheetScaffold("Galerie photos", onClose = { vm.closeSheet() }) {
+        if (loading) {
+            CircularProgressIndicator(color = BeerColors.accent, modifier = Modifier.align(Alignment.CenterHorizontally))
+        } else if (items.isEmpty()) {
+            BeerEmptyState("📷", "Aucune photo", "Ajoute une photo à ta prochaine dégustation.")
         } else {
-            LazyColumn {
-                items(photos) { item ->
-                    Column(modifier = Modifier.padding(bottom = 12.dp)) {
-                        AsyncImage(model = item.photoURL, contentDescription = null, modifier = Modifier.height(220.dp).fillMaxWidth())
-                        Text("${item.beerName} — ${item.brewery ?: ""}", style = MaterialTheme.typography.bodySmall)
+            Text("${items.size} photos", color = BeerColors.muted, fontSize = 12.sp)
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(items, key = { it.id }) { item ->
+                    Column {
+                        BeerAuthImage(
+                            path = item.photoURL,
+                            api = api,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(220.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                        )
+                        Text(
+                            "${item.beerName} — ${item.brewery.orEmpty()}",
+                            color = BeerColors.muted,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
                     }
                 }
             }
@@ -689,29 +1179,67 @@ private fun GallerySheetContent(checkins: List<CheckinItem>, onRefresh: () -> Un
 }
 
 @Composable
-private fun WishlistSheetContent(
-    wishlist: List<WishlistItem>,
-    newWishName: String,
-    onNewWishChange: (String) -> Unit,
-    onAdd: () -> Unit,
-    onDelete: (Int) -> Unit,
-    onRefresh: () -> Unit
-) {
-    Column {
-        Row {
-            OutlinedTextField(value = newWishName, onValueChange = onNewWishChange, label = { Text("Nom bière à ajouter") }, modifier = Modifier.weight(1f))
-            Button(onClick = onAdd, modifier = Modifier.padding(start = 8.dp)) { Text("Ajouter") }
-        }
-        Button(onClick = onRefresh, modifier = Modifier.padding(vertical = 4.dp)) { Text("Rafraîchir") }
+private fun WishlistSheet(vm: AppViewModel) {
+    val api = vm.api
+    val scope = rememberCoroutineScope()
+    var items by remember { mutableStateOf(listOf<WishlistItem>()) }
+    var newName by remember { mutableStateOf("") }
+    var newBrewery by remember { mutableStateOf("") }
 
-        if (wishlist.isEmpty()) {
-            Text("Liste « À boire » vide.")
+    suspend fun reload() {
+        items = try {
+            api.wishlist()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    LaunchedEffect(Unit) { reload() }
+
+    SheetScaffold("À boire", onClose = { vm.closeSheet() }) {
+        Text("Tes souhaits personnels (bières à goûter).", color = BeerColors.muted, fontSize = 13.sp)
+        Spacer(Modifier.height(8.dp))
+        BeerField("Nom bière", newName, { newName = it })
+        Spacer(Modifier.height(6.dp))
+        BeerField("Brasserie (optionnel)", newBrewery, { newBrewery = it })
+        Spacer(Modifier.height(8.dp))
+        BeerPrimaryButton("Ajouter", enabled = newName.length >= 2) {
+            scope.launch {
+                try {
+                    api.addWishlist(newName.trim(), newBrewery.trim())
+                    newName = ""
+                    newBrewery = ""
+                    reload()
+                    vm.showToast("Ajouté ✓", ToastPayload.Variant.SUCCESS)
+                } catch (e: Exception) {
+                    vm.showToast(e.message ?: "Échec", ToastPayload.Variant.ERROR)
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        if (items.isEmpty()) {
+            BeerEmptyState("🍺", "Liste vide", "Ajoute des bières à goûter.")
         } else {
-            LazyColumn {
-                items(wishlist) { w ->
-                    Row(modifier = Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("• ${w.beerName} (${w.brewery ?: ""})", modifier = Modifier.weight(1f))
-                        TextButton(onClick = { onDelete(w.id) }) { Text("Suppr") }
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(items, key = { it.id }) { w ->
+                    BeerCard {
+                        Text(w.beerName, color = BeerColors.text, fontWeight = FontWeight.Bold)
+                        Text("${w.brewery.orEmpty()} · ${w.style.orEmpty()}", color = BeerColors.muted, fontSize = 12.sp)
+                        Row {
+                            TextButton(onClick = { vm.startWishlistTaste(w) }) {
+                                Text("Goûter", color = BeerColors.accent)
+                            }
+                            TextButton(onClick = {
+                                scope.launch {
+                                    try {
+                                        api.deleteWishlist(w.id)
+                                        reload()
+                                    } catch (e: Exception) {
+                                        vm.showToast(e.message ?: "Erreur", ToastPayload.Variant.ERROR)
+                                    }
+                                }
+                            }) { Text("Suppr.", color = BeerColors.error) }
+                        }
                     }
                 }
             }
@@ -719,15 +1247,386 @@ private fun WishlistSheetContent(
     }
 }
 
-private suspend fun refreshData(
-    api: BeerAPI,
-    checkins: (List<CheckinItem>) -> Unit,
-    wishlist: (List<WishlistItem>) -> Unit,
-    stats: (HistoryStats?) -> Unit
-) {
-    try {
-        checkins(api.checkins(30))
-        wishlist(api.wishlist())
-        stats(api.stats())
-    } catch (_: Exception) {}
+@Composable
+private fun GiftsSheet(vm: AppViewModel) {
+    val api = vm.api
+    var gifts by remember { mutableStateOf(listOf<GiftIdea>()) }
+    var users by remember { mutableStateOf(listOf<CoupleStats.CoupleUser>()) }
+    var partner by remember { mutableStateOf("") }
+    var search by remember { mutableStateOf("") }
+    var filterStyle by remember { mutableStateOf("") }
+    var minRating by remember { mutableFloatStateOf(0f) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var loading by remember { mutableStateOf(true) }
+
+    val giftsContext = LocalContext.current
+    val cache = remember(giftsContext) { OfflineCache(giftsContext) }
+    LaunchedEffect(Unit) {
+        try {
+            val data = api.coupleStats()
+            gifts = data.giftIdeas.orEmpty()
+            users = data.users.orEmpty()
+            partner = users.firstOrNull { it.username != vm.user }?.username.orEmpty()
+            cache.saveCouple(data)
+        } catch (e: Exception) {
+            val cached = cache.loadCouple()
+            if (cached != null) {
+                gifts = cached.giftIdeas.orEmpty()
+                users = cached.users.orEmpty()
+                partner = users.firstOrNull { it.username != vm.user }?.username.orEmpty()
+                error = "Hors ligne — cache local"
+            } else {
+                error = e.message
+            }
+        }
+        loading = false
+    }
+
+    val styleOptions = remember(gifts) {
+        gifts.mapNotNull { it.style }.filter { it.isNotEmpty() }.distinct().sorted()
+    }
+    val filtered = gifts.filter { g ->
+        if (minRating > 0) {
+            if (minRating >= 5f && (g.rating ?: 0.0) < 4.99) return@filter false
+            else if ((g.rating ?: 0.0) < minRating) return@filter false
+        }
+        if (filterStyle.isNotEmpty() && g.style != filterStyle) return@filter false
+        if (search.isNotEmpty()) {
+            val hay = "${g.beerName} ${g.brewery.orEmpty()} ${g.style.orEmpty()}".lowercase()
+            if (!hay.contains(search.lowercase())) return@filter false
+        }
+        true
+    }
+
+    SheetScaffold(
+        title = if (partner.isEmpty()) "Idées cadeaux" else "Idées cadeaux — $partner",
+        onClose = { vm.closeSheet() }
+    ) {
+        error?.let { Text(it, color = BeerColors.error) }
+        if (loading) {
+            CircularProgressIndicator(color = BeerColors.accent, modifier = Modifier.align(Alignment.CenterHorizontally))
+            return@SheetScaffold
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            users.forEach { u ->
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(BeerColors.card)
+                        .border(1.dp, BeerColors.border, RoundedCornerShape(10.dp))
+                        .padding(9.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(if (u.username == vm.user) "Toi" else u.username, color = BeerColors.muted, fontSize = 11.sp)
+                    Text("${u.total}", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                    Text("dégust.", color = BeerColors.muted, fontSize = 11.sp)
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        BeerField("Recherche", search, { search = it }, "nom, brasserie…")
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(selected = minRating >= 4f, onClick = { minRating = if (minRating >= 4f) 0f else 4f }, label = { Text("★4+") })
+            FilterChip(selected = minRating >= 4.5f, onClick = { minRating = if (minRating >= 4.5f) 0f else 4.5f }, label = { Text("★4.5+") })
+        }
+        if (filtered.isEmpty()) {
+            Text("Aucune idée cadeau avec ces filtres.", color = BeerColors.muted, modifier = Modifier.padding(24.dp))
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.weight(1f, fill = true)) {
+                items(filtered, key = { it.id }) { g ->
+                    BeerCard {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            BeerAuthImage(
+                                path = ServerSettings.giftPhotoPath(g.photoPath),
+                                api = api,
+                                modifier = Modifier.size(88.dp).clip(RoundedCornerShape(10.dp))
+                            )
+                            Column(Modifier.weight(1f)) {
+                                Text(g.beerName, color = BeerColors.text, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "${g.brewery ?: "—"} · ${g.style ?: "?"}",
+                                    color = BeerColors.muted,
+                                    fontSize = 12.sp
+                                )
+                                g.rating?.let {
+                                    Text("★ ${formatRating(it)}", color = BeerColors.accent, fontSize = 12.sp)
+                                }
+                                Text("Notée par ${g.likedBy ?: "?"}", color = BeerColors.muted, fontSize = 11.sp)
+                                g.comment?.takeIf { it.isNotBlank() }?.let {
+                                    Text("« $it »", color = BeerColors.text, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PendingSheet(vm: AppViewModel) {
+    val scope = rememberCoroutineScope()
+    SheetScaffold("En attente", onClose = { vm.closeSheet() }) {
+        BeerPrimaryButton("Synchroniser maintenant") {
+            scope.launch {
+                vm.syncPending()
+                vm.showToast("Sync tentée", ToastPayload.Variant.INFO)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Créations en attente", color = BeerColors.text, fontWeight = FontWeight.SemiBold)
+        if (vm.pendingItems.isEmpty()) {
+            Text("Aucune dégustation en attente.", color = BeerColors.muted)
+        } else {
+            vm.pendingItems.forEach { p ->
+                BeerCard {
+                    Text(p.beerName, color = BeerColors.text, fontWeight = FontWeight.Bold)
+                    Text("${p.brewery} · ${p.style} · ★${formatRating(p.rating)}", color = BeerColors.muted, fontSize = 12.sp)
+                    TextButton(onClick = { vm.removePending(p.id) }) {
+                        Text("Supprimer", color = BeerColors.error)
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text("Suppressions en attente", color = BeerColors.text, fontWeight = FontWeight.SemiBold)
+        if (vm.pendingDeletes.isEmpty()) {
+            Text("Aucune suppression en attente.", color = BeerColors.muted)
+        } else {
+            vm.pendingDeletes.forEach { id ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Suppression #$id", color = BeerColors.text, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { vm.removePendingDelete(id) }) {
+                        Text("Annuler", color = BeerColors.error)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CheckinDetailSheet(vm: AppViewModel, item: CheckinItem) {
+    val scope = rememberCoroutineScope()
+    var hidden by remember { mutableStateOf(item.hiddenFromPartner == true) }
+
+    SheetScaffold(item.beerName, onClose = { vm.closeSheet() }) {
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            BeerAuthImage(
+                path = item.photoURL,
+                api = vm.api,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(240.dp)
+                    .clip(RoundedCornerShape(12.dp))
+            )
+            Spacer(Modifier.height(12.dp))
+            Text("★ ${formatRating(item.rating)}", color = BeerColors.accent, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(
+                "${item.brewery ?: "—"} · ${item.style ?: "?"} · ${formatDate(item.createdAt)}",
+                color = BeerColors.muted
+            )
+            item.comment?.takeIf { it.isNotBlank() }?.let {
+                Spacer(Modifier.height(8.dp))
+                Text("« $it »", color = BeerColors.text)
+            }
+            item.flavors?.takeIf { it.isNotEmpty() }?.let {
+                Text("Goûts: ${it.joinToString()}", color = BeerColors.muted, fontSize = 13.sp)
+            }
+            item.hops?.takeIf { it.isNotEmpty() }?.let {
+                Text("Houblons: ${it.joinToString()}", color = BeerColors.muted, fontSize = 13.sp)
+            }
+            Spacer(Modifier.height(12.dp))
+            BeerPrimaryButton("Re-noter") { vm.startRetaste(item) }
+            BeerSecondaryButton("Modifier") {
+                vm.editingCheckin = item
+                vm.openSheet(BeerSheet.EDIT)
+            }
+            if (vm.isAdmin) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Masqué partenaire", color = BeerColors.text, modifier = Modifier.weight(1f))
+                    Switch(checked = hidden, onCheckedChange = { v ->
+                        hidden = v
+                        scope.launch {
+                            try {
+                                vm.api.updateCheckin(item.id, hiddenFromPartner = v)
+                                vm.showToast(if (v) "Masqué" else "Visible", ToastPayload.Variant.SUCCESS)
+                            } catch (e: Exception) {
+                                hidden = !v
+                                vm.showToast(e.message ?: "Erreur", ToastPayload.Variant.ERROR)
+                            }
+                        }
+                    })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CheckinEditSheet(vm: AppViewModel, item: CheckinItem) {
+    val scope = rememberCoroutineScope()
+    var rating by remember { mutableFloatStateOf(item.rating.toFloat()) }
+    var comment by remember { mutableStateOf(item.comment.orEmpty()) }
+    var flavors by remember { mutableStateOf(item.flavors.orEmpty().toSet()) }
+    var hops by remember { mutableStateOf(item.hops.orEmpty().toSet()) }
+    var flavorTags by remember { mutableStateOf(listOf<String>()) }
+    var hopTags by remember { mutableStateOf(listOf<String>()) }
+    var customFlavor by remember { mutableStateOf("") }
+    var customHop by remember { mutableStateOf("") }
+    var hidden by remember { mutableStateOf(item.hiddenFromPartner == true) }
+    var busy by remember { mutableStateOf(false) }
+    var removePhoto by remember { mutableStateOf(false) }
+    var newPhoto by remember { mutableStateOf<File?>(null) }
+    val context = LocalContext.current
+    var pending by remember { mutableStateOf<File?>(null) }
+
+    LaunchedEffect(Unit) {
+        try {
+            val fh = vm.api.flavors(item.style.orEmpty())
+            flavorTags = (fh.suggestedFlavors ?: fh.flavors).orEmpty()
+            hopTags = (fh.suggestedHops ?: fh.hops).orEmpty()
+        } catch (_: Exception) {
+        }
+    }
+
+    val takePic = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        if (ok && pending != null) {
+            newPhoto = pending
+            removePhoto = false
+        }
+        pending = null
+    }
+
+    SheetScaffold("Modifier la dégustation", onClose = { vm.closeSheet() }) {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                "${item.brewery ?: "—"} · ${item.style ?: "?"} · ${formatDate(item.createdAt)}",
+                color = BeerColors.muted,
+                fontSize = 13.sp
+            )
+            BeerCard {
+                UntappdRatingSlider(rating, { rating = it }, onTick = { vm.hapticTick() })
+            }
+            if (flavorTags.isNotEmpty()) {
+                BeerCard {
+                    FlavorTagGrid("Goûts", flavorTags, flavors, 8) {
+                        flavors = if (it in flavors) flavors - it else flavors + it
+                    }
+                }
+            }
+            BeerCard {
+                Text("Goûts perso", color = BeerColors.muted)
+                CustomTagInput("…", customFlavor, { customFlavor = it }) {
+                    val t = customFlavor.trim()
+                    if (t.isNotBlank() && flavors.size < 8) {
+                        flavors = flavors + t
+                        customFlavor = ""
+                    }
+                }
+            }
+            if (hopTags.isNotEmpty()) {
+                BeerCard {
+                    FlavorTagGrid("Houblons", hopTags, hops, 6) {
+                        hops = if (it in hops) hops - it else hops + it
+                    }
+                }
+            }
+            BeerCard {
+                Text("Houblons perso", color = BeerColors.muted)
+                CustomTagInput("…", customHop, { customHop = it }) {
+                    val t = customHop.trim()
+                    if (t.isNotBlank() && hops.size < 6) {
+                        hops = hops + t
+                        customHop = ""
+                    }
+                }
+            }
+            BeerField("Commentaire", comment, { if (it.length <= 120) comment = it })
+            if (vm.isAdmin) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Masqué partenaire", color = BeerColors.text, modifier = Modifier.weight(1f))
+                    Switch(checked = hidden, onCheckedChange = { hidden = it })
+                }
+            }
+            BeerSecondaryButton("📷 Nouvelle photo") {
+                try {
+                    val dir = File(context.cacheDir, "beer").apply { mkdirs() }
+                    val f = File(dir, "edit_${System.currentTimeMillis()}.jpg")
+                    val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", f)
+                    pending = f
+                    takePic.launch(uri)
+                } catch (e: Exception) {
+                    vm.showToast(e.message ?: "Caméra", ToastPayload.Variant.ERROR)
+                }
+            }
+            if (item.photoURL != null || newPhoto != null) {
+                BeerSecondaryButton("Retirer la photo") {
+                    removePhoto = true
+                    newPhoto = null
+                }
+            }
+            BeerPrimaryButton(if (busy) "Enregistrement…" else "Enregistrer", busy = busy) {
+                scope.launch {
+                    busy = true
+                    try {
+                        vm.api.updateCheckin(
+                            id = item.id,
+                            rating = rating.toDouble(),
+                            flavors = flavors.toList(),
+                            hops = hops.toList(),
+                            comment = comment,
+                            hiddenFromPartner = if (vm.isAdmin) hidden else null
+                        )
+                        if (removePhoto) {
+                            try { vm.api.removeCheckinPhoto(item.id) } catch (_: Exception) {}
+                        }
+                        newPhoto?.let { f ->
+                            val bytes = ImageUtils.compressJPEG(f.readBytes())
+                            vm.api.replaceCheckinPhoto(item.id, bytes)
+                        }
+                        vm.showToast("Modifié ✓", ToastPayload.Variant.SUCCESS)
+                        vm.closeSheet()
+                    } catch (e: Exception) {
+                        vm.showToast(e.message ?: "Erreur", ToastPayload.Variant.ERROR)
+                    } finally {
+                        busy = false
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PatchnotesSheet(vm: AppViewModel) {
+    var text by remember { mutableStateOf("Chargement…") }
+    LaunchedEffect(Unit) {
+        text = try {
+            val p = vm.api.patchnotes()
+            "v${p.version.orEmpty()}\n\n${p.markdown.orEmpty()}"
+        } catch (e: Exception) {
+            e.message ?: "Indisponible"
+        }
+    }
+    SheetScaffold("Patch notes", onClose = { vm.closeSheet() }) {
+        Text(text, color = BeerColors.text, fontSize = 13.sp, modifier = Modifier.verticalScroll(rememberScrollState()))
+    }
+}
+
+@Composable
+private fun AdminStubSheet(vm: AppViewModel) {
+    SheetScaffold("Admin", onClose = { vm.closeSheet() }) {
+        Text(
+            "Panneau admin complet disponible sur iOS. Sur Android: patch notes + compte owner. Gestion invites via le hub web si besoin.",
+            color = BeerColors.muted
+        )
+        Spacer(Modifier.height(12.dp))
+        BeerSecondaryButton("Voir patch notes") {
+            vm.openSheet(BeerSheet.PATCHNOTES)
+        }
+    }
 }
