@@ -290,9 +290,9 @@ struct BeerWizardView: View {
                     text: $location,
                     placeholder: "ex. Chez nous · Brasserie X · https://maps…"
                 )
-                .onChange(of: location) { v in
+                .onChange(of: location, perform: { v in
                     if v.count > 300 { location = String(v.prefix(300)) }
-                }
+                })
                 HStack {
                     Spacer()
                     Text("\(location.count)/300")

@@ -115,9 +115,9 @@ struct CheckinEditView: View {
                         text: $location,
                         placeholder: "ex. Chez nous · https://maps…"
                     )
-                    .onChange(of: location) { v in
+                    .onChange(of: location, perform: { v in
                         if v.count > 300 { location = String(v.prefix(300)) }
-                    }
+                    })
                     Text("\(location.count)/300")
                         .font(.caption2)
                         .foregroundStyle(Theme.muted)

@@ -143,23 +143,28 @@ struct CheckinDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
-    /// Si le texte contient une URL http(s), la rend cliquable ; sinon nil.
+    /// Si le texte est (ou contient) une URL http(s), la rend cliquable.
     private static func openableURL(from text: String) -> URL? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if let u = URL(string: trimmed), let scheme = u.scheme?.lowercased(),
            (scheme == "http" || scheme == "https"), u.host != nil {
             return u
         }
-        // Extract first http(s) URL embedded in free text
-        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
+        // Extraire la première URL http(s) dans un texte libre (ex. "Chez X · https://…")
+        guard let regex = try? NSRegularExpression(pattern: #"https?://[^\s]+"#) else { return nil }
+        let ns = trimmed as NSString
+        guard let match = regex.firstMatch(in: trimmed, range: NSRange(location: 0, length: ns.length)) else {
             return nil
         }
-        let range = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
-        let match = detector.firstMatch(in: trimmed, options: [], range: range)
-        guard let match, let url = match.url,
-              let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else { return nil }
-        return url
+        var candidate = ns.substring(with: match.range)
+        while candidate.last.map({ ".,);]".contains($0) }) == true {
+            candidate = String(candidate.dropLast())
+        }
+        guard let u = URL(string: candidate),
+              let scheme = u.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              u.host != nil else { return nil }
+        return u
     }
 
     private func toggleHidden() async {
