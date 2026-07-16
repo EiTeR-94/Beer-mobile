@@ -51,4 +51,9 @@ enum ServerSettings {
         while s.hasSuffix("/") { s.removeLast() }
         return s + "/"
     }
+
+    /// Heuristic: local WiFi where LAN IP is preferred (used by BeerAPI discover).
+    static func isLikelyOnLocalWifi() -> Bool {
+        true
+    }
 }
