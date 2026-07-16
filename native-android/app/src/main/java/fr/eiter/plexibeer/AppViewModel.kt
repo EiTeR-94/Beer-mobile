@@ -25,13 +25,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val api = BeerAPI.getInstance(app)
     val imageCache = ImageCache.getInstance(app)
     val listCache = OfflineCache(app)
-
-    val offline = OfflineQueue(app) {
-        // Always post to main for Compose state
-        viewModelScope.launch {
-            refreshOfflineUi()
-        }
-    }
+    val offline = OfflineQueue(app)
 
     var user by mutableStateOf<String?>(null)
         private set
@@ -69,9 +63,34 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var lastOfflineToastAt = 0L
 
     init {
+        // Listener APRÈS init des states Compose — sinon crash immédiat au launch
+        // (viewModelScope Main.immediate pendant le constructeur).
+        offline.setOnChanged {
+            try {
+                refreshOfflineUi()
+            } catch (_: Exception) {
+            }
+        }
         refreshOfflineUi()
-        viewModelScope.launch { bootstrap() }
-        registerConnectivity()
+        viewModelScope.launch {
+            try {
+                bootstrap()
+            } catch (e: Exception) {
+                isLoading = false
+                networkStatus = NetworkStatus.OFFLINE
+                restoreOfflineSessionIfNeeded()
+                showToast(
+                    "Démarrage hors ligne",
+                    ToastPayload.Variant.WARN,
+                    detail = e.message?.take(80),
+                    durationMs = 4000
+                )
+            }
+        }
+        try {
+            registerConnectivity()
+        } catch (_: Exception) {
+        }
     }
 
     override fun onCleared() {

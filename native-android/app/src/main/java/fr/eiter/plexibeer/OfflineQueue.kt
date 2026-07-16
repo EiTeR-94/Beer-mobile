@@ -7,18 +7,18 @@ import java.io.File
 
 /**
  * File offline (créations + suppressions), persistée disque.
- * [onChanged] notifie l'UI (badge « En attente ») après chaque mutation.
+ * [onChanged] optionnel — à brancher APRÈS construction du ViewModel (évite crash launch).
  */
-class OfflineQueue(
-    context: Context,
-    private val onChanged: (() -> Unit)? = null
-) {
+class OfflineQueue(context: Context) {
     private val dir = File(context.applicationContext.filesDir, "offline").apply { mkdirs() }
     private val createsFile = File(dir, "pending-checkins.json")
     private val deletesFile = File(dir, "pending-deletes.json")
     private val photosDir = File(dir, "photos").apply { mkdirs() }
     private val gson = Gson()
     private val lock = Any()
+
+    @Volatile
+    private var onChanged: (() -> Unit)? = null
 
     @Volatile
     var items: List<PendingCheckin> = emptyList()
@@ -31,15 +31,24 @@ class OfflineQueue(
     val pendingCount: Int get() = items.size + pendingDeletes.size
 
     init {
-        load()
+        loadQuiet()
+    }
+
+    /** Brancher le listener UI une fois le ViewModel prêt. */
+    fun setOnChanged(listener: (() -> Unit)?) {
+        onChanged = listener
     }
 
     fun load() {
+        loadQuiet()
+        notifyChanged()
+    }
+
+    private fun loadQuiet() {
         synchronized(lock) {
             items = readList(createsFile)
             pendingDeletes = readIntList(deletesFile)
         }
-        notifyChanged()
     }
 
     fun enqueue(item: PendingCheckin) {
@@ -58,7 +67,6 @@ class OfflineQueue(
                     src.copyTo(dest, overwrite = true)
                     final = item.copy(photoPath = dest.absolutePath)
                 } catch (_: Exception) {
-                    // keep original path
                 }
             }
             items = items + final
@@ -102,10 +110,6 @@ class OfflineQueue(
         notifyChanged()
     }
 
-    /**
-     * Envoie les actions en attente. Retourne le nombre d'actions réussies.
-     * S'arrête au premier échec réseau (les suivantes restent en file).
-     */
     suspend fun flush(api: BeerAPI): Int {
         var okCount = 0
         val creates = synchronized(lock) { items.toList() }
@@ -132,7 +136,6 @@ class OfflineQueue(
                     photoJPEG = photoCompressed,
                     location = item.location.orEmpty()
                 )
-                // Succès ou doublon déjà traité côté serveur → sortir de la file
                 if (result.ok == true || result.id != null || result.duplicate == true) {
                     remove(item.id)
                     okCount++
