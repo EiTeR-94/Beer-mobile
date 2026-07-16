@@ -288,17 +288,12 @@ struct BeerWizardView: View {
                 BeerField(
                     label: "Lieu ou lien",
                     text: $location,
-                    placeholder: "ex. Chez nous · Brasserie X · https://maps…"
+                    placeholder: "ex. Chez nous · Brasserie X · https://maps.app.goo.gl/…"
                 )
-                .onChange(of: location, perform: { v in
-                    if v.count > 300 { location = String(v.prefix(300)) }
-                })
-                HStack {
-                    Spacer()
-                    Text("\(location.count)/300")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.muted)
-                }
+                Text("\(min(location.count, 300))/300")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.muted)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .beerCard()
 

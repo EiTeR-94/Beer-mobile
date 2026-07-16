@@ -111,7 +111,6 @@ struct CheckinDetailView: View {
         .preferredColorScheme(.dark)
     }
 
-    @ViewBuilder
     private func locationRow(_ loc: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text("📍")
@@ -120,19 +119,11 @@ struct CheckinDetailView: View {
                 Text("Lieu")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.muted)
-                if let url = Self.openableURL(from: loc) {
-                    Link(destination: url) {
-                        Text(loc)
-                            .font(.system(size: 14))
-                            .foregroundStyle(Theme.accent)
-                            .multilineTextAlignment(.leading)
-                    }
-                } else {
-                    Text(loc)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Theme.text)
-                        .multilineTextAlignment(.leading)
-                }
+                Text(loc)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.text)
+                    .multilineTextAlignment(.leading)
+                    .textSelection(.enabled)
             }
             Spacer(minLength: 0)
         }
@@ -141,31 +132,6 @@ struct CheckinDetailView: View {
         .background(Theme.card)
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.border))
         .clipShape(RoundedRectangle(cornerRadius: 14))
-    }
-
-    /// Si le texte est (ou contient) une URL http(s), la rend cliquable.
-    private static func openableURL(from text: String) -> URL? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let u = URL(string: trimmed), let scheme = u.scheme?.lowercased(),
-           (scheme == "http" || scheme == "https"), u.host != nil {
-            return u
-        }
-        // Extraire la première URL http(s) dans un texte libre (ex. "Chez X · https://…")
-        guard let regex = try? NSRegularExpression(pattern: #"https?://[^\s]+"#) else { return nil }
-        let ns = trimmed as NSString
-        guard let match = regex.firstMatch(in: trimmed, range: NSRange(location: 0, length: ns.length)) else {
-            return nil
-        }
-        var candidate = ns.substring(with: match.range)
-        let trail: Set<Character> = [".", ",", ")", ";", "]"]
-        while let last = candidate.last, trail.contains(last) {
-            candidate.removeLast()
-        }
-        guard let u = URL(string: candidate),
-              let scheme = u.scheme?.lowercased(),
-              (scheme == "http" || scheme == "https"),
-              u.host != nil else { return nil }
-        return u
     }
 
     private func toggleHidden() async {

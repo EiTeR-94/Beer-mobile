@@ -109,20 +109,11 @@ struct CheckinEditView: View {
 
                 BeerField(label: "Commentaire", text: $comment)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    BeerField(
-                        label: "Lieu ou lien",
-                        text: $location,
-                        placeholder: "ex. Chez nous · https://maps…"
-                    )
-                    .onChange(of: location, perform: { v in
-                        if v.count > 300 { location = String(v.prefix(300)) }
-                    })
-                    Text("\(location.count)/300")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.muted)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
+                BeerField(
+                    label: "Lieu ou lien",
+                    text: $location,
+                    placeholder: "ex. Chez nous · https://maps.app.goo.gl/…"
+                )
 
                 if let message {
                     Text(message).font(.footnote).foregroundStyle(Theme.error)

@@ -1,18 +1,29 @@
 import XCTest
-@testable import BeerNative  // Note: requires test target setup in XcodeGen for real runs
-
-// Theme 1 correction: basic test scaffolding for models (expand with mocks for BeerAPI).
-// Run via xcodebuild test after wiring a test target in project.yml.
+@testable import BeerNative
 
 final class ExampleModelTests: XCTestCase {
     func testPendingCheckinEquality() throws {
         let now = Date()
-        let p1 = PendingCheckin(id: UUID(), createdAt: now, barcode: "123", beerName: "Test", brewery: "B", style: "S", abv: "5", summary: "", rating: 4.0, flavors: [], hops: [], comment: "", untappdBid: nil, force: false, photoJPEGBase64: nil)
-        let p2 = p1
-        XCTAssertEqual(p1.beerName, p2.beerName)
+        let p1 = PendingCheckin(
+            id: UUID(),
+            createdAt: now,
+            barcode: "123",
+            beerName: "Test",
+            brewery: "B",
+            style: "S",
+            abv: "5",
+            summary: "",
+            rating: 4.0,
+            flavors: [],
+            hops: [],
+            comment: "",
+            untappdBid: "",
+            force: false,
+            photoJPEGBase64: nil,
+            location: nil
+        )
+        XCTAssertEqual(p1.beerName, "Test")
         XCTAssertEqual(p1.rating, 4.0)
+        XCTAssertNil(p1.location)
     }
-
-    // TODO: add tests for ServerSettings.lanApiBase, OfflineQueue enqueue dedup, cache save/load, etc.
-    // Mock BeerAPI for unit testing discover / baseURL logic.
 }
