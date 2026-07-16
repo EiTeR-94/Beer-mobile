@@ -157,12 +157,13 @@ struct CheckinDetailView: View {
             return nil
         }
         var candidate = ns.substring(with: match.range)
-        while candidate.last.map({ ".,);]".contains($0) }) == true {
-            candidate = String(candidate.dropLast())
+        let trail: Set<Character> = [".", ",", ")", ";", "]"]
+        while let last = candidate.last, trail.contains(last) {
+            candidate.removeLast()
         }
         guard let u = URL(string: candidate),
               let scheme = u.scheme?.lowercased(),
-              scheme == "http" || scheme == "https",
+              (scheme == "http" || scheme == "https"),
               u.host != nil else { return nil }
         return u
     }
