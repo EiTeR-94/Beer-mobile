@@ -25,7 +25,7 @@
         android:usesCleartextTraffic="true"
         tools:targetApi="31">
 
-        <!-- For future full CameraX / photo file sharing -->
+        <!-- CameraX preview + FileProvider photos wizard -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

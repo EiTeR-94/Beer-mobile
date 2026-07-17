@@ -39,15 +39,16 @@ import androidx.lifecycle.LifecycleEventObserver
 import coil.compose.AsyncImage
 import fr.eiter.plexibeer.*
 import fr.eiter.plexibeer.ui.theme.BeerColors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.coroutines.resume
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
 
 @Composable
 fun BeerApp(vm: AppViewModel) {
@@ -505,7 +506,7 @@ private fun BeerWizard(vm: AppViewModel) {
     val api = vm.api
 
     var product by remember { mutableStateOf<BeerProduct?>(null) }
-    var scanStatus by remember { mutableStateOf("Cadre le code-barres ou prends une photo") }
+    var scanStatus by remember { mutableStateOf("Cadre le code-barres dans le rectangle") }
     var busy by remember { mutableStateOf(false) }
     var untappdBrewery by remember { mutableStateOf("") }
     var untappdName by remember { mutableStateOf("") }
@@ -537,6 +538,12 @@ private fun BeerWizard(vm: AppViewModel) {
     var duplicateDetail by remember { mutableStateOf("") }
     var pendingCapture by remember { mutableStateOf<File?>(null) }
     var captureMode by remember { mutableStateOf("photo") } // photo | scan
+    var hasCameraPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
 
     // Apply prefill from retaste / wishlist
     LaunchedEffect(vm.wizardProduct) {
@@ -565,7 +572,7 @@ private fun BeerWizard(vm: AppViewModel) {
 
     fun resetWizard() {
         product = null
-        scanStatus = "Cadre le code-barres ou prends une photo"
+        scanStatus = "Cadre le code-barres dans le rectangle"
         photoFile = null
         location = ""
         rating = 3f
@@ -583,6 +590,48 @@ private fun BeerWizard(vm: AppViewModel) {
         vm.wizardStep = 1
     }
 
+    val eanLookupMutex = remember { Mutex() }
+
+    /** Lookup EAN après lecture live ou photo (mutex = pas de double lookup en cascade). */
+    suspend fun lookupScannedEan(rawCode: String, fromLive: Boolean) {
+        val digits = rawCode.filter { it.isDigit() }
+        if (digits.length < 8) {
+            scanStatus = "Code trop court"
+            return
+        }
+        if (!eanLookupMutex.tryLock()) return
+        busy = true
+        manualEan = digits
+        scanStatus = "Recherche…"
+        try {
+            val res = api.lookup(digits)
+            if (res.ok) {
+                product = res.asProduct(digits)
+                scanStatus = "Bière identifiée ✓"
+                vm.showToast(
+                    "Code-barres lu ✓",
+                    ToastPayload.Variant.SUCCESS,
+                    digits,
+                    label = if (fromLive) "Scan" else "Photo",
+                )
+            } else {
+                scanStatus = res.error ?: "Scanné $digits (introuvable)"
+                product = BeerProduct(barcode = digits, beerName = "")
+                vm.showToast(
+                    "Code lu — introuvable",
+                    ToastPayload.Variant.WARN,
+                    digits,
+                    label = if (fromLive) "Scan" else "Photo",
+                )
+            }
+        } catch (e: Exception) {
+            scanStatus = e.message ?: "Erreur"
+        } finally {
+            busy = false
+            eanLookupMutex.unlock()
+        }
+    }
+
     val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         val f = pendingCapture
         pendingCapture = null
@@ -592,40 +641,45 @@ private fun BeerWizard(vm: AppViewModel) {
             vm.showToast("Photo prête ✓", ToastPayload.Variant.SUCCESS)
         } else {
             scope.launch {
+                // busy coupe le live scan pendant le décodage photo
                 busy = true
                 scanStatus = "Décodage photo…"
+                var decoded: String? = null
+                var serverProduct: BeerProduct? = null
+                var decodeError: String? = null
                 try {
                     val jpeg = ImageUtils.compressJPEG(f.readBytes())
-                    // Try ML Kit first, then server scan-photo
-                    val mlCode = tryMlKitBarcode(context, f)
-                    if (!mlCode.isNullOrBlank()) {
-                        manualEan = mlCode
-                        val res = api.lookup(mlCode.filter { it.isDigit() })
-                        if (res.ok) {
-                            product = res.asProduct(mlCode)
-                            scanStatus = "Bière identifiée ✓"
-                            vm.showToast("Code-barres lu ✓", ToastPayload.Variant.SUCCESS, mlCode)
-                        } else {
-                            scanStatus = res.error ?: "Scanné $mlCode (introuvable)"
-                            product = BeerProduct(barcode = mlCode, beerName = "")
-                        }
+                    val mlCode = tryMlKitBarcode(context, f)?.filter { it.isDigit() }
+                    if (!mlCode.isNullOrBlank() && mlCode.length >= 8) {
+                        decoded = mlCode
                     } else {
                         val scan = api.scanPhoto(jpeg)
                         if (scan.ok) {
-                            val digits = scan.barcode.orEmpty()
-                            manualEan = digits
-                            product = scan.asProduct(digits)
-                            scanStatus = "Bière identifiée ✓"
-                            vm.showToast("Code-barres lu ✓", ToastPayload.Variant.SUCCESS, digits.ifBlank { null })
+                            val digits = scan.barcode.orEmpty().filter { it.isDigit() }
+                            if (digits.length >= 8) {
+                                decoded = digits
+                            } else {
+                                serverProduct = scan.asProduct(digits)
+                            }
                         } else {
-                            scanStatus = scan.error ?: "Code illisible"
+                            decodeError = scan.error ?: "Code illisible"
                         }
                     }
                 } catch (e: Exception) {
-                    scanStatus = e.message ?: "Erreur scan"
+                    decodeError = e.message ?: "Erreur scan"
                 } finally {
                     busy = false
                     try { f.delete() } catch (_: Exception) {}
+                }
+
+                when {
+                    decoded != null -> lookupScannedEan(decoded!!, fromLive = false)
+                    serverProduct != null -> {
+                        product = serverProduct
+                        scanStatus = "Bière identifiée ✓"
+                        vm.showToast("Code-barres lu ✓", ToastPayload.Variant.SUCCESS)
+                    }
+                    decodeError != null -> scanStatus = decodeError!!
                 }
             }
         }
@@ -633,8 +687,7 @@ private fun BeerWizard(vm: AppViewModel) {
 
     fun launchCamera(mode: String) {
         captureMode = mode
-        val p = Manifest.permission.CAMERA
-        if (ContextCompat.checkSelfPermission(context, p) != PackageManager.PERMISSION_GRANTED) {
+        if (!hasCameraPermission) {
             vm.showToast("Autorise la caméra puis réessaie", ToastPayload.Variant.WARN)
             return
         }
@@ -650,17 +703,43 @@ private fun BeerWizard(vm: AppViewModel) {
         }
     }
 
+    /** pendingCamAction: null = live only, "scan"|"photo" = open still camera after grant */
+    var pendingCamAction by remember { mutableStateOf<String?>(null) }
+
     val camPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) launchCamera(captureMode) else vm.showToast("Permission caméra refusée", ToastPayload.Variant.ERROR)
+        hasCameraPermission = granted
+        val action = pendingCamAction
+        pendingCamAction = null
+        if (!granted) {
+            vm.showToast("Permission caméra refusée", ToastPayload.Variant.ERROR)
+            return@rememberLauncherForActivityResult
+        }
+        if (action == "scan" || action == "photo") {
+            launchCamera(action)
+        }
+        // sinon : scan live s'active tout seul via recomposition
     }
 
     fun ensureCamera(mode: String) {
         captureMode = mode
-        val p = Manifest.permission.CAMERA
-        if (ContextCompat.checkSelfPermission(context, p) == PackageManager.PERMISSION_GRANTED) {
+        if (hasCameraPermission) {
             launchCamera(mode)
         } else {
-            camPerm.launch(p)
+            pendingCamAction = mode
+            camPerm.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    fun ensureLiveCameraPermission() {
+        if (hasCameraPermission) return
+        pendingCamAction = null
+        camPerm.launch(Manifest.permission.CAMERA)
+    }
+
+    // Demande caméra dès l'étape scan (comme iOS)
+    LaunchedEffect(vm.wizardStep) {
+        if (vm.wizardStep == 1 && !hasCameraPermission) {
+            ensureLiveCameraPermission()
         }
     }
 
@@ -730,27 +809,75 @@ private fun BeerWizard(vm: AppViewModel) {
             1 -> {
                 BeerLead("Scan EAN optionnel — ou cherche directement sur Untappd.")
 
-                // Scan area
+                // Scan live auto (parité iOS) + bouton photo secours
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .height(180.dp)
+                        .height(260.dp)
                         .clip(RoundedCornerShape(16.dp))
                         .background(BeerColors.photoBg)
                         .border(1.dp, BeerColors.border, RoundedCornerShape(16.dp))
-                        .clickable { ensureCamera("scan") },
-                    contentAlignment = Alignment.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("📷", fontSize = 32.sp)
-                        Text("Scanner / Prendre photo EAN", color = BeerColors.muted, fontSize = 13.sp)
-                        if (busy) {
+                    if (hasCameraPermission) {
+                        LiveBarcodeScanner(
+                            enabled = !busy && vm.wizardStep == 1,
+                            onCode = { code ->
+                                scope.launch { lookupScannedEan(code, fromLive = true) }
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Column(
+                            Modifier
+                                .fillMaxSize()
+                                .clickable { ensureLiveCameraPermission() },
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            Text("📷", fontSize = 32.sp)
                             Spacer(Modifier.height(8.dp))
-                            CircularProgressIndicator(Modifier.size(20.dp), color = BeerColors.accent, strokeWidth = 2.dp)
+                            Text(
+                                "Autoriser la caméra pour le scan auto",
+                                color = BeerColors.muted,
+                                fontSize = 13.sp,
+                            )
                         }
                     }
+
+                    // Bouton photo (fallback comme iOS « Prendre photo »)
+                    OutlinedButton(
+                        onClick = { ensureCamera("scan") },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = BeerColors.card.copy(alpha = 0.92f),
+                            contentColor = BeerColors.text,
+                        ),
+                        border = BorderStroke(1.dp, BeerColors.border),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                    ) {
+                        Text("Prendre photo", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    if (busy) {
+                        CircularProgressIndicator(
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(12.dp)
+                                .size(22.dp),
+                            color = BeerColors.accent,
+                            strokeWidth = 2.dp,
+                        )
+                    }
                 }
-                Text(scanStatus, color = BeerColors.muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth())
+                Text(
+                    scanStatus,
+                    color = BeerColors.muted,
+                    fontSize = 13.sp,
+                    modifier = Modifier.fillMaxWidth(),
+                )
 
                 BeerCard {
                     Text("Chercher sur Untappd", color = BeerColors.text, fontWeight = FontWeight.SemiBold)

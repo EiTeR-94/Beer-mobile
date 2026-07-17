@@ -7,7 +7,8 @@ Application **Kotlin + Jetpack Compose**, miroir de `native-ios/` + **mode invit
 ### Compte maison (owner)
 - Login + session cookie persistée (`beer_session`)
 - TLS LAN (`192.168.1.50:8444`) avec policy domaine (Let’s Encrypt) **ou VPN**
-- Wizard, historique, wishlist, idées cadeaux, offline queue…
+- Wizard (scan EAN **live auto** CameraX + ML Kit, parité iOS), historique, wishlist, idées cadeaux, offline queue…
+- Fallback photo + saisie EAN manuelle si besoin
 
 ### Invité (4G/5G, sans VPN)
 - Onglet **Invitation** → coller le lien `…/beer/join/…` (ou deep link)

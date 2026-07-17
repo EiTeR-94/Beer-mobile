@@ -54,7 +54,7 @@ cd /home/eiter/beer && docker compose up -d
 | Action | Hors ligne |
 |--------|------------|
 | Ouvrir l'app | Oui |
-| Scanner EAN (caméra native) | Oui |
+| Scanner EAN live auto (caméra native) | Oui (iOS AVFoundation · Android CameraX+ML Kit) |
 | Identifier bière (catalogue) | Non — réseau requis |
 | Saisie manuelle + noter | Oui → file locale |
 | Sync | Auto au retour Wi‑Fi/VPN |

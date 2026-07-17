@@ -11,8 +11,8 @@ android {
         applicationId "fr.eiter.plexibeer"
         minSdk 26
         targetSdk 34
-        versionCode 200
-        versionName "4.2.8"
+        versionCode 201
+        versionName "4.2.9"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
