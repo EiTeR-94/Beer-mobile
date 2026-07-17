@@ -1,6 +1,7 @@
 package fr.eiter.plexibeer.ui
 
 import android.Manifest
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -24,6 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -31,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import coil.compose.AsyncImage
 import fr.eiter.plexibeer.*
 import fr.eiter.plexibeer.ui.theme.BeerColors
@@ -66,8 +71,36 @@ fun BeerApp(vm: AppViewModel) {
     }
 }
 
+/** Lit le presse-papiers et ne garde qu'un lien/token d'invitation Beer valide (comme iOS). */
+private fun readInviteFromClipboard(context: Context): String? {
+    return try {
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        val raw = cm?.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()
+            ?.trim().orEmpty()
+        if (raw.isEmpty()) return null
+        if (InviteSessionStore.parseInviteToken(raw) != null) return raw
+        // Cherche une URL join dans un texte plus large
+        val re = Regex("""https?://[^\s]+/beer/join/[A-Za-z0-9_-]{24,}""")
+        val m = re.find(raw)?.value
+        if (m != null && InviteSessionStore.parseInviteToken(m) != null) m else null
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun shortInvitePreview(raw: String): String {
+    val t = InviteSessionStore.parseInviteToken(raw)
+    return if (t != null && t.length >= 16) {
+        "Token : ${t.take(10)}…${t.takeLast(6)}"
+    } else {
+        raw.take(48) + if (raw.length > 48) "…" else ""
+    }
+}
+
 @Composable
 private fun LoginScreen(vm: AppViewModel) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val deepLink = vm.pendingInviteLink
     var mode by remember(deepLink) { mutableStateOf(if (deepLink != null) "invite" else "owner") }
     var username by remember { mutableStateOf("") }
@@ -75,12 +108,64 @@ private fun LoginScreen(vm: AppViewModel) {
     var inviteLink by remember(deepLink) { mutableStateOf(deepLink.orEmpty()) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var clipboardHint by remember { mutableStateOf<String?>(null) }
+    var showManual by remember { mutableStateOf(false) }
 
+    fun applyClipboard(autoActivate: Boolean) {
+        val clip = readInviteFromClipboard(context)
+        if (clip == null) {
+            clipboardHint = null
+            if (autoActivate) {
+                error = "Aucun lien d'invitation dans le presse‑papiers — copie le lien reçu puis réessaie"
+            }
+            return
+        }
+        inviteLink = clip
+        clipboardHint = "Lien d'invitation prêt"
+        error = null
+        if (autoActivate) {
+            busy = true
+            vm.joinInvite(clip) { result ->
+                busy = false
+                result.onFailure { e -> error = e.message ?: "Activation impossible" }
+            }
+        }
+    }
+
+    // Deep link → invite + auto-activation
     LaunchedEffect(deepLink) {
         if (!deepLink.isNullOrBlank()) {
             mode = "invite"
             inviteLink = deepLink
+            busy = true
+            error = null
+            vm.joinInvite(deepLink) { result ->
+                busy = false
+                result.onFailure { e -> error = e.message ?: "Activation impossible" }
+            }
         }
+    }
+
+    // Au premier affichage : si le presse-papiers a déjà un lien join → onglet Invitation
+    LaunchedEffect(Unit) {
+        if (!deepLink.isNullOrBlank()) return@LaunchedEffect
+        val clip = readInviteFromClipboard(context)
+        if (clip != null) {
+            mode = "invite"
+            inviteLink = clip
+            clipboardHint = "Lien d'invitation détecté dans le presse‑papiers"
+        }
+    }
+
+    // Au retour sur l'app (depuis WhatsApp) : relire le presse-papiers si vide
+    DisposableEffect(lifecycleOwner) {
+        val obs = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && mode == "invite" && !busy && inviteLink.isBlank()) {
+                applyClipboard(autoActivate = false)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
     }
 
     Column(
@@ -107,7 +192,11 @@ private fun LoginScreen(vm: AppViewModel) {
             )
             BeerGhostButton(
                 if (mode == "invite") "• Invitation" else "Invitation",
-                { mode = "invite"; error = null },
+                {
+                    mode = "invite"
+                    error = null
+                    applyClipboard(autoActivate = false)
+                },
                 Modifier.weight(1f)
             )
         }
@@ -155,55 +244,99 @@ private fun LoginScreen(vm: AppViewModel) {
             Spacer(Modifier.height(12.dp))
             Text("Wi‑Fi maison ou VPN Plexi requis", color = BeerColors.muted, fontSize = 11.sp)
         } else {
+            // ——— Invitation = iOS : presse-papiers 1 tap ———
             Text(
-                "Colle le lien d'invitation reçu (WhatsApp, SMS…). Fonctionne en 4G/5G, sans VPN.",
+                "Ouvre le lien reçu (WhatsApp/SMS) ou copie-le puis appuie ci‑dessous — pas besoin de coller à la main.",
                 color = BeerColors.muted,
                 fontSize = 13.sp,
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(Modifier.height(12.dp))
-            Column(Modifier.fillMaxWidth()) {
-                Text("Lien d'invitation", color = BeerColors.muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp))
-                OutlinedTextField(
-                    value = inviteLink,
-                    onValueChange = { inviteLink = it },
-                    singleLine = false,
-                    minLines = 2,
-                    maxLines = 4,
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = {
-                        Text("https://eiter.freeboxos.fr/beer/join/…", color = BeerColors.muted, fontSize = 12.sp)
-                    },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = BeerColors.text,
-                        unfocusedTextColor = BeerColors.text,
-                        focusedBorderColor = BeerColors.accent,
-                        unfocusedBorderColor = BeerColors.border,
-                        cursorColor = BeerColors.accent,
-                        focusedContainerColor = BeerColors.fieldBg,
-                        unfocusedContainerColor = BeerColors.fieldBg
-                    ),
-                    shape = RoundedCornerShape(10.dp)
-                )
-            }
-            Spacer(Modifier.height(16.dp))
-            error?.let {
-                Text(it, color = BeerColors.error, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
-            }
+            Spacer(Modifier.height(14.dp))
             BeerPrimaryButton(
-                title = if (busy) "Activation…" else "Activer l'invitation",
-                enabled = inviteLink.isNotBlank() && !busy,
+                title = if (busy) "Activation…" else "Activer depuis le presse‑papiers",
+                enabled = !busy,
                 busy = busy
             ) {
-                busy = true
-                error = null
-                vm.joinInvite(inviteLink.trim()) { result ->
-                    busy = false
-                    result.onFailure { e -> error = e.message ?: "Activation impossible" }
+                applyClipboard(autoActivate = true)
+            }
+            Spacer(Modifier.height(8.dp))
+            BeerSecondaryButton(
+                title = "Relire le presse‑papiers",
+                enabled = !busy
+            ) {
+                applyClipboard(autoActivate = false)
+            }
+            clipboardHint?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, color = BeerColors.ok, fontSize = 12.sp, modifier = Modifier.fillMaxWidth())
+            }
+            if (inviteLink.isNotBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    shortInvitePreview(inviteLink),
+                    color = BeerColors.muted,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            error?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, color = BeerColors.error, fontSize = 13.sp, modifier = Modifier.fillMaxWidth())
+            }
+            Spacer(Modifier.height(12.dp))
+            // Fallback saisie manuelle
+            Text(
+                if (showManual) "▾ Saisie manuelle" else "▸ Saisie manuelle (rare)",
+                color = BeerColors.muted,
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showManual = !showManual }
+                    .padding(vertical = 4.dp)
+            )
+            if (showManual) {
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.fillMaxWidth()) {
+                    Text("Lien d'invitation", color = BeerColors.muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp))
+                    OutlinedTextField(
+                        value = inviteLink,
+                        onValueChange = { inviteLink = it },
+                        singleLine = false,
+                        minLines = 2,
+                        maxLines = 4,
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = {
+                            Text("https://eiter.freeboxos.fr/beer/join/…", color = BeerColors.muted, fontSize = 12.sp)
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = BeerColors.text,
+                            unfocusedTextColor = BeerColors.text,
+                            focusedBorderColor = BeerColors.accent,
+                            unfocusedBorderColor = BeerColors.border,
+                            cursorColor = BeerColors.accent,
+                            focusedContainerColor = BeerColors.fieldBg,
+                            unfocusedContainerColor = BeerColors.fieldBg
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                BeerPrimaryButton(
+                    title = if (busy) "Activation…" else "Activer ce lien",
+                    enabled = inviteLink.isNotBlank() && !busy,
+                    busy = busy
+                ) {
+                    busy = true
+                    error = null
+                    vm.joinInvite(inviteLink.trim()) { result ->
+                        busy = false
+                        result.onFailure { e -> error = e.message ?: "Activation impossible" }
+                    }
                 }
             }
             Spacer(Modifier.height(12.dp))
-            Text("1 téléphone par invitation · révocable à tout moment", color = BeerColors.muted, fontSize = 11.sp)
+            Text("1 téléphone par invitation · 4G/5G OK", color = BeerColors.muted, fontSize = 11.sp)
         }
         Spacer(Modifier.height(16.dp))
         Text("Scan · photo · note · historique", color = BeerColors.muted, fontSize = 12.sp)
