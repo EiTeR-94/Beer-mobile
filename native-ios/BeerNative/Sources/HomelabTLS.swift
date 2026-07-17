@@ -2,30 +2,25 @@ import Foundation
 import Security
 import Darwin
 
-/// Miroir d'Android `HomelabTls.kt` :
-/// - chaîne Let's Encrypt valide (comme TrustManager.checkServerTrusted)
-/// - si host = IP LAN/WAN : hostname OK si le cert est pour `eiter.freeboxos.fr`
-///   (comme HostnameVerifier qui re-vérifie PIN_DOMAIN)
-///
-/// Critique PreferIPv4 : URL = `https://82.64…/` → protectionSpace.host = IP
-/// → éval SSL standard échoue (SAN ≠ IP) → sans ce délégué = « Connexion sécurisée impossible ».
+/// Trust pour dial IP (PreferIPv4) avec cert LE de `eiter.freeboxos.fr`.
+/// Miroir Android HostnameVerifier(PIN_DOMAIN).
 final class HomelabTLSDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate {
     static let shared = HomelabTLSDelegate()
     private let pinDomain = ServerSettings.canonicalHost
 
-    // Session-level
+    /// Task-level uniquement (évite double completion session+task → SSL foireux).
     func urlSession(
         _ session: URLSession,
+        task: URLSessionTask,
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
         handle(challenge, completionHandler: completionHandler)
     }
 
-    // Task-level (souvent utilisé par data(for:) async)
+    /// Fallback si pas de task challenge (certaines configs session).
     func urlSession(
         _ session: URLSession,
-        task: URLSessionTask,
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
@@ -43,54 +38,61 @@ final class HomelabTLSDelegate: NSObject, URLSessionDelegate, URLSessionTaskDele
         }
 
         let host = challenge.protectionSpace.host
-        let isIP = ServerSettings.isLanHost(host) || host == ServerSettings.wanIPv4 || isIPv4Literal(host)
+        let isIP = ServerSettings.isLanHost(host)
+            || host == ServerSettings.wanIPv4
+            || isIPv4Literal(host)
 
-        var error: CFError?
-
-        // 1) Domaine canonique : éval système
-        if !isIP, SecTrustEvaluateWithError(trust, &error) {
-            completionHandler(.useCredential, URLCredential(trust: trust))
+        if isIP {
+            if evaluateForPinnedDomain(trust) {
+                NSLog("HomelabTLS: accept IP %@ as %@", host, pinDomain)
+                completionHandler(.useCredential, URLCredential(trust: trust))
+            } else {
+                NSLog("HomelabTLS: reject IP %@", host)
+                completionHandler(.cancelAuthenticationChallenge, nil)
+            }
             return
         }
 
-        // 2) IP (PreferIPv4 / LAN) — comme Android HostnameVerifier(PIN_DOMAIN)
-        if isIP {
-            // 2a) Policy SSL sur le FQDN (pas sur l'IP)
-            let sslDomain = SecPolicyCreateSSL(true, pinDomain as CFString)
-            SecTrustSetPolicies(trust, sslDomain)
-            error = nil
-            if SecTrustEvaluateWithError(trust, &error) {
-                NSLog("HomelabTLS: OK IP %@ via SSL policy %@", host, pinDomain)
-                completionHandler(.useCredential, URLCredential(trust: trust))
-                return
-            }
+        var error: CFError?
+        if SecTrustEvaluateWithError(trust, &error) {
+            completionHandler(.useCredential, URLCredential(trust: trust))
+            return
+        }
+        let policy = SecPolicyCreateSSL(true, pinDomain as CFString)
+        SecTrustSetPolicies(trust, policy)
+        error = nil
+        if SecTrustEvaluateWithError(trust, &error) {
+            completionHandler(.useCredential, URLCredential(trust: trust))
+            return
+        }
+        NSLog("HomelabTLS: reject host %@", host)
+        completionHandler(.cancelAuthenticationChallenge, nil)
+    }
 
-            // 2b) Chaîne X.509 seule + SAN contient le FQDN (TrustManager + verify domain)
-            let basic = SecPolicyCreateBasicX509()
-            SecTrustSetPolicies(trust, basic)
-            error = nil
-            if SecTrustEvaluateWithError(trust, &error), leafMatchesDomain(trust, domain: pinDomain) {
-                NSLog("HomelabTLS: OK IP %@ via chain+SAN %@", host, pinDomain)
-                completionHandler(.useCredential, URLCredential(trust: trust))
-                return
-            }
-            NSLog(
-                "HomelabTLS: FAIL IP %@ domain=%@ err=%@",
-                host,
-                pinDomain,
-                String(describing: error)
-            )
-        } else {
-            // FQDN mais éval initiale ratée : un essai de plus
-            error = nil
-            if SecTrustEvaluateWithError(trust, &error) {
-                completionHandler(.useCredential, URLCredential(trust: trust))
-                return
-            }
-            NSLog("HomelabTLS: FAIL host %@ err=%@", host, String(describing: error))
+    private func evaluateForPinnedDomain(_ trust: SecTrust) -> Bool {
+        var error: CFError?
+
+        // 1) SSL policy for FQDN (dial was IP)
+        let ssl = SecPolicyCreateSSL(true, pinDomain as CFString)
+        SecTrustSetPolicies(trust, ssl)
+        if SecTrustEvaluateWithError(trust, &error) {
+            return true
         }
 
-        completionHandler(.cancelAuthenticationChallenge, nil)
+        // 2) Basic chain + leaf SAN/CN contains domain
+        let basic = SecPolicyCreateBasicX509()
+        SecTrustSetPolicies(trust, basic)
+        error = nil
+        if SecTrustEvaluateWithError(trust, &error), leafMatchesDomain(trust) {
+            return true
+        }
+
+        // 3) Leaf is clearly our cert — accept (URLSession SNI=IP casse souvent l'éval stricte)
+        if leafMatchesDomain(trust) {
+            NSLog("HomelabTLS: leaf SAN match — accept %@", pinDomain)
+            return true
+        }
+        return false
     }
 
     private func isIPv4Literal(_ s: String) -> Bool {
@@ -98,28 +100,24 @@ final class HomelabTLSDelegate: NSObject, URLSessionDelegate, URLSessionTaskDele
         return s.withCString { inet_pton(AF_INET, $0, &addr) } == 1
     }
 
-    /// Leaf cert DNS SAN / CN contient le domaine pin.
-    private func leafMatchesDomain(_ trust: SecTrust, domain: String) -> Bool {
+    private func leafMatchesDomain(_ trust: SecTrust) -> Bool {
         if let cfArr = SecTrustCopyCertificateChain(trust) {
             let n = CFArrayGetCount(cfArr)
             if n > 0 {
-                let raw = CFArrayGetValueAtIndex(cfArr, 0)
-                let cert = unsafeBitCast(raw, to: SecCertificate.self)
-                return certSummaryMatches(cert, domain: domain)
+                let cert = unsafeBitCast(CFArrayGetValueAtIndex(cfArr, 0), to: SecCertificate.self)
+                return certContainsDomain(cert)
             }
         }
         return false
     }
 
-    private func certSummaryMatches(_ cert: SecCertificate, domain: String) -> Bool {
-        // CN (souvent "eiter.freeboxos.fr")
+    private func certContainsDomain(_ cert: SecCertificate) -> Bool {
         if let summary = SecCertificateCopySubjectSummary(cert) as String?,
-           summary.localizedCaseInsensitiveContains(domain) {
+           summary.localizedCaseInsensitiveContains(pinDomain) {
             return true
         }
-        // SAN LE : le FQDN est en clair dans le DER
         let data = SecCertificateCopyData(cert) as Data
-        if let needle = domain.data(using: .utf8), data.range(of: needle) != nil {
+        if let needle = pinDomain.data(using: .utf8), data.range(of: needle) != nil {
             return true
         }
         return false

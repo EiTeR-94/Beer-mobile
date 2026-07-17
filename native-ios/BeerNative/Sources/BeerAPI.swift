@@ -148,53 +148,124 @@ final class BeerAPI {
         let isLan = ServerSettings.isLanEndpoint(req.url ?? baseURL)
             || ServerSettings.isLanHost(rawHost)
 
-        if isInviteMode || (!isLan && rawHost == ServerSettings.canonicalHost) {
-            // preferIpv4Dns : dial A + Host FQDN (jamais AAAA)
-            PreferIPv4.applyAndroidStyle(&req)
-        } else if rawHost == ServerSettings.wanIPv4 {
+        let inviteOrWan = isInviteMode
+            || (!isLan && (rawHost == ServerSettings.canonicalHost || rawHost == ServerSettings.wanIPv4))
+
+        // Invite/WAN : forcer URL FQDN logique, dial IPv4 via PreferIPv4
+        if inviteOrWan {
+            if var c = URLComponents(url: req.url ?? ServerSettings.apiBase, resolvingAgainstBaseURL: false) {
+                c.host = ServerSettings.canonicalHost
+                c.scheme = "https"
+                c.port = nil
+                if let u = c.url { req.url = u }
+            }
             req.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
+            PreferIPv4.applyAndroidStyle(&req) // → https://A/… + Host FQDN
         }
 
         let session = probe ? probeClient : client
         if probe {
-            req.timeoutInterval = 8
-        } else if isInviteMode {
-            req.timeoutInterval = 30
+            req.timeoutInterval = 10
         } else {
             req.timeoutInterval = 30
         }
 
         do {
-            let (data, response) = try await session.data(for: req)
-            guard let http = response as? HTTPURLResponse, let u = response.url else {
-                throw BeerAPIError.decode
-            }
-
-            if let setCookie = http.value(forHTTPHeaderField: "Set-Cookie"), !setCookie.isEmpty {
-                let cookies = HTTPCookie.cookies(
-                    withResponseHeaderFields: ["Set-Cookie": setCookie],
-                    for: u
-                )
-                for c in cookies { HTTPCookieStorage.shared.setCookie(c) }
-                if let domainURL = URL(string: "https://\(ServerSettings.canonicalHost)/beer/") {
-                    let cookies2 = HTTPCookie.cookies(
-                        withResponseHeaderFields: ["Set-Cookie": setCookie],
-                        for: domainURL
-                    )
-                    for c in cookies2 { HTTPCookieStorage.shared.setCookie(c) }
-                }
-            }
-            return try finishHTTPInviteAware(
-                data: data,
-                http: http,
-                url: u,
+            return try await urlSessionOnce(
+                req,
+                session: session,
                 allowUnauthorizedBody: allowUnauthorizedBody
             )
         } catch let e as BeerAPIError {
+            // SSL sur IP (SNI IP) → secours OkHttp-like : NW IPv4 + SNI FQDN
+            if inviteOrWan, case .server(let msg) = e,
+               msg.localizedCaseInsensitiveContains("sécurisée")
+                || msg.localizedCaseInsensitiveContains("ssl") {
+                do {
+                    var fqdnReq = request
+                    applyHeaders(to: &fqdnReq)
+                    if var c = URLComponents(url: fqdnReq.url ?? ServerSettings.apiBase, resolvingAgainstBaseURL: false) {
+                        c.host = ServerSettings.canonicalHost
+                        c.scheme = "https"
+                        c.port = nil
+                        fqdnReq.url = c.url
+                    }
+                    fqdnReq.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
+                    let t: UInt64 = probe ? 15 : 30
+                    let (data, http, u) = try await HomelabIPv4Transport.perform(fqdnReq, timeoutSeconds: t)
+                    return try finishHTTPInviteAware(
+                        data: data,
+                        http: http,
+                        url: u,
+                        allowUnauthorizedBody: allowUnauthorizedBody
+                    )
+                } catch let e2 as BeerAPIError {
+                    throw e2
+                } catch {
+                    throw mapURLErrorNoSslRefuse(error as? URLError ?? URLError(.secureConnectionFailed))
+                }
+            }
             throw e
         } catch let err as URLError {
+            if inviteOrWan,
+               err.code == .secureConnectionFailed || err.code == .serverCertificateUntrusted {
+                do {
+                    var fqdnReq = request
+                    applyHeaders(to: &fqdnReq)
+                    if var c = URLComponents(url: fqdnReq.url ?? ServerSettings.apiBase, resolvingAgainstBaseURL: false) {
+                        c.host = ServerSettings.canonicalHost
+                        c.scheme = "https"
+                        c.port = nil
+                        fqdnReq.url = c.url
+                    }
+                    fqdnReq.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
+                    let t: UInt64 = probe ? 15 : 30
+                    let (data, http, u) = try await HomelabIPv4Transport.perform(fqdnReq, timeoutSeconds: t)
+                    return try finishHTTPInviteAware(
+                        data: data,
+                        http: http,
+                        url: u,
+                        allowUnauthorizedBody: allowUnauthorizedBody
+                    )
+                } catch let e2 as BeerAPIError {
+                    throw e2
+                } catch {
+                    throw mapURLErrorNoSslRefuse(err)
+                }
+            }
             throw mapURLErrorNoSslRefuse(err)
         }
+    }
+
+    private func urlSessionOnce(
+        _ req: URLRequest,
+        session: URLSession,
+        allowUnauthorizedBody: Bool
+    ) async throws -> (Data, Int, HTTPURLResponse, URL) {
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse, let u = response.url else {
+            throw BeerAPIError.decode
+        }
+        if let setCookie = http.value(forHTTPHeaderField: "Set-Cookie"), !setCookie.isEmpty {
+            let cookies = HTTPCookie.cookies(
+                withResponseHeaderFields: ["Set-Cookie": setCookie],
+                for: u
+            )
+            for c in cookies { HTTPCookieStorage.shared.setCookie(c) }
+            if let domainURL = URL(string: "https://\(ServerSettings.canonicalHost)/beer/") {
+                let cookies2 = HTTPCookie.cookies(
+                    withResponseHeaderFields: ["Set-Cookie": setCookie],
+                    for: domainURL
+                )
+                for c in cookies2 { HTTPCookieStorage.shared.setCookie(c) }
+            }
+        }
+        return try finishHTTPInviteAware(
+            data: data,
+            http: http,
+            url: u,
+            allowUnauthorizedBody: allowUnauthorizedBody
+        )
     }
 
     private func finishHTTPInviteAware(
