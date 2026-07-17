@@ -36,7 +36,7 @@ final class PlexiIPv4URLProtocol: URLProtocol {
     override func startLoading() {
         loadTask = Task {
             do {
-                let (data, response, _) = try await HomelabIPv4Transport.perform(request)
+                let (data, response, _) = try await AndroidOkHttpClient.perform(request)
                 client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
                 client?.urlProtocol(self, didLoad: data)
                 client?.urlProtocolDidFinishLoading(self)

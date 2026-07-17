@@ -30,8 +30,8 @@ final class BeerAPI {
     static let shared = BeerAPI()
     private static let nativeClientHeader = "X-PlexiBeer-Client"
     private static let nativeClientValue = "native-ios"
-    private static let userAgentOwner = "PlexiBeer/3.8.1 (iPhone; native owner) [lan-vpn]"
-    private static let userAgentInvite = "PlexiBeer/3.8.1 (iPhone; native invite) [wan]"
+    private static let userAgentOwner = "PlexiBeer/3.9.0 (iPhone; native owner) [lan-vpn]"
+    private static let userAgentInvite = "PlexiBeer/3.9.0 (iPhone; native invite) [wan]"
 
     // Un seul client comme OkHttp Android (30s connect, 120s read)
     private let client: URLSession
@@ -129,10 +129,8 @@ final class BeerAPI {
             .map { "beer_session=\($0.value)" }
     }
 
-    /// Miroir strict d'Android OkHttp `execute()` :
-    /// 1) headers auth
-    /// 2) PreferIPv4 (DNS A d'abord = réécriture IP + Host) — **pas** de NWConnection
-    /// 3) un seul URLSession (30s / 120s) + HomelabTLS
+    /// Owner LAN = URLSession. **Invite = uniquement AndroidOkHttpClient** (OkHttp miroir).
+    /// Plus de PreferIPv4 rewrite URL, plus de multi-fallback, plus de HomelabTLS IP.
     private func execute(
         _ request: URLRequest,
         probe: Bool = false,
@@ -140,14 +138,31 @@ final class BeerAPI {
     ) async throws -> (Data, Int, HTTPURLResponse, URL) {
         var req = request
         applyHeaders(to: &req)
-        // = Android preferIpv4Dns : jamais Happy Eyeballs AAAA Freebox
-        PreferIPv4.applyToRequest(&req)
+
+        // INVITE : strict Android OkHttp path only
+        if isInviteMode {
+            let connect: TimeInterval = probe ? ServerSettings.lanProbeTimeoutSec : 30
+            let read: TimeInterval = probe ? ServerSettings.lanProbeTimeoutSec + 4 : 120
+            do {
+                let triple = try await AndroidOkHttpClient.perform(
+                    req,
+                    connectTimeout: connect,
+                    readTimeout: read
+                )
+                return try finishHTTP(triple, allowUnauthorizedBody: allowUnauthorizedBody)
+            } catch let e as BeerAPIError {
+                throw e
+            } catch {
+                throw BeerAPIError.server(error.localizedDescription)
+            }
+        }
+
+        // OWNER : URLSession + HomelabTLS (LAN :8444)
         if probe {
             req.timeoutInterval = ServerSettings.lanProbeTimeoutSec
         } else {
             req.timeoutInterval = 30
         }
-
         let session = probe ? probeClient : client
         do {
             let (data, response) = try await session.data(for: req)
@@ -292,7 +307,7 @@ final class BeerAPI {
         return decoded
     }
 
-    /// Miroir strict d'Android `joinInvite` — candidats FQDN puis IP, PreferIPv4 dans execute.
+    /// Miroir strict d'Android `joinInvite` — candidats FQDN puis IP, AndroidOkHttpClient.
     func joinInvite(inviteLink: String) async throws -> NativeJoinResponse {
         guard let token = InviteSessionStore.parseInviteToken(inviteLink) else {
             throw BeerAPIError.server("Lien d'invitation invalide")
