@@ -1,4 +1,4 @@
-# IPA native SwiftUI — build auto + Release GitHub (source AltStore HTTPS)
+# IPA native SwiftUI — build auto + Release GitHub (téléchargement direct BeerOff.ipa)
 
 name: Build iOS IPA
 
@@ -10,7 +10,6 @@ on:
       - "native-ios/**"
       - "scripts/build-native-ipa.sh"
       - "scripts/write-native-config.js"
-      - "scripts/generate-altstore-source.js"
       - ".github/workflows/ios-ipa.yml"
 
 permissions:
@@ -28,8 +27,6 @@ jobs:
     env:
       BEER_SERVER_URL: https://eiter.freeboxos.fr/beer
       CI: "true"
-      MOBILE_DIST_MODE: wan
-      MOBILE_DIST_BASE_URL: https://eiter.freeboxos.fr/mobile/beer
 
     steps:
       - name: Checkout
@@ -49,7 +46,6 @@ jobs:
           chmod +x scripts/build-native-ipa.sh
           scripts/build-native-ipa.sh
 
-      # Priority 2: run unit tests (XcodeGen test target wired). Uses simulator.
       - name: Run tests (xcodebuild test)
         run: |
           xcodebuild test \
@@ -59,9 +55,7 @@ jobs:
             -only-testing:BeerNativeTests \
             2>&1 | tail -30 || echo 'Tests step completed (may need full simulator setup in CI)'
 
-      # Theme 2: future - add `xcodebuild test` step + unit tests for Models/API (mock). Currently no tests wired.
-
-      - name: Vérifier IPA AltStore
+      - name: Vérifier IPA
         run: |
           APP="$(find build/Payload -maxdepth 1 -name '*.app' -type d | head -1)"
           test -n "$APP"
@@ -69,20 +63,10 @@ jobs:
           test -f "$APP/$BIN"
           file "$APP/$BIN" | grep -E "Mach-O.*arm64"
           ! find build/Payload -name "index.html" | grep -q .
+          # Nom public figé
+          cp -f build/PlexiBeer.ipa build/BeerOff.ipa 2>/dev/null || cp -f build/*.ipa build/BeerOff.ipa
 
-      - name: Icône AltStore
-        run: |
-          mkdir -p altstore
-          cp native-ios/BeerNative/Resources/Assets.xcassets/AppIcon.appiconset/icon-180.png altstore/icon-180.png
-
-      - name: Manifest AltStore (miroir WAN Plexi)
-        run: node scripts/generate-altstore-source.js build/PlexiBeer.ipa "${{ github.run_number }}"
-
-      - name: Valider manifest AltStore (JSON)
-        run: |
-          node scripts/validate-altstore-json.js dist/altstore.json "$(stat -f%z build/PlexiBeer.ipa)"
-
-      - name: Release GitHub (IPA uniquement — source AltStore = WAN Plexi)
+      - name: Release GitHub (IPA)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ios-build-${{ github.run_number }}
@@ -90,10 +74,8 @@ jobs:
           body: |
             Build automatique Beer Log iOS.
 
-            Source AltStore (copier-coller dans AltStore, une seule URL) :
-            https://eiter.freeboxos.fr/mobile/beer/altstore.json
-
-            Ne pas utiliser GitHub releases/latest ni raw.githubusercontent.com (erreur AltStore 3840).
+            Téléchargement direct (pas d'AltStore) :
+            https://eiter.freeboxos.fr/mobile/beer/BeerOff.ipa
           files: |
-            build/PlexiBeer.ipa
+            build/BeerOff.ipa
           make_latest: true

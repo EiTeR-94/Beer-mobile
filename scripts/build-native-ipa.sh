@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build IPA native — format AltStore (Payload/PlexiBeer.app, binaire signé ad-hoc)
+# Build IPA native — format sideload (Payload/PlexiBeer.app, binaire signé ad-hoc)
 # Theme 2 corrections: added bundle version check; consider xcodebuild test in CI later.
 set -euo pipefail
 
@@ -86,7 +86,7 @@ file "$APP/$BIN_NAME" | grep -q "Mach-O" || {
 }
 
 ENTITLEMENTS="$ROOT/native-ios/BeerNative/Resources/BeerNative.entitlements"
-echo "==> Signature ad-hoc (AltStore re-signera)"
+echo "==> Signature ad-hoc (re-sign sideload)"
 if [[ -f "$ENTITLEMENTS" ]]; then
   codesign --force --sign - --timestamp=none --entitlements "$ENTITLEMENTS" "$APP" 2>/dev/null || \
     codesign --force --sign - --timestamp=none --entitlements "$ENTITLEMENTS" --deep "$APP"

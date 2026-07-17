@@ -1,9 +1,9 @@
-Plexi Beer — app iOS phase 1 (perso, AltStore)
+Plexi Beer — app iOS phase 1 (perso, sideload)
 
 BUILD GRATUIT (recommandé) : GUIDE-GITHUB.md
   → GitHub Actions compile l'IPA (0 €, pas de MacinCloud)
 
-AltStore : déjà OK chez toi → installer le .ipa (Artifacts GitHub)
+sideload : déjà OK chez toi → installer le .ipa (Artifacts GitHub)
 
 MacinCloud : GUIDE-PHASE1.md (option payante ~35$ minimum)
 

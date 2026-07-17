@@ -33,7 +33,7 @@ Actions → **Build Android APK (PlexiBeer native)** → artifact `plexibeer-deb
 ## Install
 
 ### Owner / couple
-1. APK : `dist/PlexiBeer-debug.apk` ou `https://eiter.freeboxos.fr/mobile/beer/PlexiBeer.apk`
+1. APK : `dist/BeerOff.apk` ou `https://eiter.freeboxos.fr/mobile/beer/BeerOff.apk`
 2. Autoriser sources inconnues
 3. Wi‑Fi maison ou VPN → login compte permanent
 

@@ -30,8 +30,8 @@ final class BeerAPI {
     static let shared = BeerAPI()
     private static let nativeClientHeader = "X-PlexiBeer-Client"
     private static let nativeClientValue = "native-ios"
-    private static let userAgentOwner = "PlexiBeer/4.2.7 (iPhone; native owner) [lan-vpn]"
-    private static let userAgentInvite = "PlexiBeer/4.2.7 (iPhone; native invite) [wan]"
+    private static let userAgentOwner = "PlexiBeer/4.2.8 (iPhone; native owner) [lan-vpn]"
+    private static let userAgentInvite = "PlexiBeer/4.2.8 (iPhone; native invite) [wan]"
 
     // Un seul client comme OkHttp Android (30s connect, 120s read)
     private let client: URLSession
@@ -362,9 +362,14 @@ final class BeerAPI {
 
     /// Activation invité WAN — miroir Android `joinInvite` :
     /// candidates FQDN puis IPv4, transport IPv4+SNI unique, pas de cookies owner.
-    func joinInvite(inviteLink: String) async throws -> NativeJoinResponse {
+    /// `email` : saisi par l'invité (pré-enregistré côté admin), aucun indice côté UI.
+    func joinInvite(inviteLink: String, email: String) async throws -> NativeJoinResponse {
         guard let token = InviteSessionStore.parseInviteToken(inviteLink) else {
             throw BeerAPIError.server("Lien d'invitation invalide")
+        }
+        let emailClean = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !emailClean.isEmpty, emailClean.contains("@") else {
+            throw BeerAPIError.server("Email requis")
         }
         let deviceId = InviteSessionStore.deviceId
         if let cookies = HTTPCookieStorage.shared.cookies {
@@ -372,7 +377,11 @@ final class BeerAPI {
         }
         BeerSessionStore.clear()
 
-        let body = try JSONEncoder().encode(["token": token, "device_id": deviceId])
+        let body = try JSONEncoder().encode([
+            "token": token,
+            "device_id": deviceId,
+            "email": emailClean,
+        ])
         var lastError: Error?
 
         for candidate in ServerSettings.inviteCandidateURLs {
@@ -404,6 +413,9 @@ final class BeerAPI {
                     case "invalid": msg = "Invitation invalide ou expirée"
                     case "invalid_device": msg = "Identifiant appareil invalide"
                     case "disabled": msg = "Invitations natives désactivées"
+                    case "email_required": msg = "Email requis"
+                    case "wrong_email": msg = "Email incorrect"
+                    case "rate_limit": msg = "Trop de tentatives — réessaie dans une minute"
                     default: msg = decoded.error ?? "Activation impossible (HTTP \(code))"
                     }
                     // Erreurs métier : pas de retry sur autre endpoint
@@ -709,8 +721,12 @@ final class BeerAPI {
         return (try? JSONDecoder().decode([CheckinItem].self, from: data)) ?? []
     }
 
-    func adminCreateInvite(label: String, validity: String = "7d") async throws -> CreateInviteResponse {
-        let body = try JSONSerialization.data(withJSONObject: ["label": label, "validity": validity])
+    func adminCreateInvite(label: String, email: String, validity: String = "7d") async throws -> CreateInviteResponse {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "label": label,
+            "email": email,
+            "validity": validity,
+        ])
         let (data, http, _) = try await request(path: "/api/invites", method: "POST", body: body, contentType: "application/json")
         guard let decoded = try? JSONDecoder().decode(CreateInviteResponse.self, from: data) else {
             throw BeerAPIError.decode

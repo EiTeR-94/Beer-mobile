@@ -18,6 +18,7 @@ struct AdminSheetView: View {
     @State private var userPasswords: [String: String] = [:]
 
     @State private var inviteLabel = ""
+    @State private var inviteEmail = ""
     @State private var inviteValidity = "7d"
     @State private var inviteCreating = false
     @State private var createdInviteURL: String?
@@ -87,15 +88,20 @@ struct AdminSheetView: View {
                 }
                 .padding(.top, 12)
 
-                Text("Compte + lien en un seul endroit. Lié au 1er appareil (4G OK ensuite). Cache vidé ? « Renvoyer l'accès » (lien 10 min). Révoquer = supprime le compte.")
+                Text("Lien + email (l'invité saisit l'email qu'il t'a donné). Lien 24 h si non utilisé. 1 appareil. « Renvoyer l'accès » = 10 min.")
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.muted)
 
                 BeerAdminCard {
                     VStack(spacing: 0) {
                         BeerField(label: "Nom de l'invité", text: $inviteLabel, placeholder: "ex. Paul")
+                        BeerField(label: "Email de l'invité", text: $inviteEmail, placeholder: "ex. paul@example.com")
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.emailAddress)
+                            .autocorrectionDisabled()
+                            .padding(.top, 10)
                         BeerSelectField(
-                            label: "Validité",
+                            label: "Validité du compte",
                             value: inviteValidity,
                             options: validityOptions,
                             onSelect: { inviteValidity = $0 }
@@ -103,7 +109,7 @@ struct AdminSheetView: View {
                         .padding(.top, 10)
                         BeerPrimaryButton(
                             title: inviteCreating ? "Génération…" : "Créer le lien",
-                            disabled: inviteLabel.count < 2 || inviteCreating,
+                            disabled: inviteLabel.count < 2 || inviteEmail.isEmpty || !inviteEmail.contains("@") || inviteCreating,
                             busy: inviteCreating
                         ) {
                             Task { await createInvite() }
@@ -251,11 +257,19 @@ struct AdminSheetView: View {
     @ViewBuilder
     private func inviteDetailLines(_ inv: InviteItem) -> some View {
         if inv.redeemedAt == nil {
-            Text("En attente du 1er clic")
-                .font(.caption2)
-                .foregroundStyle(Theme.muted)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("En attente du 1er clic")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.muted)
+                if let hint = inv.emailHint, !hint.isEmpty {
+                    inviteDetailRow("Email", hint)
+                }
+            }
         } else {
             VStack(alignment: .leading, spacing: 3) {
+                if let hint = inv.emailHint, !hint.isEmpty {
+                    inviteDetailRow("Email", hint)
+                }
                 if let redeemed = inv.redeemedAt {
                     let ipPart = inv.redeemIp.map { " · IP \($0)" } ?? ""
                     inviteDetailRow("1er accès", "\(BeerFormatters.formatDate(redeemed))\(ipPart)")
@@ -408,8 +422,13 @@ struct AdminSheetView: View {
     private func createInvite() async {
         guard !inviteCreating else { return }
         let label = inviteLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let email = inviteEmail.trimmingCharacters(in: .whitespacesAndNewlines)
         guard label.count >= 2 else {
             app.showToast("Nom trop court (2 car. min.)", variant: .warn)
+            return
+        }
+        guard email.contains("@") else {
+            app.showToast("Email invité requis", variant: .warn)
             return
         }
         inviteCreating = true
@@ -421,10 +440,11 @@ struct AdminSheetView: View {
         )
         defer { inviteCreating = false }
         do {
-            let res = try await app.api.adminCreateInvite(label: label, validity: inviteValidity)
+            let res = try await app.api.adminCreateInvite(label: label, email: email, validity: inviteValidity)
             app.hideToast()
             createdInviteURL = res.url
             inviteLabel = ""
+            inviteEmail = ""
             message = nil
             errorMessage = nil
             await reload()

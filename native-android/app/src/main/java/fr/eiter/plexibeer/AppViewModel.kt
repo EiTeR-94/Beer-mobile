@@ -398,10 +398,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return v
     }
 
-    fun joinInvite(inviteLink: String, onDone: (Result<Unit>) -> Unit) {
+    fun joinInvite(inviteLink: String, email: String, onDone: (Result<Unit>) -> Unit) {
         viewModelScope.launch {
             try {
-                val resp = api.joinInvite(inviteLink)
+                val resp = api.joinInvite(inviteLink, email)
                 pendingInviteLink = null
                 applySession(
                     resp.user ?: "invite",

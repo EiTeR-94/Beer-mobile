@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Désactive la signature — AltStore re-signera sur ton PC Windows */
+/** Désactive la signature — sideload re-signera sur ton PC Windows */
 const fs = require("fs");
 const path = require("path");
 
@@ -40,4 +40,4 @@ for (const [key, value] of Object.entries(flags)) {
 }
 
 fs.writeFileSync(pbx, content);
-console.log("Signature iOS désactivée (IPA non signée → AltStore re-signera)");
+console.log("Signature iOS désactivée (IPA non signée → sideload re-signera)");

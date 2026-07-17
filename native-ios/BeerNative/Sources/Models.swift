@@ -306,6 +306,8 @@ struct InviteItem: Identifiable, Codable {
     let redeemClient: InviteClientProfile?
     let lastClient: InviteClientProfile?
     let ipLog: [InviteIpEntry]?
+    let emailHint: String?
+    let emailRequired: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id, label, username, url, active, permanent, checkins
@@ -326,6 +328,8 @@ struct InviteItem: Identifiable, Codable {
         case redeemClient = "redeem_client"
         case lastClient = "last_client"
         case ipLog = "ip_log"
+        case emailHint = "email_hint"
+        case emailRequired = "email_required"
     }
 
     var statusText: String {

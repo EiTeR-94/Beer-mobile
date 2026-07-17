@@ -106,10 +106,25 @@ private fun LoginScreen(vm: AppViewModel) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var inviteLink by remember(deepLink) { mutableStateOf(deepLink.orEmpty()) }
+    var inviteEmail by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var clipboardHint by remember { mutableStateOf<String?>(null) }
     var showManual by remember { mutableStateOf(false) }
+
+    fun doJoin(link: String) {
+        val email = inviteEmail.trim()
+        if (email.isEmpty() || !email.contains("@")) {
+            error = "Entre l'email que tu as donné pour l'invitation"
+            return
+        }
+        busy = true
+        error = null
+        vm.joinInvite(link, email) { result ->
+            busy = false
+            result.onFailure { e -> error = e.message ?: "Activation impossible" }
+        }
+    }
 
     fun applyClipboard(autoActivate: Boolean) {
         val clip = readInviteFromClipboard(context)
@@ -121,28 +136,18 @@ private fun LoginScreen(vm: AppViewModel) {
             return
         }
         inviteLink = clip
-        clipboardHint = "Lien d'invitation prêt"
+        clipboardHint = "Lien d'invitation prêt — entre ton email puis active"
         error = null
-        if (autoActivate) {
-            busy = true
-            vm.joinInvite(clip) { result ->
-                busy = false
-                result.onFailure { e -> error = e.message ?: "Activation impossible" }
-            }
-        }
+        // Jamais d'auto-activation : l'email doit être saisi explicitement
     }
 
-    // Deep link → invite + auto-activation
+    // Deep link → préremplit le lien, l'invité saisit l'email puis active
     LaunchedEffect(deepLink) {
         if (!deepLink.isNullOrBlank()) {
             mode = "invite"
             inviteLink = deepLink
-            busy = true
             error = null
-            vm.joinInvite(deepLink) { result ->
-                busy = false
-                result.onFailure { e -> error = e.message ?: "Activation impossible" }
-            }
+            clipboardHint = "Lien reçu — entre ton email pour activer"
         }
     }
 
@@ -244,24 +249,16 @@ private fun LoginScreen(vm: AppViewModel) {
             Spacer(Modifier.height(12.dp))
             Text("Wi‑Fi maison ou VPN Plexi requis", color = BeerColors.muted, fontSize = 11.sp)
         } else {
-            // ——— Invitation = iOS : presse-papiers 1 tap ———
+            // ——— Invitation : lien + email (pas d'indice UI) ———
             Text(
-                "Ouvre le lien reçu (WhatsApp/SMS) ou copie-le puis appuie ci‑dessous — pas besoin de coller à la main.",
+                "Copie le lien reçu, entre l'email que tu as donné, puis active. Aucun indice d'email dans l'app.",
                 color = BeerColors.muted,
                 fontSize = 13.sp,
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(Modifier.height(14.dp))
-            BeerPrimaryButton(
-                title = if (busy) "Activation…" else "Activer depuis le presse‑papiers",
-                enabled = !busy,
-                busy = busy
-            ) {
-                applyClipboard(autoActivate = true)
-            }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(12.dp))
             BeerSecondaryButton(
-                title = "Relire le presse‑papiers",
+                title = "Coller le lien depuis le presse‑papiers",
                 enabled = !busy
             ) {
                 applyClipboard(autoActivate = false)
@@ -280,14 +277,42 @@ private fun LoginScreen(vm: AppViewModel) {
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+            Spacer(Modifier.height(12.dp))
+            Text("Ton email", color = BeerColors.muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp))
+            OutlinedTextField(
+                value = inviteEmail,
+                onValueChange = { inviteEmail = it },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = {
+                    Text("celui que tu as donné", color = BeerColors.muted, fontSize = 12.sp)
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = BeerColors.text,
+                    unfocusedTextColor = BeerColors.text,
+                    focusedBorderColor = BeerColors.accent,
+                    unfocusedBorderColor = BeerColors.border,
+                    cursorColor = BeerColors.accent,
+                    focusedContainerColor = BeerColors.fieldBg,
+                    unfocusedContainerColor = BeerColors.fieldBg
+                ),
+                shape = RoundedCornerShape(10.dp)
+            )
             error?.let {
                 Spacer(Modifier.height(8.dp))
                 Text(it, color = BeerColors.error, fontSize = 13.sp, modifier = Modifier.fillMaxWidth())
             }
             Spacer(Modifier.height(12.dp))
-            // Fallback saisie manuelle
+            BeerPrimaryButton(
+                title = if (busy) "Activation…" else "Activer l'invitation",
+                enabled = inviteLink.isNotBlank() && inviteEmail.isNotBlank() && !busy,
+                busy = busy
+            ) {
+                doJoin(inviteLink.trim())
+            }
+            Spacer(Modifier.height(12.dp))
             Text(
-                if (showManual) "▾ Saisie manuelle" else "▸ Saisie manuelle (rare)",
+                if (showManual) "▾ Saisie manuelle du lien" else "▸ Saisie manuelle du lien (rare)",
                 color = BeerColors.muted,
                 fontSize = 12.sp,
                 modifier = Modifier
@@ -297,46 +322,30 @@ private fun LoginScreen(vm: AppViewModel) {
             )
             if (showManual) {
                 Spacer(Modifier.height(8.dp))
-                Column(Modifier.fillMaxWidth()) {
-                    Text("Lien d'invitation", color = BeerColors.muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp))
-                    OutlinedTextField(
-                        value = inviteLink,
-                        onValueChange = { inviteLink = it },
-                        singleLine = false,
-                        minLines = 2,
-                        maxLines = 4,
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = {
-                            Text("https://eiter.freeboxos.fr/beer/join/…", color = BeerColors.muted, fontSize = 12.sp)
-                        },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = BeerColors.text,
-                            unfocusedTextColor = BeerColors.text,
-                            focusedBorderColor = BeerColors.accent,
-                            unfocusedBorderColor = BeerColors.border,
-                            cursorColor = BeerColors.accent,
-                            focusedContainerColor = BeerColors.fieldBg,
-                            unfocusedContainerColor = BeerColors.fieldBg
-                        ),
-                        shape = RoundedCornerShape(10.dp)
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
-                BeerPrimaryButton(
-                    title = if (busy) "Activation…" else "Activer ce lien",
-                    enabled = inviteLink.isNotBlank() && !busy,
-                    busy = busy
-                ) {
-                    busy = true
-                    error = null
-                    vm.joinInvite(inviteLink.trim()) { result ->
-                        busy = false
-                        result.onFailure { e -> error = e.message ?: "Activation impossible" }
-                    }
-                }
+                OutlinedTextField(
+                    value = inviteLink,
+                    onValueChange = { inviteLink = it },
+                    singleLine = false,
+                    minLines = 2,
+                    maxLines = 4,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = {
+                        Text("https://eiter.freeboxos.fr/beer/join/…", color = BeerColors.muted, fontSize = 12.sp)
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = BeerColors.text,
+                        unfocusedTextColor = BeerColors.text,
+                        focusedBorderColor = BeerColors.accent,
+                        unfocusedBorderColor = BeerColors.border,
+                        cursorColor = BeerColors.accent,
+                        focusedContainerColor = BeerColors.fieldBg,
+                        unfocusedContainerColor = BeerColors.fieldBg
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                )
             }
             Spacer(Modifier.height(12.dp))
-            Text("1 téléphone par invitation · 4G/5G OK", color = BeerColors.muted, fontSize = 11.sp)
+            Text("1 téléphone · email requis · 4G/5G OK", color = BeerColors.muted, fontSize = 11.sp)
         }
         Spacer(Modifier.height(16.dp))
         Text("Scan · photo · note · historique", color = BeerColors.muted, fontSize = 12.sp)

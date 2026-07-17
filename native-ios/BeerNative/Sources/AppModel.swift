@@ -478,8 +478,8 @@ final class AppModel: ObservableObject {
         await syncPending()
     }
 
-    func joinInvite(inviteLink: String) async throws {
-        let resp = try await api.joinInvite(inviteLink: inviteLink)
+    func joinInvite(inviteLink: String, email: String) async throws {
+        let resp = try await api.joinInvite(inviteLink: inviteLink, email: email)
         pendingInviteLink = nil
         api.enableInviteMode(true)
         applySession(

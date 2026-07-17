@@ -259,10 +259,15 @@ class BeerAPI private constructor(context: Context) {
     /**
      * Activation invité WAN (4G/5G) — POST /api/native/join → Bearer.
      * @param inviteLink URL join complète ou token brut
+     * @param email email pré-enregistré par l'admin (saisi par l'invité, pas d'indice UI)
      */
-    suspend fun joinInvite(inviteLink: String): NativeJoinResponse = withContext(Dispatchers.IO) {
+    suspend fun joinInvite(inviteLink: String, email: String): NativeJoinResponse = withContext(Dispatchers.IO) {
         val token = InviteSessionStore.parseInviteToken(inviteLink)
             ?: throw ApiException("Lien d'invitation invalide", 400)
+        val emailClean = email.trim()
+        if (emailClean.isEmpty() || !emailClean.contains("@")) {
+            throw ApiException("Email requis", 400)
+        }
         val deviceId = InviteSessionStore.deviceId(appContext)
 
         // Pas de cookies owner pendant l'activation
@@ -274,7 +279,13 @@ class BeerAPI private constructor(context: Context) {
             try {
                 setBaseURL(candidate)
                 enableInviteMode(true)
-                val json = gson.toJson(mapOf("token" to token, "device_id" to deviceId))
+                val json = gson.toJson(
+                    mapOf(
+                        "token" to token,
+                        "device_id" to deviceId,
+                        "email" to emailClean,
+                    )
+                )
                 val req = Request.Builder()
                     .url(absUrl("api/native/join"))
                     .header(NATIVE_CLIENT_HEADER, NATIVE_CLIENT_VALUE)
@@ -300,6 +311,9 @@ class BeerAPI private constructor(context: Context) {
                             "invalid" -> "Invitation invalide ou expirée"
                             "invalid_device" -> "Identifiant appareil invalide"
                             "disabled" -> "Invitations natives désactivées"
+                            "email_required" -> "Email requis"
+                            "wrong_email" -> "Email incorrect"
+                            "rate_limit" -> "Trop de tentatives — réessaie dans une minute"
                             else -> decoded.error ?: "Activation impossible (HTTP $code)"
                         },
                         code

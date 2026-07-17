@@ -7,6 +7,7 @@ struct LoginView: View {
     @State private var username = ""
     @State private var password = ""
     @State private var inviteLink = ""
+    @State private var inviteEmail = ""
     @State private var error: String?
     @State private var busy = false
     @State private var clipboardHint: String?
@@ -75,26 +76,16 @@ struct LoginView: View {
                                 .foregroundStyle(Theme.muted)
                                 .padding(.top, 10)
                         } else {
-                            Text("Ouvre le lien reçu (WhatsApp/SMS) ou copie-le puis appuie ci‑dessous — pas besoin de coller à la main.")
+                            Text("Colle le lien (presse‑papiers), entre l'email que tu as donné, puis active. Aucun indice d'email dans l'app.")
                                 .font(.system(size: 13))
                                 .foregroundStyle(Theme.muted)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.top, 14)
 
-                            // CTA principal : 1 tap = presse-papiers → activation
-                            BeerPrimaryButton(
-                                title: busy ? "Activation…" : "Activer depuis le presse‑papiers",
-                                disabled: busy,
-                                busy: busy
-                            ) {
-                                Task { await activateFromClipboard() }
-                            }
-                            .padding(.top, 14)
-
-                            BeerSecondaryButton(title: "Relire le presse‑papiers") {
+                            BeerSecondaryButton(title: "Coller le lien depuis le presse‑papiers") {
                                 Task { await prepareInviteFromClipboard(autoActivate: false) }
                             }
-                            .padding(.top, 8)
+                            .padding(.top, 10)
 
                             if let clipboardHint {
                                 Text(clipboardHint)
@@ -114,6 +105,27 @@ struct LoginView: View {
                                     .lineLimit(2)
                             }
 
+                            BeerField(
+                                label: "Ton email",
+                                text: $inviteEmail,
+                                placeholder: "celui que tu as donné"
+                            )
+                            .padding(.top, 12)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.emailAddress)
+                            .autocorrectionDisabled()
+
+                            BeerPrimaryButton(
+                                title: busy ? "Activation…" : "Activer l'invitation",
+                                disabled: inviteLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    || inviteEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    || busy,
+                                busy: busy
+                            ) {
+                                Task { await submitInvite() }
+                            }
+                            .padding(.top, 12)
+
                             if let error {
                                 Text(error)
                                     .font(.system(size: 13))
@@ -126,27 +138,19 @@ struct LoginView: View {
                                 .padding(.top, 8)
 
                             // Fallback si le lien n'est pas dans le presse-papiers
-                            DisclosureGroup("Saisie manuelle (rare)") {
+                            DisclosureGroup("Saisie manuelle du lien (rare)") {
                                 BeerField(
                                     label: "Lien d'invitation",
                                     text: $inviteLink,
                                     placeholder: "https://eiter.freeboxos.fr/beer/join/…"
                                 )
                                 .padding(.top, 10)
-                                BeerPrimaryButton(
-                                    title: busy ? "Activation…" : "Activer ce lien",
-                                    disabled: inviteLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy,
-                                    busy: busy
-                                ) {
-                                    Task { await submitInvite() }
-                                }
-                                .padding(.top, 10)
                             }
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.muted)
                             .padding(.top, 12)
 
-                            Text("1 iPhone par invitation · 4G/5G OK")
+                            Text("1 iPhone · email requis · 4G/5G OK")
                                 .font(.system(size: 11))
                                 .foregroundStyle(Theme.muted)
                                 .padding(.top, 10)
@@ -171,7 +175,7 @@ struct LoginView: View {
             if let pending = app.pendingInviteLink, !pending.isEmpty {
                 mode = .invite
                 inviteLink = pending
-                Task { await submitInvite() }
+                clipboardHint = "Lien reçu — entre ton email pour activer"
                 return
             }
             // Si un lien join est déjà dans le presse-papiers → onglet Invitation prêt
@@ -185,7 +189,7 @@ struct LoginView: View {
             if let newVal, !newVal.isEmpty {
                 mode = .invite
                 inviteLink = newVal
-                Task { await submitInvite() }
+                clipboardHint = "Lien reçu — entre ton email pour activer"
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
@@ -240,15 +244,14 @@ struct LoginView: View {
             return
         }
         inviteLink = clip
-        clipboardHint = "Lien d'invitation prêt"
+        clipboardHint = "Lien prêt — entre ton email puis active"
         error = nil
-        if autoActivate {
-            await submitInvite()
-        }
+        // Jamais d'auto-activation : l'email doit être saisi
     }
 
     private func activateFromClipboard() async {
-        await prepareInviteFromClipboard(autoActivate: true)
+        await prepareInviteFromClipboard(autoActivate: false)
+        await submitInvite()
     }
 
     private func submitOwner() async {
@@ -272,10 +275,13 @@ struct LoginView: View {
     }
 
     private func submitInvite() async {
-        let link = await MainActor.run { () -> String in
+        let (link, email) = await MainActor.run { () -> (String, String) in
             busy = true
             error = nil
-            return inviteLink.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (
+                inviteLink.trimmingCharacters(in: .whitespacesAndNewlines),
+                inviteEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
         }
         guard !link.isEmpty else {
             await MainActor.run {
@@ -284,8 +290,15 @@ struct LoginView: View {
             }
             return
         }
+        guard !email.isEmpty, email.contains("@") else {
+            await MainActor.run {
+                busy = false
+                error = "Entre l'email que tu as donné pour l'invitation"
+            }
+            return
+        }
         do {
-            try await app.joinInvite(inviteLink: link)
+            try await app.joinInvite(inviteLink: link, email: email)
             await MainActor.run {
                 busy = false
                 app.pendingInviteLink = nil
