@@ -332,8 +332,22 @@ class BeerAPI private constructor(context: Context) {
         cookieJar.hasSession() || InviteSessionStore.hasInviteSession(appContext)
 
     suspend fun me(): MeResponse {
-        val (body, _) = execute(requestBuilder("api/me").get().build())
-        return gson.fromJson(body, MeResponse::class.java)
+        val (body, code) = execute(
+            requestBuilder("api/me").get().build(),
+            allowUnauthorizedBody = true
+        )
+        // 401 = révoqué / expiré (Bearer)
+        if (code == 401) {
+            if (isInviteMode) InviteSessionStore.clear(appContext)
+            throw ApiException("Invitation révoquée ou expirée — demande un nouveau lien", 401)
+        }
+        val decoded = gson.fromJson(body, MeResponse::class.java)
+            ?: throw ApiException("Réponse /me invalide", code)
+        if (isInviteMode && decoded.user.isNullOrBlank()) {
+            InviteSessionStore.clear(appContext)
+            throw ApiException("Invitation révoquée ou expirée — demande un nouveau lien", 401)
+        }
+        return decoded
     }
 
     suspend fun logout() {

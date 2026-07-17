@@ -337,25 +337,29 @@ final class AppModel: ObservableObject {
                     applySession(user: u, isAdmin: false, isInvite: true, loggedIn: true, inviteLabel: InviteSessionStore.label)
                     serverVersion = (try? await api.version()) ?? ""
                     await syncPending()
-                    // prewarm non bloquant — ne doit pas faire planter le bootstrap
                     Task { await prewarmRecentPhotos() }
                     cache.prune(maxFiles: 16)
                     return
                 }
-                // user vide mais session présente : reste en cache, ne clear pas tout de suite
-                networkStatus = .serverUnreachable
-                restoreOfflineSessionIfNeeded()
+                // user vide = révoqué / invalide (même si pas 401)
+                api.clearSession()
+                BeerSessionStore.clear()
+                await clearSessionState()
                 return
             } catch {
                 lastEndpointLatency = Date().timeIntervalSince(t0)
                 if case BeerAPIError.unauthorized = error {
+                    // Invitation révoquée ou expirée
                     api.clearSession()
-                    // tombe sur login (pas de session owner)
+                    BeerSessionStore.clear()
+                    await clearSessionState()
+                    showToast("Invitation révoquée ou expirée", variant: .error, durationMs: 4000)
+                    return
                 } else {
-                    // Réseau/TLS temporaire : garde le Bearer + cache local
+                    // Réseau temporaire : garde le Bearer + cache
                     networkStatus = .serverUnreachable
                     restoreOfflineSessionIfNeeded()
-                    if isLoggedIn || BeerSessionStore.restore() != nil {
+                    if isLoggedIn {
                         showToast("Serveur injoignable", variant: .warn, detail: "Cache iPhone — réessaie", durationMs: 3500)
                     }
                     return

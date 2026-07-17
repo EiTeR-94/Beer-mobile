@@ -30,8 +30,8 @@ final class BeerAPI {
     static let shared = BeerAPI()
     private static let nativeClientHeader = "X-PlexiBeer-Client"
     private static let nativeClientValue = "native-ios"
-    private static let userAgentOwner = "PlexiBeer/4.0.2 (iPhone; native owner) [lan-vpn]"
-    private static let userAgentInvite = "PlexiBeer/4.0.2 (iPhone; native invite) [wan]"
+    private static let userAgentOwner = "PlexiBeer/4.0.3 (iPhone; native owner) [lan-vpn]"
+    private static let userAgentInvite = "PlexiBeer/4.0.3 (iPhone; native invite) [wan]"
 
     // Un seul client comme OkHttp Android (30s connect, 120s read)
     private let client: URLSession
@@ -406,6 +406,12 @@ final class BeerAPI {
 
     func me() async throws -> MeResponse {
         let (data, http, _) = try await request(path: "/api/me", method: "GET", body: nil)
+        // 401 = révoqué / expiré (serveur) — wipe Bearer invité
+        if http.statusCode == 401 {
+            if isInviteMode { InviteSessionStore.clear() }
+            NotificationCenter.default.post(name: .beerAuthExpired, object: nil)
+            throw BeerAPIError.unauthorized
+        }
         try throwIfUnauthorized(http.statusCode)
         if http.statusCode == 403 {
             if isInviteMode {
@@ -416,6 +422,12 @@ final class BeerAPI {
         }
         guard let decoded = try? JSONDecoder().decode(MeResponse.self, from: data) else {
             throw BeerAPIError.decode
+        }
+        // Défense : 200 + user vide alors qu'on était en invite = session morte
+        if isInviteMode, (decoded.user ?? "").isEmpty {
+            InviteSessionStore.clear()
+            NotificationCenter.default.post(name: .beerAuthExpired, object: nil)
+            throw BeerAPIError.unauthorized
         }
         return decoded
     }
