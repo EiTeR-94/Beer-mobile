@@ -31,6 +31,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var isAdmin by mutableStateOf(false)
         private set
+    var isInvite by mutableStateOf(false)
+        private set
+    var inviteLabel by mutableStateOf<String?>(null)
+        private set
+    /** Lien d'invitation reçu via deep link (préremplit l'écran Invitation). */
+    var pendingInviteLink by mutableStateOf<String?>(null)
+        private set
     var isLoggedIn by mutableStateOf(false)
         private set
     var isLoading by mutableStateOf(true)
@@ -186,11 +193,45 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 return
             }
             networkStatus = NetworkStatus.ONLINE
-            if (api.cookieJar.hasSession()) {
+            // Session invité (Bearer) prioritaire si présente
+            if (InviteSessionStore.hasInviteSession(getApplication())) {
+                api.enableInviteMode(true)
                 try {
                     val me = api.me()
                     if (!me.user.isNullOrBlank()) {
-                        applySession(me.user!!, me.isAdmin, true)
+                        applySession(
+                            me.user!!,
+                            admin = false,
+                            loggedIn = true,
+                            invite = true,
+                            label = InviteSessionStore.label(getApplication())
+                        )
+                        serverVersion = try {
+                            api.version()
+                        } catch (_: Exception) {
+                            ""
+                        }
+                        syncPending()
+                        prewarmRecentPhotos()
+                        listCache.prune(16)
+                        return
+                    }
+                    api.clearSession()
+                } catch (e: Exception) {
+                    val code = (e as? BeerAPI.ApiException)?.code ?: 0
+                    if (code == 401 || code == 403) {
+                        api.clearSession()
+                    } else {
+                        networkStatus = NetworkStatus.SERVER_UNREACHABLE
+                        restoreOfflineSessionIfNeeded()
+                        return
+                    }
+                }
+            } else if (api.cookieJar.hasSession()) {
+                try {
+                    val me = api.me()
+                    if (!me.user.isNullOrBlank()) {
+                        applySession(me.user!!, me.isAdmin, true, invite = me.isInvite)
                         serverVersion = try {
                             api.version()
                         } catch (_: Exception) {
@@ -223,17 +264,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun restoreOfflineSessionIfNeeded() {
         val restored = BeerSessionStore.restore(getApplication()) ?: return
-        if (api.cookieJar.hasSession() || networkStatus != NetworkStatus.ONLINE) {
-            applySession(restored.first, restored.second, true)
+        val hasAuth = api.cookieJar.hasSession() ||
+            InviteSessionStore.hasInviteSession(getApplication()) ||
+            networkStatus != NetworkStatus.ONLINE
+        if (hasAuth) {
+            applySession(
+                restored.user,
+                restored.isAdmin,
+                true,
+                invite = restored.isInvite,
+                label = InviteSessionStore.label(getApplication())
+            )
+            if (restored.isInvite) api.enableInviteMode(true)
         }
     }
 
-    private fun applySession(userName: String?, admin: Boolean, loggedIn: Boolean) {
+    private fun applySession(
+        userName: String?,
+        admin: Boolean,
+        loggedIn: Boolean,
+        invite: Boolean = false,
+        label: String? = null
+    ) {
         user = userName
-        isAdmin = admin
+        isAdmin = admin && !invite
+        isInvite = invite
+        inviteLabel = label
         isLoggedIn = loggedIn
         if (loggedIn && userName != null) {
-            BeerSessionStore.save(getApplication(), userName, admin)
+            BeerSessionStore.save(getApplication(), userName, admin && !invite, invite)
         }
     }
 
@@ -294,6 +353,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 BeerSessionStore.clear(getApplication())
+                InviteSessionStore.clear(getApplication())
                 api.setBaseURL(ServerSettings.LAN_API_BASE)
                 val resp = api.login(username, password)
                 val me = try {
@@ -307,7 +367,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 applySession(
                     resp.user ?: me.user ?: username,
                     resp.isAdmin ?: me.isAdmin,
-                    true
+                    true,
+                    invite = false
                 )
                 networkStatus = NetworkStatus.ONLINE
                 hideToast()
@@ -325,16 +386,74 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun offerInviteLink(link: String) {
+        pendingInviteLink = link.trim().ifBlank { null }
+    }
+
+    fun consumePendingInviteLink(): String? {
+        val v = pendingInviteLink
+        pendingInviteLink = null
+        return v
+    }
+
+    fun joinInvite(inviteLink: String, onDone: (Result<Unit>) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val resp = api.joinInvite(inviteLink)
+                pendingInviteLink = null
+                applySession(
+                    resp.user ?: "invite",
+                    admin = false,
+                    loggedIn = true,
+                    invite = true,
+                    label = resp.label
+                )
+                networkStatus = NetworkStatus.ONLINE
+                hideToast()
+                serverVersion = try {
+                    api.version()
+                } catch (_: Exception) {
+                    ""
+                }
+                showToast(
+                    "Bienvenue${resp.label?.let { " $it" } ?: ""}",
+                    ToastPayload.Variant.INFO,
+                    detail = "Compte invité · 4G/5G OK",
+                    durationMs = 3500
+                )
+                syncPending()
+                prewarmRecentPhotos()
+                onDone(Result.success(Unit))
+            } catch (e: Exception) {
+                onDone(Result.failure(e))
+            }
+        }
+    }
+
     fun logout() {
+        // Comptes invités : pas de déconnexion volontaire (évite de perdre le Bearer lié au device)
+        if (isInvite) {
+            showToast(
+                "Compte invité",
+                ToastPayload.Variant.INFO,
+                detail = "Pas de déconnexion — l'accès reste sur cet appareil",
+                durationMs = 3200
+            )
+            return
+        }
         viewModelScope.launch {
             try {
                 api.logout()
             } catch (_: Exception) {
+                api.clearSession()
             }
             user = null
             isAdmin = false
+            isInvite = false
+            inviteLabel = null
             isLoggedIn = false
             BeerSessionStore.clear(getApplication())
+            InviteSessionStore.clear(getApplication())
             hideToast()
             sheet = null
         }

@@ -60,6 +60,13 @@ object HomelabTls {
                 else Log.w(TAG, "domain policy failed for LAN IP $hostname")
                 return@HostnameVerifier ok
             }
+            // WAN IPv4 direct (4G fallback) : cert Let's Encrypt pour eiter.freeboxos.fr
+            if (hostname == ServerSettings.WAN_IPV4) {
+                val ok = default.verify(PIN_DOMAIN, session)
+                if (ok) Log.i(TAG, "accepted WAN IPv4 $hostname with SNI domain $PIN_DOMAIN")
+                else Log.w(TAG, "domain policy failed for WAN IPv4 $hostname")
+                return@HostnameVerifier ok
+            }
             false
         }
     }

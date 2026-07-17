@@ -4,16 +4,32 @@ object ServerSettings {
     const val CANONICAL_HOST = "eiter.freeboxos.fr"
     const val WAN_IPV4 = "82.64.151.113"
     const val API_BASE_STRING = "https://$CANONICAL_HOST/beer/"
+    /** Fallback 4G si AAAA Freebox casse le TLS (IPv4 + SNI host). */
+    const val WAN_IPV4_API_BASE = "https://$WAN_IPV4/beer/"
     const val LAN_API_BASE = "https://192.168.1.50:8444/beer/"
     const val LAN_PROBE_TIMEOUT_SEC = 15L
 
     @Volatile
     private var runtimeBase: String? = null
 
-    val effectiveBase: String
-        get() = runtimeBase ?: LAN_API_BASE
+    /** Mode invité : forcer WAN (jamais LAN Freebox). */
+    @Volatile
+    var inviteMode: Boolean = false
 
-    val candidateURLs: List<String> = listOf(LAN_API_BASE, API_BASE_STRING)
+    val effectiveBase: String
+        get() = when {
+            inviteMode -> runtimeBase?.takeIf { !isLanEndpoint(it) } ?: API_BASE_STRING
+            else -> runtimeBase ?: LAN_API_BASE
+        }
+
+    val candidateURLs: List<String>
+        get() = if (inviteMode) {
+            listOf(API_BASE_STRING, WAN_IPV4_API_BASE)
+        } else {
+            listOf(LAN_API_BASE, API_BASE_STRING)
+        }
+
+    val inviteCandidateURLs: List<String> = listOf(API_BASE_STRING, WAN_IPV4_API_BASE)
 
     fun isLanEndpoint(url: String): Boolean = url.contains(":8444")
 

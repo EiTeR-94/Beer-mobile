@@ -26,7 +26,10 @@ final class AppModel: ObservableObject {
 
     @Published var user: String?
     @Published var isAdmin = false
-    @Published var isInvite = false  // always false (owner main account only)
+    @Published var isInvite = false
+    @Published var inviteLabel: String?
+    /// Lien d'invitation reçu via deep link / Universal Link.
+    @Published var pendingInviteLink: String?
     @Published var isLoggedIn = false
     @Published var isLoading = true
     @Published var toast: ToastPayload?
@@ -170,7 +173,14 @@ final class AppModel: ObservableObject {
         // Finer detection: local LAN (192.168.1.x) vs VPN (192.168.27.x) vs other
         let ip = getCurrentIPAddress()
         currentLocalIP = ip
-        if let ip = ip {
+        // Invité : toujours WAN FQDN (ne bascule jamais sur le LAN Freebox)
+        if isInvite || InviteSessionStore.hasInviteSession {
+            api.enableInviteMode(true)
+            api.setBaseURL(ServerSettings.apiBase)
+            PlexiIPv4URLProtocol.useCustomTransport = true
+            isOnLocalWifi = false
+            isOnVPN = false
+        } else if let ip = ip {
             if ip.hasPrefix("192.168.1.") {
                 isOnLocalWifi = true
                 isOnVPN = false
@@ -180,7 +190,7 @@ final class AppModel: ObservableObject {
                 isOnLocalWifi = false
                 isOnVPN = true
                 api.setBaseURL(ServerSettings.apiBase) // domain for VPN
-                PlexiIPv4URLProtocol.useCustomTransport = false // use high-level on known VPN too
+                PlexiIPv4URLProtocol.useCustomTransport = false
             } else {
                 isOnLocalWifi = false
                 isOnVPN = false
@@ -258,27 +268,47 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func applySession(user: String?, isAdmin: Bool, isInvite: Bool, loggedIn: Bool) {
+    func applySession(user: String?, isAdmin: Bool, isInvite: Bool, loggedIn: Bool, inviteLabel: String? = nil) {
         self.user = user
-        self.isAdmin = isAdmin
-        self.isInvite = false  // owner main account only
+        self.isAdmin = isAdmin && !isInvite
+        self.isInvite = isInvite
+        self.inviteLabel = inviteLabel ?? InviteSessionStore.label
         self.isLoggedIn = loggedIn
         if loggedIn, let user {
-            BeerSessionStore.save(user: user, isAdmin: isAdmin, isInvite: false)
+            BeerSessionStore.save(user: user, isAdmin: isAdmin && !isInvite, isInvite: isInvite)
             KeychainStore.username = user
-            // (no legacy guest tokens)
+            if isInvite {
+                api.enableInviteMode(true)
+            }
         }
     }
 
     func restoreOfflineSessionIfNeeded() {
         guard let saved = BeerSessionStore.restore() else { return }
-        applySession(user: saved.user, isAdmin: saved.isAdmin, isInvite: false, loggedIn: true)
+        if saved.isInvite {
+            api.enableInviteMode(true)
+        }
+        applySession(
+            user: saved.user,
+            isAdmin: saved.isAdmin,
+            isInvite: saved.isInvite,
+            loggedIn: true,
+            inviteLabel: InviteSessionStore.label
+        )
     }
 
     func bootstrap() async {
         isLoading = true
         defer { isLoading = false }
-        restoreOfflineSessionIfNeeded()
+        // Restaurer session invite Bearer en premier
+        if InviteSessionStore.hasInviteSession {
+            api.enableInviteMode(true)
+            if let u = InviteSessionStore.username {
+                applySession(user: u, isAdmin: false, isInvite: true, loggedIn: true, inviteLabel: InviteSessionStore.label)
+            }
+        } else {
+            restoreOfflineSessionIfNeeded()
+        }
         await probeServerReachability()
         guard networkStatus == .online else {
             if isLoggedIn {
@@ -289,32 +319,46 @@ final class AppModel: ObservableObject {
         do {
             let me = try await fetchMe()
             if me.auth && me.user == nil {
+                if isInvite {
+                    // Ne pas auto-logout invité sur /api/me sans user (public)
+                    return
+                }
                 await logout()
                 return
             }
             applySession(
                 user: me.user,
                 isAdmin: me.isAdmin,
-                isInvite: me.isInvite,
-                loggedIn: me.user != nil
+                isInvite: me.isInvite || InviteSessionStore.hasInviteSession,
+                loggedIn: me.user != nil,
+                inviteLabel: InviteSessionStore.label
             )
             if isLoggedIn { await syncPending() }
-            cache.prune(maxFiles: 12)  // Theme 5: keep cache small
+            cache.prune(maxFiles: 12)
             await prewarmRecentPhotos()
         } catch BeerAPIError.forbidden {
+            let wasInvite = isInvite || InviteSessionStore.hasInviteSession
             await clearSessionState()
             BeerSessionStore.clear()
+            InviteSessionStore.clear()
             KeychainStore.username = nil
-            showToast("Accès refusé.", variant: .error, durationMs: 4000)
+            showToast(wasInvite ? "Invitation expirée — demande un nouveau lien" : "Accès refusé.", variant: .error, durationMs: 4000)
         } catch BeerAPIError.unauthorized {
+            let wasInvite = isInvite || InviteSessionStore.hasInviteSession
+            InviteSessionStore.clear()
             await clearSessionState()
             if networkStatus == .online {
-                showToast("Session expirée — reconnecte-toi", variant: .error, durationMs: 4000)
+                showToast(
+                    wasInvite
+                        ? "Invitation expirée — demande un nouveau lien"
+                        : "Session expirée — reconnecte-toi",
+                    variant: .error,
+                    durationMs: 4000
+                )
             }
         } catch {
-            // Erreurs réseau / injoignable : on peut garder l'état offline depuis la session locale
             if !isLoggedIn, let saved = BeerSessionStore.restore() {
-                applySession(user: saved.user, isAdmin: saved.isAdmin, isInvite: false, loggedIn: true)
+                applySession(user: saved.user, isAdmin: saved.isAdmin, isInvite: saved.isInvite, loggedIn: true)
             }
             if isLoggedIn {
                 if networkStatus == .offline {
@@ -351,8 +395,9 @@ final class AppModel: ObservableObject {
     }
 
     func login(username: String, password: String) async throws {
-        // Owner main account.
         BeerSessionStore.clear()
+        InviteSessionStore.clear()
+        api.enableInviteMode(false)
         api.setBaseURL(ServerSettings.lanApiBase)
         let loginResp = try await api.login(username: username, password: password)
         let me = try? await api.me()
@@ -367,12 +412,36 @@ final class AppModel: ObservableObject {
         await syncPending()
     }
 
+    func joinInvite(inviteLink: String) async throws {
+        let resp = try await api.joinInvite(inviteLink: inviteLink)
+        pendingInviteLink = nil
+        applySession(
+            user: resp.user ?? "invite",
+            isAdmin: false,
+            isInvite: true,
+            loggedIn: true,
+            inviteLabel: resp.label
+        )
+        networkStatus = .online
+        hideToast()
+        let label = resp.label.map { " \($0)" } ?? ""
+        showToast("Bienvenue\(label)", variant: .info, detail: "Compte invité · 4G/5G OK", durationMs: 3500)
+        await syncPending()
+        serverVersion = (try? await api.version()) ?? serverVersion
+    }
+
     func handleOpenURL(_ url: URL) async {
-        // (no legacy guest tokens)
+        let s = url.absoluteString
+        if s.contains("/beer/join") || url.scheme == "plexibeer" {
+            pendingInviteLink = s
+            // Auto-activate if already on login and not logged in
+            if !isLoggedIn {
+                // LoginView will pick up pendingInviteLink
+            }
+        }
     }
 
     private func fetchMe() async throws -> MeResponse {
-        // Main account only.
         return try await api.me()
     }
 
@@ -380,16 +449,27 @@ final class AppModel: ObservableObject {
         user = nil
         isAdmin = false
         isInvite = false
+        inviteLabel = nil
         isLoggedIn = false
     }
 
     private var shouldRefreshPasskeySession: Bool { false }
 
     func logout() async {
+        // Invités : pas de déconnexion volontaire (Bearer lié au device)
+        if isInvite {
+            showToast(
+                "Compte invité",
+                variant: .info,
+                detail: "Pas de déconnexion — l'accès reste sur cet appareil",
+                durationMs: 3200
+            )
+            return
+        }
         await api.logout()
         await clearSessionState()
-        // Logout explicite : on oublie aussi l'identité locale (plus de restore offline ni refresh auto)
         BeerSessionStore.clear()
+        InviteSessionStore.clear()
         KeychainStore.username = nil
         hideToast()
     }

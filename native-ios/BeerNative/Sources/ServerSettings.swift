@@ -12,15 +12,29 @@ enum ServerSettings {
         URL(string: apiBaseString)!
     }
 
+    /// Fallback IPv4 direct (4G si AAAA Freebox casse le TLS).
+    static var wanIPv4ApiBase: URL {
+        URL(string: "https://\(wanIPv4)/beer/")!
+    }
+
     /// Direct LAN IP for owner (WiFi or VPN). Avoids domain IPv6 issues on Freebox.
-    /// Main (and only) path now.
     static var lanApiBase: URL {
         URL(string: "https://192.168.1.50:8444/beer/")!
     }
 
+    /// Mode invité : forcer WAN (jamais LAN Freebox).
+    static var inviteMode: Bool = false
+
     static var candidateURLs: [URL] {
-        // Try direct LAN IP first (fast, avoids DNS/IPv6 issues), fallback to domain (for VPN)
-        [lanApiBase, apiBase]
+        if inviteMode {
+            return inviteCandidateURLs
+        }
+        // Owner: LAN IP first, domain for VPN
+        return [lanApiBase, apiBase]
+    }
+
+    static var inviteCandidateURLs: [URL] {
+        [apiBase, wanIPv4ApiBase]
     }
 
     /// Probe timeout for LAN/VPN. Short for quick fail, longer for VPN latency.

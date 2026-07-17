@@ -39,10 +39,21 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.PlexiBeer">
+            android:theme="@style/Theme.PlexiBeer"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Lien d'invitation → ouvre l'app (copier/coller toujours possible) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="eiter.freeboxos.fr"
+                    android:pathPrefix="/beer/join" />
             </intent-filter>
         </activity>
     </application>

@@ -30,12 +30,17 @@ final class BeerAPI {
     static let shared = BeerAPI()
     private static let nativeClientHeader = "X-PlexiBeer-Client"
     private static let nativeClientValue = "native-ios"
-    private static let nativeUserAgent = "PlexiBeer/3.3.5 (iPhone; native owner) [lan-vpn]"
+    private static let nativeUserAgentOwner = "PlexiBeer/3.4.0 (iPhone; native owner) [lan-vpn]"
+    private static let nativeUserAgentInvite = "PlexiBeer/3.4.0 (iPhone; native invite) [wan]"
 
     private let session: URLSession
     private let lanProbeSession: URLSession
     private(set) var baseURL: URL
     private(set) var activeEndpoint: String = ""
+
+    var isInviteMode: Bool {
+        ServerSettings.inviteMode || InviteSessionStore.hasInviteSession
+    }
 
     init(baseURL: URL = ServerSettings.lanApiBase) {
         self.baseURL = Self.canonicalBase(baseURL)
@@ -80,46 +85,77 @@ final class BeerAPI {
         activeEndpoint = baseURL.absoluteString
     }
 
+    func enableInviteMode(_ enabled: Bool) {
+        ServerSettings.inviteMode = enabled
+        if enabled {
+            setBaseURL(ServerSettings.apiBase)
+        }
+    }
+
+    func clearAllAuth() {
+        InviteSessionStore.clear()
+        ServerSettings.inviteMode = false
+        if let cookies = HTTPCookieStorage.shared.cookies {
+            cookies.forEach { HTTPCookieStorage.shared.deleteCookie($0) }
+        }
+        setBaseURL(ServerSettings.lanApiBase)
+    }
+
     func healthCheck() async throws -> Bool {
         let (_, http, _) = try await request(path: "/api/health", method: "GET", body: nil)
         return http.statusCode == 200
     }
 
     func discoverWorkingEndpoint() async -> String? {
-        // Owner: prefer direct LAN IP (fast, no IPv6/DNS issues on Freebox), fallback to domain for VPN.
         let originalBase = baseURL
         let candidates = ServerSettings.candidateURLs
-        // Try LAN first
+        // Invite: WAN only (FQDN then IPv4)
+        if isInviteMode {
+            for candidate in candidates {
+                do {
+                    guard let healthURL = URL(string: "api/health", relativeTo: candidate) else { continue }
+                    var healthProbe = URLRequest(url: healthURL)
+                    healthProbe.httpMethod = "GET"
+                    let (_, http, _) = try await performOnEndpoint(candidate, request: healthProbe, probe: false)
+                    // health peut être public ou 403 gate — on teste join plutôt pour invite
+                    if http.statusCode == 200 || http.statusCode == 403 {
+                        baseURL = Self.canonicalBase(candidate)
+                        activeEndpoint = candidate.absoluteString
+                        if http.statusCode == 200 { return candidate.absoluteString }
+                        // 403 health = endpoint joignable ; tenter quand même
+                        return candidate.absoluteString
+                    }
+                } catch {
+                    continue
+                }
+            }
+            baseURL = originalBase
+            return nil
+        }
+        // Owner: prefer LAN IP first
         if let lan = candidates.first(where: { ServerSettings.isLanEndpoint($0) }) {
             do {
-                // Build probe URL using the lan candidate itself, not current baseURL
                 guard let healthURL = URL(string: "api/health", relativeTo: lan) else { throw BeerAPIError.invalidURL }
                 var healthProbe = URLRequest(url: healthURL)
                 healthProbe.httpMethod = "GET"
                 let (_, http, _) = try await performOnEndpoint(
                     lan,
                     request: healthProbe,
-                    probe: false  // use full timeout for discover, to allow establishment on first connect
+                    probe: false
                 )
                 if http.statusCode == 200 {
                     baseURL = Self.canonicalBase(lan)
                     activeEndpoint = lan.absoluteString
-                    // remember last good for strategy
-                    // (AppModel will store if needed)
                     return lan.absoluteString
                 }
             } catch {
-                // Do not fallback to domain if we are on local wifi (trust the LAN IP)
-                // Only fallback on VPN or when explicitly needed
                 if !ServerSettings.isLikelyOnLocalWifi() {
                     // fall to domain
                 }
             }
         }
-        // Fallback to domain (VPN)
         for candidate in candidates where !ServerSettings.isLanEndpoint(candidate) {
             do {
-                // Build probe URL using the candidate itself
                 guard let healthURL = URL(string: "api/health", relativeTo: candidate) else { throw BeerAPIError.invalidURL }
                 var healthProbe = URLRequest(url: healthURL)
                 healthProbe.httpMethod = "GET"
@@ -142,6 +178,9 @@ final class BeerAPI {
     }
 
     func login(username: String, password: String) async throws -> LoginResponse {
+        enableInviteMode(false)
+        InviteSessionStore.clear()
+        setBaseURL(ServerSettings.lanApiBase)
         let body = try JSONEncoder().encode(["username": username, "password": password])
         let (data, http, responseURL) = try await request(
             path: "/api/login",
@@ -161,7 +200,6 @@ final class BeerAPI {
         if http.statusCode == 401 || decoded.ok == false {
             throw BeerAPIError.server(decoded.error ?? "Identifiants incorrects")
         }
-        // Explicitly store any Set-Cookie from login response to ensure subsequent requests (checkins, gallery etc.) carry the session cookie
         let setCookieHeader = http.value(forHTTPHeaderField: "Set-Cookie") ?? ""
         if !setCookieHeader.isEmpty {
             let cookies = HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": setCookieHeader], for: responseURL)
@@ -172,13 +210,93 @@ final class BeerAPI {
         return decoded
     }
 
-    // (legacy guest/passkey functions removed - owner main account only)
-    // These paths are no longer called from the app.
+    /// Activation invité WAN — POST /api/native/join → Bearer.
+    func joinInvite(inviteLink: String) async throws -> NativeJoinResponse {
+        guard let token = InviteSessionStore.parseInviteToken(inviteLink) else {
+            throw BeerAPIError.server("Lien d'invitation invalide")
+        }
+        let deviceId = InviteSessionStore.deviceId
+        // Pas de cookies owner pendant l'activation
+        if let cookies = HTTPCookieStorage.shared.cookies {
+            cookies.forEach { HTTPCookieStorage.shared.deleteCookie($0) }
+        }
+        BeerSessionStore.clear()
+
+        var lastError: Error?
+        for candidate in ServerSettings.inviteCandidateURLs {
+            do {
+                setBaseURL(candidate)
+                enableInviteMode(true)
+                let body = try JSONEncoder().encode([
+                    "token": token,
+                    "device_id": deviceId,
+                ])
+                var req = URLRequest(url: try url("/api/native/join"))
+                req.httpMethod = "POST"
+                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
+                req.setValue(Self.nativeUserAgentInvite, forHTTPHeaderField: "User-Agent")
+                req.setValue(deviceId, forHTTPHeaderField: "X-Beer-Device")
+                req.httpBody = body
+                let (data, http, _) = try await performOnEndpoint(candidate, request: req, probe: false)
+                guard let decoded = try? JSONDecoder().decode(NativeJoinResponse.self, from: data) else {
+                    throw BeerAPIError.server("Réponse join invalide (HTTP \(http.statusCode))")
+                }
+                if http.statusCode == 429 {
+                    throw BeerAPIError.server("Trop de tentatives — réessaie dans une minute")
+                }
+                if http.statusCode == 403, decoded.error == "wrong_device" {
+                    throw BeerAPIError.server("Cette invitation est déjà liée à un autre téléphone")
+                }
+                if http.statusCode >= 400 || !decoded.ok || (decoded.accessToken ?? "").isEmpty {
+                    let msg: String
+                    switch decoded.error {
+                    case "invalid": msg = "Invitation invalide ou expirée"
+                    case "invalid_device": msg = "Identifiant appareil invalide"
+                    case "disabled": msg = "Invitations natives désactivées"
+                    default: msg = decoded.error ?? "Activation impossible (HTTP \(http.statusCode))"
+                    }
+                    throw BeerAPIError.server(msg)
+                }
+                let bound = decoded.deviceId ?? deviceId
+                InviteSessionStore.save(
+                    accessToken: decoded.accessToken!,
+                    user: decoded.user ?? "invite",
+                    label: decoded.label,
+                    expiresAt: decoded.expiresAt,
+                    deviceId: bound
+                )
+                enableInviteMode(true)
+                activeEndpoint = candidate.absoluteString
+                return decoded
+            } catch let e as BeerAPIError {
+                // Erreurs métier (lien invalide, wrong_device…) : stop
+                if case .server(let msg) = e {
+                    let lower = msg.lowercased()
+                    if lower.contains("invitation") || lower.contains("appareil")
+                        || lower.contains("tentatives") || lower.contains("invalide")
+                        || lower.contains("désactiv") || lower.contains("liée") {
+                        throw e
+                    }
+                }
+                lastError = e
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError ?? BeerAPIError.server("Serveur injoignable en 4G/5G — réessaie")
+    }
 
     func me() async throws -> MeResponse {
         let (data, http, _) = try await request(path: "/api/me", method: "GET", body: nil)
         try throwIfUnauthorized(http.statusCode)
-        if http.statusCode == 403 { throw BeerAPIError.forbidden }
+        if http.statusCode == 403 {
+            if isInviteMode {
+                InviteSessionStore.clear()
+                throw BeerAPIError.server("Invitation invalide ou expirée — demande un nouveau lien")
+            }
+            throw BeerAPIError.forbidden
+        }
         guard let decoded = try? JSONDecoder().decode(MeResponse.self, from: data) else {
             throw BeerAPIError.decode
         }
@@ -186,10 +304,10 @@ final class BeerAPI {
     }
 
     func logout() async {
-        _ = try? await request(path: "/api/logout", method: "POST", body: nil)
-        if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL) {
-            cookies.forEach { HTTPCookieStorage.shared.deleteCookie($0) }
+        if !isInviteMode {
+            _ = try? await request(path: "/api/logout", method: "POST", body: nil)
         }
+        clearAllAuth()
     }
 
     func lookup(barcode: String) async throws -> LookupResponse {
@@ -764,19 +882,24 @@ final class BeerAPI {
 
     private func applyCommonHeaders(to req: inout URLRequest) {
         req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
-        req.setValue(Self.nativeUserAgent, forHTTPHeaderField: "User-Agent")
-        // Main account uses cookie session.
+        req.setValue(
+            isInviteMode ? Self.nativeUserAgentInvite : Self.nativeUserAgentOwner,
+            forHTTPHeaderField: "User-Agent"
+        )
+        if let token = InviteSessionStore.accessToken, !token.isEmpty {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            req.setValue(InviteSessionStore.deviceId, forHTTPHeaderField: "X-Beer-Device")
+        } else if let cookieStr = beerSessionCookieString() {
+            req.setValue(cookieStr, forHTTPHeaderField: "Cookie")
+        }
     }
 
     private func beerSessionCookieString() -> String? {
-        // Force beer_session cookie for local accounts (IP direct can have matching issues)
         if let cookie = HTTPCookieStorage.shared.cookies?.first(where: { $0.name == "beer_session" }) {
             return "beer_session=\(cookie.value)"
         }
         return nil
     }
-
-    // Owner main account only (LAN/VPN).
 
     private func request(
         path: String,
@@ -784,20 +907,23 @@ final class BeerAPI {
         body: Data?,
         contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse, URL) {
-        // Owner main account only (LAN/WiFi or VPN).
         var lastError: Error?
-        for candidate in ServerSettings.candidateURLs {
+        let candidates = ServerSettings.candidateURLs
+        for candidate in candidates {
             baseURL = Self.canonicalBase(candidate)
             var req = URLRequest(url: try url(path))
             req.httpMethod = method
             if let contentType { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
             applyCommonHeaders(to: &req)
             req.httpBody = body
-            if let cookieStr = beerSessionCookieString() {
-                req.setValue(cookieStr, forHTTPHeaderField: "Cookie")
-            } else if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL), !cookies.isEmpty {
-                let cookieString = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
-                req.setValue(cookieString, forHTTPHeaderField: "Cookie")
+            // Cookies owner si pas Bearer
+            if InviteSessionStore.accessToken == nil {
+                if let cookieStr = beerSessionCookieString() {
+                    req.setValue(cookieStr, forHTTPHeaderField: "Cookie")
+                } else if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL), !cookies.isEmpty {
+                    let cookieString = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+                    req.setValue(cookieString, forHTTPHeaderField: "Cookie")
+                }
             }
             do {
                 let result = try await performOnEndpoint(candidate, request: req, probe: false)
@@ -807,21 +933,25 @@ final class BeerAPI {
                 lastError = error
             }
         }
-        let tried = ServerSettings.candidateURLs.map(\.absoluteString).joined(separator: ", ")
+        let tried = candidates.map(\.absoluteString).joined(separator: ", ")
         if let lastError { throw lastError }
         throw BeerAPIError.allEndpointsFailed(
-            "Aucun serveur joignable (\(tried)). Vérifie ta connexion Wi-Fi/VPN et l'autorisation « Réseau local » dans Réglages."
+            isInviteMode
+                ? "Serveur injoignable en 4G/5G (\(tried)). Réessaie."
+                : "Aucun serveur joignable (\(tried)). Vérifie ta connexion Wi-Fi/VPN et l'autorisation « Réseau local » dans Réglages."
         )
     }
 
     private func performTransport(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
-        // Owner: LAN preferred.
         var req = request
-        if let cookieStr = beerSessionCookieString() {
-            req.setValue(cookieStr, forHTTPHeaderField: "Cookie")
-        } else if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL), !cookies.isEmpty {
-            let cookieString = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
-            req.setValue(cookieString, forHTTPHeaderField: "Cookie")
+        applyCommonHeaders(to: &req)
+        if InviteSessionStore.accessToken == nil {
+            if let cookieStr = beerSessionCookieString() {
+                req.setValue(cookieStr, forHTTPHeaderField: "Cookie")
+            } else if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL), !cookies.isEmpty {
+                let cookieString = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+                req.setValue(cookieString, forHTTPHeaderField: "Cookie")
+            }
         }
         return try await performOnEndpoint(baseURL, request: req, probe: false)
     }
@@ -833,6 +963,10 @@ final class BeerAPI {
     ) async throws -> (Data, HTTPURLResponse, URL) {
         var req = request
         applyCommonHeaders(to: &req)
+        // Host canonique si on tape l'IPv4 WAN directement
+        if endpoint.host == ServerSettings.wanIPv4 || req.url?.host == ServerSettings.wanIPv4 {
+            req.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
+        }
         let httpSession = session(for: endpoint, probe: probe)
         do {
             let (data, response) = try await httpSession.data(for: req)

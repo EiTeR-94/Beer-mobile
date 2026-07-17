@@ -169,24 +169,31 @@ class SessionCookieJar(context: Context) : CookieJar {
     }
 }
 
-/** Lightweight identity restore (username / admin) like BeerSessionStore iOS. */
+/** Lightweight identity restore (username / admin / invite) like BeerSessionStore iOS. */
 object BeerSessionStore {
     private const val PREFS = "beer_session_identity"
 
-    fun save(context: Context, user: String, isAdmin: Boolean) {
+    data class Identity(
+        val user: String,
+        val isAdmin: Boolean,
+        val isInvite: Boolean
+    )
+
+    fun save(context: Context, user: String, isAdmin: Boolean, isInvite: Boolean = false) {
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString("user", user)
             .putBoolean("is_admin", isAdmin)
+            .putBoolean("is_invite", isInvite)
             .putBoolean("logged_in", true)
             .apply()
     }
 
-    fun restore(context: Context): Triple<String, Boolean, Boolean>? {
+    fun restore(context: Context): Identity? {
         val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (!p.getBoolean("logged_in", false)) return null
         val user = p.getString("user", null) ?: return null
-        return Triple(user, p.getBoolean("is_admin", false), true)
+        return Identity(user, p.getBoolean("is_admin", false), p.getBoolean("is_invite", false))
     }
 
     fun clear(context: Context) {

@@ -1,5 +1,6 @@
 package fr.eiter.plexibeer
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -17,6 +18,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ServerSettings.useEffectiveBaseIfNeeded()
+        handleInviteIntent(intent)
         setContent {
             PlexiBeerTheme {
                 Surface(
@@ -26,6 +28,19 @@ class MainActivity : ComponentActivity() {
                     BeerApp(vm = vm)
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleInviteIntent(intent)
+    }
+
+    private fun handleInviteIntent(intent: Intent?) {
+        val data = intent?.data?.toString() ?: return
+        if (data.contains("/beer/join")) {
+            vm.offerInviteLink(data)
         }
     }
 }

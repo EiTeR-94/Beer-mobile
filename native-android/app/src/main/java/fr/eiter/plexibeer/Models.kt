@@ -17,6 +17,17 @@ data class LoginResponse(
     val error: String? = null
 )
 
+data class NativeJoinResponse(
+    val ok: Boolean = false,
+    @SerializedName("access_token") val accessToken: String? = null,
+    val user: String? = null,
+    val label: String? = null,
+    @SerializedName("is_invite") val isInvite: Boolean = false,
+    @SerializedName("device_id") val deviceId: String? = null,
+    @SerializedName("expires_at") val expiresAt: String? = null,
+    val error: String? = null
+)
+
 data class BeerProduct(
     var ok: Boolean = true,
     var barcode: String = "",

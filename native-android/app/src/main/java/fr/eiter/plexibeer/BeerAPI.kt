@@ -5,11 +5,14 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Dns
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.net.Inet4Address
+import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 
 class BeerAPI private constructor(context: Context) {
@@ -23,8 +26,19 @@ class BeerAPI private constructor(context: Context) {
 
         private const val NATIVE_CLIENT_HEADER = "X-PlexiBeer-Client"
         private const val NATIVE_CLIENT_VALUE = "native-android"
-        private const val USER_AGENT = "PlexiBeer/1.0 (Android; native owner) [lan-vpn]"
+        private const val USER_AGENT_OWNER = "PlexiBeer/1.1 (Android; native owner) [lan-vpn]"
+        private const val USER_AGENT_INVITE = "PlexiBeer/1.1 (Android; native invite) [wan]"
         private val JSON = "application/json; charset=utf-8".toMediaType()
+
+        /** Préfère IPv4 (4G Freebox AAAA souvent sans 443). */
+        private val preferIpv4Dns = object : Dns {
+            override fun lookup(hostname: String): List<InetAddress> {
+                val all = Dns.SYSTEM.lookup(hostname)
+                val v4 = all.filterIsInstance<Inet4Address>()
+                if (v4.isEmpty()) return all
+                return v4 + all.filter { it !is Inet4Address }
+            }
+        }
     }
 
     private val appContext = context.applicationContext
@@ -35,14 +49,29 @@ class BeerAPI private constructor(context: Context) {
     var activeEndpoint: String = baseURL
         private set
 
+    val isInviteMode: Boolean
+        get() = ServerSettings.inviteMode || InviteSessionStore.hasInviteSession(appContext)
+
     private fun buildClient(connectSec: Long, readSec: Long): OkHttpClient {
         val b = OkHttpClient.Builder()
             .cookieJar(cookieJar)
+            .dns(preferIpv4Dns)
             .connectTimeout(connectSec, TimeUnit.SECONDS)
             .readTimeout(readSec, TimeUnit.SECONDS)
             .writeTimeout(readSec, TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true)
+            .addInterceptor { chain ->
+                val req = chain.request()
+                // Connexion directe IPv4 WAN : Host canonique pour nginx
+                if (req.url.host == ServerSettings.WAN_IPV4) {
+                    chain.proceed(
+                        req.newBuilder().header("Host", ServerSettings.CANONICAL_HOST).build()
+                    )
+                } else {
+                    chain.proceed(req)
+                }
+            }
         HomelabTls.applyTo(b)
         return b.build()
     }
@@ -56,9 +85,21 @@ class BeerAPI private constructor(context: Context) {
         ServerSettings.setRuntimeBase(baseURL)
     }
 
+    fun enableInviteMode(enabled: Boolean) {
+        ServerSettings.inviteMode = enabled
+        if (enabled) {
+            setBaseURL(ServerSettings.API_BASE_STRING)
+        }
+    }
+
     fun clearSession() {
         cookieJar.clear()
         BeerSessionStore.clear(appContext)
+        InviteSessionStore.clear(appContext)
+        ServerSettings.inviteMode = false
+        ServerSettings.resetToLan()
+        baseURL = ServerSettings.effectiveBase
+        activeEndpoint = baseURL
     }
 
     private fun absUrl(path: String): String {
@@ -69,11 +110,19 @@ class BeerAPI private constructor(context: Context) {
 
     private fun applyHeaders(builder: Request.Builder) {
         builder.header(NATIVE_CLIENT_HEADER, NATIVE_CLIENT_VALUE)
-        builder.header("User-Agent", USER_AGENT)
-        // Force beer_session like iOS beerSessionCookieString() —
-        // critical when Set-Cookie Domain=FQDN but we talk to LAN IP.
-        cookieJar.beerSessionCookieHeader()?.let { cookie ->
-            builder.header("Cookie", cookie)
+        builder.header(
+            "User-Agent",
+            if (isInviteMode) USER_AGENT_INVITE else USER_AGENT_OWNER
+        )
+        val inviteToken = InviteSessionStore.accessToken(appContext)
+        if (!inviteToken.isNullOrBlank()) {
+            builder.header("Authorization", "Bearer $inviteToken")
+            builder.header("X-Beer-Device", InviteSessionStore.deviceId(appContext))
+        } else {
+            // Force beer_session like iOS — critical when Set-Cookie Domain=FQDN vs LAN IP.
+            cookieJar.beerSessionCookieHeader()?.let { cookie ->
+                builder.header("Cookie", cookie)
+            }
         }
     }
 
@@ -91,9 +140,9 @@ class BeerAPI private constructor(context: Context) {
         allowUnauthorizedBody: Boolean = false
     ): Pair<String, Int> =
         withContext(Dispatchers.IO) {
-            // Re-apply cookie at send time (token may have been set after builder creation)
+            // Re-apply auth at send time (Bearer invite or cookie owner)
             val finalReq = req.newBuilder().also { b ->
-                cookieJar.beerSessionCookieHeader()?.let { b.header("Cookie", it) }
+                applyHeaders(b)
             }.build()
             val c = if (probe) probeClient else client
             c.newCall(finalReq).execute().use { resp ->
@@ -102,13 +151,19 @@ class BeerAPI private constructor(context: Context) {
                 val body = resp.body?.string().orEmpty()
                 // Login/public endpoints may return 401 with a JSON error body we must parse
                 if (resp.code == 401 && !allowUnauthorizedBody) {
+                    if (isInviteMode) {
+                        InviteSessionStore.clear(appContext)
+                    }
                     throw ApiException("Session expirée — reconnecte-toi", 401)
                 }
                 if (resp.code == 403) {
-                    throw ApiException(
-                        "Accès refusé — Wi‑Fi maison ou VPN Plexi requis",
-                        403
-                    )
+                    val msg = if (isInviteMode) {
+                        InviteSessionStore.clear(appContext)
+                        "Invitation invalide ou expirée — demande un nouveau lien"
+                    } else {
+                        "Accès refusé — Wi‑Fi maison ou VPN Plexi requis"
+                    }
+                    throw ApiException(msg, 403)
                 }
                 if (!resp.isSuccessful && resp.code !in listOf(401, 409)) {
                     // 409 handled by callers for duplicates
@@ -155,7 +210,9 @@ class BeerAPI private constructor(context: Context) {
     }
 
     suspend fun login(username: String, password: String): LoginResponse = withContext(Dispatchers.IO) {
-        // Prefer LAN first like iOS
+        // Owner: LAN first ; clear invite mode
+        enableInviteMode(false)
+        InviteSessionStore.clear(appContext)
         setBaseURL(ServerSettings.LAN_API_BASE)
         discoverWorkingEndpoint()
         // Fresh login: drop previous token so we never mix sessions
@@ -165,7 +222,7 @@ class BeerAPI private constructor(context: Context) {
         val req = Request.Builder()
             .url(absUrl("api/login"))
             .header(NATIVE_CLIENT_HEADER, NATIVE_CLIENT_VALUE)
-            .header("User-Agent", USER_AGENT)
+            .header("User-Agent", USER_AGENT_OWNER)
             .post(json.toRequestBody(JSON))
             .build()
         val (body, code) = execute(req, allowUnauthorizedBody = true)
@@ -182,6 +239,81 @@ class BeerAPI private constructor(context: Context) {
         }
         decoded
     }
+
+    /**
+     * Activation invité WAN (4G/5G) — POST /api/native/join → Bearer.
+     * @param inviteLink URL join complète ou token brut
+     */
+    suspend fun joinInvite(inviteLink: String): NativeJoinResponse = withContext(Dispatchers.IO) {
+        val token = InviteSessionStore.parseInviteToken(inviteLink)
+            ?: throw ApiException("Lien d'invitation invalide", 400)
+        val deviceId = InviteSessionStore.deviceId(appContext)
+
+        // Pas de cookies owner pendant l'activation
+        cookieJar.clear()
+        BeerSessionStore.clear(appContext)
+
+        var lastError: Exception? = null
+        for (candidate in ServerSettings.inviteCandidateURLs) {
+            try {
+                setBaseURL(candidate)
+                enableInviteMode(true)
+                val json = gson.toJson(mapOf("token" to token, "device_id" to deviceId))
+                val req = Request.Builder()
+                    .url(absUrl("api/native/join"))
+                    .header(NATIVE_CLIENT_HEADER, NATIVE_CLIENT_VALUE)
+                    .header("User-Agent", USER_AGENT_INVITE)
+                    .header("X-Beer-Device", deviceId)
+                    .post(json.toRequestBody(JSON))
+                    .build()
+                val (body, code) = execute(req, allowUnauthorizedBody = true)
+                val decoded = gson.fromJson(body, NativeJoinResponse::class.java)
+                    ?: throw ApiException("Réponse join invalide (HTTP $code)", code)
+                if (code == 429) {
+                    throw ApiException("Trop de tentatives — réessaie dans une minute", 429)
+                }
+                if (code == 403 && decoded.error == "wrong_device") {
+                    throw ApiException(
+                        "Cette invitation est déjà liée à un autre téléphone",
+                        403
+                    )
+                }
+                if (code >= 400 || !decoded.ok || decoded.accessToken.isNullOrBlank()) {
+                    throw ApiException(
+                        when (decoded.error) {
+                            "invalid" -> "Invitation invalide ou expirée"
+                            "invalid_device" -> "Identifiant appareil invalide"
+                            "disabled" -> "Invitations natives désactivées"
+                            else -> decoded.error ?: "Activation impossible (HTTP $code)"
+                        },
+                        code
+                    )
+                }
+                val boundDevice = decoded.deviceId ?: deviceId
+                InviteSessionStore.save(
+                    appContext,
+                    accessToken = decoded.accessToken!!,
+                    user = decoded.user ?: "invite",
+                    label = decoded.label,
+                    expiresAt = decoded.expiresAt,
+                    deviceId = boundDevice
+                )
+                enableInviteMode(true)
+                // Garder l'endpoint qui a fonctionné
+                return@withContext decoded
+            } catch (e: Exception) {
+                lastError = e
+                if (e is ApiException && e.code in listOf(400, 403, 429, 503)) {
+                    throw e
+                }
+                // essayer le prochain endpoint (FQDN puis IPv4)
+            }
+        }
+        throw lastError ?: ApiException("Serveur injoignable en 4G/5G — réessaie", 0)
+    }
+
+    fun hasAnySession(): Boolean =
+        cookieJar.hasSession() || InviteSessionStore.hasInviteSession(appContext)
 
     suspend fun me(): MeResponse {
         val (body, _) = execute(requestBuilder("api/me").get().build())

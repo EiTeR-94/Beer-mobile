@@ -66,10 +66,20 @@ fun BeerApp(vm: AppViewModel) {
 
 @Composable
 private fun LoginScreen(vm: AppViewModel) {
+    val deepLink = vm.pendingInviteLink
+    var mode by remember(deepLink) { mutableStateOf(if (deepLink != null) "invite" else "owner") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var inviteLink by remember(deepLink) { mutableStateOf(deepLink.orEmpty()) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(deepLink) {
+        if (!deepLink.isNullOrBlank()) {
+            mode = "invite"
+            inviteLink = deepLink
+        }
+    }
 
     Column(
         Modifier
@@ -82,49 +92,119 @@ private fun LoginScreen(vm: AppViewModel) {
         Text("🍺", fontSize = 48.sp)
         Text("Beer Log", style = MaterialTheme.typography.headlineLarge, color = BeerColors.text)
         Text("Journal de dégustation privé", color = BeerColors.muted, fontSize = 13.sp)
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(20.dp))
 
-        BeerField("Utilisateur", username, { username = it }, "ton compte")
-        Spacer(Modifier.height(10.dp))
-        Column(Modifier.fillMaxWidth()) {
-            Text("Mot de passe", color = BeerColors.muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp))
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = BeerColors.text,
-                    unfocusedTextColor = BeerColors.text,
-                    focusedBorderColor = BeerColors.accent,
-                    unfocusedBorderColor = BeerColors.border,
-                    cursorColor = BeerColors.accent,
-                    focusedContainerColor = BeerColors.fieldBg,
-                    unfocusedContainerColor = BeerColors.fieldBg
-                ),
-                shape = RoundedCornerShape(10.dp)
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            BeerGhostButton(
+                if (mode == "owner") "• Compte" else "Compte",
+                { mode = "owner"; error = null },
+                Modifier.weight(1f)
+            )
+            BeerGhostButton(
+                if (mode == "invite") "• Invitation" else "Invitation",
+                { mode = "invite"; error = null },
+                Modifier.weight(1f)
             )
         }
-        Spacer(Modifier.height(16.dp))
-        error?.let {
-            Text(it, color = BeerColors.error, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
-        }
-        BeerPrimaryButton(
-            title = if (busy) "Connexion…" else "Se connecter",
-            enabled = username.isNotBlank() && password.isNotBlank(),
-            busy = busy
-        ) {
-            busy = true
-            error = null
-            vm.login(username.trim(), password) { result ->
-                busy = false
-                result.onFailure { e -> error = e.message ?: "Connexion impossible" }
+        Spacer(Modifier.height(20.dp))
+
+        if (mode == "owner") {
+            BeerField("Utilisateur", username, { username = it }, "ton compte")
+            Spacer(Modifier.height(10.dp))
+            Column(Modifier.fillMaxWidth()) {
+                Text("Mot de passe", color = BeerColors.muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp))
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = BeerColors.text,
+                        unfocusedTextColor = BeerColors.text,
+                        focusedBorderColor = BeerColors.accent,
+                        unfocusedBorderColor = BeerColors.border,
+                        cursorColor = BeerColors.accent,
+                        focusedContainerColor = BeerColors.fieldBg,
+                        unfocusedContainerColor = BeerColors.fieldBg
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                )
             }
+            Spacer(Modifier.height(16.dp))
+            error?.let {
+                Text(it, color = BeerColors.error, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
+            }
+            BeerPrimaryButton(
+                title = if (busy) "Connexion…" else "Se connecter",
+                enabled = username.isNotBlank() && password.isNotBlank() && !busy,
+                busy = busy
+            ) {
+                busy = true
+                error = null
+                vm.login(username.trim(), password) { result ->
+                    busy = false
+                    result.onFailure { e -> error = e.message ?: "Connexion impossible" }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Text("Wi‑Fi maison ou VPN Plexi requis", color = BeerColors.muted, fontSize = 11.sp)
+        } else {
+            Text(
+                "Colle le lien d'invitation reçu (WhatsApp, SMS…). Fonctionne en 4G/5G, sans VPN.",
+                color = BeerColors.muted,
+                fontSize = 13.sp,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(12.dp))
+            Column(Modifier.fillMaxWidth()) {
+                Text("Lien d'invitation", color = BeerColors.muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp))
+                OutlinedTextField(
+                    value = inviteLink,
+                    onValueChange = { inviteLink = it },
+                    singleLine = false,
+                    minLines = 2,
+                    maxLines = 4,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = {
+                        Text("https://eiter.freeboxos.fr/beer/join/…", color = BeerColors.muted, fontSize = 12.sp)
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = BeerColors.text,
+                        unfocusedTextColor = BeerColors.text,
+                        focusedBorderColor = BeerColors.accent,
+                        unfocusedBorderColor = BeerColors.border,
+                        cursorColor = BeerColors.accent,
+                        focusedContainerColor = BeerColors.fieldBg,
+                        unfocusedContainerColor = BeerColors.fieldBg
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            error?.let {
+                Text(it, color = BeerColors.error, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
+            }
+            BeerPrimaryButton(
+                title = if (busy) "Activation…" else "Activer l'invitation",
+                enabled = inviteLink.isNotBlank() && !busy,
+                busy = busy
+            ) {
+                busy = true
+                error = null
+                vm.joinInvite(inviteLink.trim()) { result ->
+                    busy = false
+                    result.onFailure { e -> error = e.message ?: "Activation impossible" }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Text("1 téléphone par invitation · révocable à tout moment", color = BeerColors.muted, fontSize = 11.sp)
         }
         Spacer(Modifier.height(16.dp))
         Text("Scan · photo · note · historique", color = BeerColors.muted, fontSize = 12.sp)
-        Text("Wi‑Fi maison ou VPN Plexi requis", color = BeerColors.muted, fontSize = 11.sp)
     }
 }
 
@@ -145,7 +225,11 @@ private fun MainScreen(vm: AppViewModel) {
                         fontSize = 12.sp
                     )
                 }
-                vm.user?.let { u ->
+                val badge = when {
+                    vm.isInvite -> vm.inviteLabel?.let { "invité · $it" } ?: "invité"
+                    else -> vm.user
+                }
+                badge?.let { u ->
                     Text(
                         u,
                         color = BeerColors.muted,
@@ -163,15 +247,23 @@ private fun MainScreen(vm: AppViewModel) {
                     add("Patch notes" to { vm.openSheet(BeerSheet.PATCHNOTES) })
                     add("Admin" to { vm.openSheet(BeerSheet.ADMIN) })
                 }
-                add("À boire" to { vm.openSheet(BeerSheet.WISHLIST) })
+                // Invités : historique perso uniquement (pas wishlist / cadeaux)
+                if (!vm.isInvite) {
+                    add("À boire" to { vm.openSheet(BeerSheet.WISHLIST) })
+                }
                 add("Historique" to { vm.openSheet(BeerSheet.HISTORY) })
-                add("Idées cadeaux" to { vm.openSheet(BeerSheet.GIFTS) })
+                if (!vm.isInvite) {
+                    add("Idées cadeaux" to { vm.openSheet(BeerSheet.GIFTS) })
+                }
                 // pendingCount is Compose state — live badge after offline enqueue
                 val pending = vm.pendingCount
                 if (pending > 0) {
                     add("En attente ($pending)" to { vm.openSheet(BeerSheet.PENDING) })
                 }
-                add("Déconnexion" to { vm.logout() })
+                // Invités : pas de déconnexion (perdraient l'accès tant qu'un nouveau lien n'est pas renvoyé)
+                if (!vm.isInvite) {
+                    add("Déconnexion" to { vm.logout() })
+                }
             }
             buttons.chunked(3).forEach { row ->
                 Row(

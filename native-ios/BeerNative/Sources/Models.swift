@@ -25,6 +25,25 @@ struct LoginResponse: Decodable {
     }
 }
 
+struct NativeJoinResponse: Decodable {
+    let ok: Bool
+    let accessToken: String?
+    let user: String?
+    let label: String?
+    let isInvite: Bool
+    let deviceId: String?
+    let expiresAt: String?
+    let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case ok, user, label, error
+        case accessToken = "access_token"
+        case isInvite = "is_invite"
+        case deviceId = "device_id"
+        case expiresAt = "expires_at"
+    }
+}
+
 struct BeerProduct: Codable, Equatable {
     var ok: Bool = true
     var barcode: String = ""

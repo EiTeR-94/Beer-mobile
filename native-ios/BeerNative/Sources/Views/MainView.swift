@@ -56,8 +56,15 @@ struct MainView: View {
                         .foregroundStyle(Theme.muted)
                 }
                 Spacer(minLength: 4)
-                if let user = app.user {
-                    Text(user)
+                let badge: String? = {
+                    if app.isInvite {
+                        if let label = app.inviteLabel, !label.isEmpty { return "invité · \(label)" }
+                        return "invité"
+                    }
+                    return app.user
+                }()
+                if let badge {
+                    Text(badge)
                         .font(.system(size: Theme.Font.pill))
                         .foregroundStyle(Theme.muted)
                         .padding(.horizontal, 8)
@@ -102,13 +109,20 @@ struct MainView: View {
             buttons.append(HeaderButton(title: "Patch notes") { sheet = .patchnotes })
             buttons.append(HeaderButton(title: "Admin") { sheet = .admin })
         }
-        buttons.append(HeaderButton(title: "À boire") { sheet = .wishlist })
+        // Invités : historique perso uniquement (pas wishlist / cadeaux / déconnexion)
+        if !app.isInvite {
+            buttons.append(HeaderButton(title: "À boire") { sheet = .wishlist })
+        }
         buttons.append(HeaderButton(title: "Historique") { sheet = .history })
-        buttons.append(HeaderButton(title: "Idées cadeaux") { sheet = .gifts })
+        if !app.isInvite {
+            buttons.append(HeaderButton(title: "Idées cadeaux") { sheet = .gifts })
+        }
         if app.pendingCount > 0 {
             buttons.append(HeaderButton(title: "En attente (\(app.pendingCount))") { sheet = .pending })
         }
-        buttons.append(HeaderButton(title: "Déconnexion") { Task { await app.logout() } })
+        if !app.isInvite {
+            buttons.append(HeaderButton(title: "Déconnexion") { Task { await app.logout() } })
+        }
         return buttons
     }
 }

@@ -1,21 +1,20 @@
 # PlexiBeer — app Android native (parité iOS)
 
-Application **Kotlin + Jetpack Compose**, owner-only (LAN/VPN), miroir de `native-ios/`.
+Application **Kotlin + Jetpack Compose**, miroir de `native-ios/` + **mode invité WAN**.
 
 ## Expérience cible
 
-Même parcours couple que l’IPA iOS :
-
+### Compte maison (owner)
 - Login + session cookie persistée (`beer_session`)
-- TLS LAN (`192.168.1.50:8444`) avec policy domaine (Let’s Encrypt)
-- Wizard 3 étapes : scan/photo EAN · Untappd · manuel → photo → note/goûts/houblons
-- Doublon « Déjà dégustée → Noter à nouveau »
-- Historique (filtres, détail, edit, delete, re-noter)
-- Galerie photos authentifiées
-- Wishlist + **Goûter**
-- Idées cadeaux (stats couple)
-- Offline queue + sync + feuille « En attente »
-- Barre réseau + toasts + thème sombre iOS
+- TLS LAN (`192.168.1.50:8444`) avec policy domaine (Let’s Encrypt) **ou VPN**
+- Wizard, historique, wishlist, idées cadeaux, offline queue…
+
+### Invité (4G/5G, sans VPN)
+- Onglet **Invitation** → coller le lien `…/beer/join/…` (ou deep link)
+- `POST /api/native/join` → Bearer device-bound
+- Base URL WAN forcée (`eiter.freeboxos.fr`, IPv4 prefer)
+- Historique + check-ins perso uniquement (pas wishlist / cadeaux / admin)
+- **Pas de bouton Déconnexion** (évite de perdre l’accès device-bound)
 
 ## Build local
 
@@ -31,21 +30,25 @@ cd native-android
 
 Actions → **Build Android APK (PlexiBeer native)** → artifact `plexibeer-debug-apk`.
 
-## Install (copine)
+## Install
 
-1. Télécharger `app-debug.apk` (ou `dist/PlexiBeer-debug.apk`)
-2. Autoriser install depuis source inconnue
-3. Ouvrir l’app **sur le Wi‑Fi maison** (ou VPN Plexi)
-4. Se connecter avec **son** compte Beer
+### Owner / couple
+1. APK : `dist/PlexiBeer-debug.apk` ou `https://eiter.freeboxos.fr/mobile/beer/PlexiBeer.apk`
+2. Autoriser sources inconnues
+3. Wi‑Fi maison ou VPN → login compte permanent
+
+### Invité (4G/5G)
+1. Même APK (lien public ci-dessus)
+2. Ouvrir le lien d’invitation → copier dans l’app **Invitation** → Activer
+3. Pas de Wi‑Fi Freebox ni VPN requis
 
 ## Réseau
 
-| Chemin | URL |
-|--------|-----|
-| Prioritaire | `https://192.168.1.50:8444/beer/` |
-| Fallback | `https://eiter.freeboxos.fr/beer/` |
-
-Pas de mode invité 5G dans le natif (PWA web pour les invités).
+| Mode | URL |
+|------|-----|
+| Owner (prioritaire) | `https://192.168.1.50:8444/beer/` |
+| Owner (fallback) | `https://eiter.freeboxos.fr/beer/` |
+| Invité | WAN FQDN uniquement (+ fallback IPv4) |
 
 ## Structure
 
