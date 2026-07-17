@@ -112,23 +112,14 @@ final class HomelabTLSDelegate: NSObject, URLSessionDelegate, URLSessionTaskDele
     }
 
     private func certSummaryMatches(_ cert: SecCertificate, domain: String) -> Bool {
-        // Subject summary often contains CN=domain
-        if let summary = SecCertificateCopySubjectSummary(cert) as String? {
-            if summary.localizedCaseInsensitiveContains(domain) { return true }
-        }
-        // Values dump (SAN appears in some iOS versions)
-        if let values = SecCertificateCopyValues(cert, nil, nil) as? [String: Any] {
-            let blob = String(describing: values)
-            if blob.localizedCaseInsensitiveContains(domain) { return true }
-        }
-        // DER parse light: domain as UTF-8 in cert bytes (LE SAN is plain)
-        let data = SecCertificateCopyData(cert) as Data
-        if let ascii = String(data: data, encoding: .ascii) ?? String(data: data, encoding: .utf8),
-           ascii.localizedCaseInsensitiveContains(domain) {
+        // CN (souvent "eiter.freeboxos.fr")
+        if let summary = SecCertificateCopySubjectSummary(cert) as String?,
+           summary.localizedCaseInsensitiveContains(domain) {
             return true
         }
-        // Also check without encoding — raw bytes
-        if let d = domain.data(using: .utf8), data.range(of: d) != nil {
+        // SAN LE : le FQDN est en clair dans le DER
+        let data = SecCertificateCopyData(cert) as Data
+        if let needle = domain.data(using: .utf8), data.range(of: needle) != nil {
             return true
         }
         return false
