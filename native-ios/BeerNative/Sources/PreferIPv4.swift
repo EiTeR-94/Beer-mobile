@@ -1,21 +1,36 @@
 import Foundation
 import Darwin
 
-/// Miroir d'Android `preferIpv4Dns` — **uniquement** la résolution DNS.
-/// Le dial est dans `AndroidOkHttpClient` (comme OkHttp socket après Dns.lookup).
+/// Miroir d'Android `preferIpv4Dns` pour URLSession (pas de Dns custom iOS).
+/// OkHttp : URL FQDN + socket sur l'A. Ici : on réécrit l'URL en IPv4 pour le dial,
+/// Host = FQDN (interceptor Android), HomelabTLS accepte le cert domaine sur l'IP.
 enum PreferIPv4 {
-    /// Liste A puis AAAA (Android: v4 + non-v4).
-    static func lookup(_ hostname: String) -> [String] {
-        if isIPv4Literal(hostname) { return [hostname] }
-        let v4 = resolve(hostname, family: AF_INET)
-        let v6 = resolve(hostname, family: AF_INET6)
-        if v4.isEmpty { return v6 }
-        return v4 + v6
-    }
-
     static func firstIPv4(_ hostname: String) -> String? {
         if isIPv4Literal(hostname) { return hostname }
-        return resolve(hostname, family: AF_INET).first
+        return resolveA(hostname).first
+    }
+
+    /// Applique preferIpv4Dns + Host interceptor Android sur la requête.
+    static func applyAndroidStyle(_ request: inout URLRequest) {
+        guard let url = request.url, let host = url.host, !host.isEmpty else { return }
+
+        // Déjà en IP littérale : Host = FQDN (comme OkHttp interceptor WAN_IPV4)
+        if isIPv4Literal(host) {
+            request.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
+            return
+        }
+
+        // FQDN public → dial l'enregistrement A (jamais AAAA)
+        guard host == ServerSettings.canonicalHost else { return }
+        let ip = firstIPv4(host) ?? ServerSettings.wanIPv4
+        guard var c = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
+        c.host = ip
+        c.scheme = "https"
+        if c.port == 443 { c.port = nil }
+        guard let fixed = c.url else { return }
+        request.url = fixed
+        request.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
+        NSLog("PreferIPv4: %@ → %@ (Host=%@)", host, ip, ServerSettings.canonicalHost)
     }
 
     private static func isIPv4Literal(_ s: String) -> Bool {
@@ -23,10 +38,10 @@ enum PreferIPv4 {
         return s.withCString { inet_pton(AF_INET, $0, &a) } == 1
     }
 
-    private static func resolve(_ hostname: String, family: Int32) -> [String] {
+    private static func resolveA(_ hostname: String) -> [String] {
         var hints = addrinfo(
             ai_flags: 0,
-            ai_family: family,
+            ai_family: AF_INET,
             ai_socktype: SOCK_STREAM,
             ai_protocol: IPPROTO_TCP,
             ai_addrlen: 0,

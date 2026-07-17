@@ -36,7 +36,14 @@ final class PlexiIPv4URLProtocol: URLProtocol {
     override func startLoading() {
         loadTask = Task {
             do {
-                let (data, response, _) = try await AndroidOkHttpClient.perform(request)
+                // URLSession + PreferIPv4 style : pas de NWConnection (timeout 4G)
+                var req = request
+                PreferIPv4.applyAndroidStyle(&req)
+                let (data, response) = try await URLSession.shared.data(for: req)
+                guard let http = response as? HTTPURLResponse else {
+                    throw URLError(.badServerResponse)
+                }
+                let _ = http
                 client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
                 client?.urlProtocol(self, didLoad: data)
                 client?.urlProtocolDidFinishLoading(self)
