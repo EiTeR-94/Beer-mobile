@@ -247,6 +247,19 @@ final class AppModel: ObservableObject {
             networkStatus = .offline
             return
         }
+        // Invité : ne bascule PAS en « injoignable » sur un simple health 403
+        // (c’est ce qui cassait l’UI juste après « Bienvenue »).
+        if isInvite || InviteSessionStore.hasInviteSession {
+            api.enableInviteMode(true)
+            if await api.nativeSessionOK() {
+                networkStatus = .online
+                lastSuccessfulBase = api.baseURL
+            } else if isLoggedIn {
+                // Garde la session locale ; un échec réseau ne doit pas ejecter l’invité
+                networkStatus = .serverUnreachable
+            }
+            return
+        }
         if await api.discoverWorkingEndpoint() != nil {
             networkStatus = .online
             lastSuccessfulBase = api.baseURL
@@ -311,7 +324,7 @@ final class AppModel: ObservableObject {
             return
         }
 
-        // Invité : comme Android — session Bearer d'abord, pas de probe LAN, pas de health obligatoire
+        // Invité : Bearer d'abord — ne jamais retomber en mode owner (LAN) si le token existe
         if InviteSessionStore.hasInviteSession {
             api.enableInviteMode(true)
             let t0 = Date()
@@ -324,26 +337,33 @@ final class AppModel: ObservableObject {
                     applySession(user: u, isAdmin: false, isInvite: true, loggedIn: true, inviteLabel: InviteSessionStore.label)
                     serverVersion = (try? await api.version()) ?? ""
                     await syncPending()
-                    await prewarmRecentPhotos()
+                    // prewarm non bloquant — ne doit pas faire planter le bootstrap
+                    Task { await prewarmRecentPhotos() }
                     cache.prune(maxFiles: 16)
                     return
                 }
-                api.clearSession()
+                // user vide mais session présente : reste en cache, ne clear pas tout de suite
+                networkStatus = .serverUnreachable
+                restoreOfflineSessionIfNeeded()
+                return
             } catch {
                 lastEndpointLatency = Date().timeIntervalSince(t0)
                 if case BeerAPIError.unauthorized = error {
                     api.clearSession()
+                    // tombe sur login (pas de session owner)
                 } else {
+                    // Réseau/TLS temporaire : garde le Bearer + cache local
                     networkStatus = .serverUnreachable
                     restoreOfflineSessionIfNeeded()
-                    if isLoggedIn {
-                        showToast("Serveur injoignable", variant: .warn, detail: "Cache local", durationMs: 3500)
+                    if isLoggedIn || BeerSessionStore.restore() != nil {
+                        showToast("Serveur injoignable", variant: .warn, detail: "Cache iPhone — réessaie", durationMs: 3500)
                     }
                     return
                 }
             }
         }
 
+        // Owner only à partir d'ici
         api.enableInviteMode(false)
         let t0 = Date()
         let ep = await api.discoverWorkingEndpoint()
@@ -364,7 +384,12 @@ final class AppModel: ObservableObject {
             do {
                 let me = try await api.me()
                 if let u = me.user, !u.isEmpty {
-                    applySession(user: u, isAdmin: me.isAdmin, isInvite: me.isInvite, loggedIn: true)
+                    applySession(
+                        user: u,
+                        isAdmin: me.isAdmin ?? false,
+                        isInvite: me.isInvite ?? false,
+                        loggedIn: true
+                    )
                     serverVersion = (try? await api.version()) ?? ""
                     await syncPending()
                     await prewarmRecentPhotos()
@@ -431,6 +456,7 @@ final class AppModel: ObservableObject {
     func joinInvite(inviteLink: String) async throws {
         let resp = try await api.joinInvite(inviteLink: inviteLink)
         pendingInviteLink = nil
+        api.enableInviteMode(true)
         applySession(
             user: resp.user ?? "invite",
             isAdmin: false,
@@ -439,11 +465,15 @@ final class AppModel: ObservableObject {
             inviteLabel: resp.label
         )
         networkStatus = .online
+        lastSuccessfulBase = api.baseURL
         hideToast()
         let label = resp.label.map { " \($0)" } ?? ""
         showToast("Bienvenue\(label)", variant: .info, detail: "Compte invité · 4G/5G OK", durationMs: 3500)
+        // Ne pas lancer un probe health agressif juste après join
+        probeTask?.cancel()
         await syncPending()
         serverVersion = (try? await api.version()) ?? serverVersion
+        // styles / historique se chargent à la demande — pas de prewarm bloquant
     }
 
     func handleOpenURL(_ url: URL) async {

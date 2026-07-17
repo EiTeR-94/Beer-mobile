@@ -2,9 +2,9 @@ import Foundation
 
 struct MeResponse: Decodable {
     let user: String?
-    let auth: Bool
-    let isAdmin: Bool
-    let isInvite: Bool
+    let auth: Bool?
+    let isAdmin: Bool?
+    let isInvite: Bool?
 
     enum CodingKeys: String, CodingKey {
         case user, auth
@@ -30,7 +30,7 @@ struct NativeJoinResponse: Decodable {
     let accessToken: String?
     let user: String?
     let label: String?
-    let isInvite: Bool
+    let isInvite: Bool?
     let deviceId: String?
     let expiresAt: String?
     let error: String?
