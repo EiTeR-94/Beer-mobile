@@ -535,18 +535,10 @@ final class AppModel: ObservableObject {
 
     private var shouldRefreshPasskeySession: Bool { false }
 
+    /// Déconnexion effective (après confirmation UI Annuler / Se déconnecter).
     func logout() async {
         let wasInvite = isInvite || InviteSessionStore.hasInviteSession
-        if wasInvite {
-            // Avertissement avant purge (sinon l'écran login efface le toast trop vite)
-            showToast(
-                "Déconnexion invité",
-                variant: .warn,
-                detail: "Tu perds l'accès sur cet iPhone — il faudra un nouveau lien d'invitation pour revenir",
-                durationMs: 5000
-            )
-            try? await Task.sleep(nanoseconds: 600_000_000)
-        }
+        hideToast()
         // Owner : logout serveur ; invité : clear Bearer local seulement
         if !wasInvite {
             await api.logout()
@@ -558,10 +550,6 @@ final class AppModel: ObservableObject {
         InviteSessionStore.clear()
         KeychainStore.username = nil
         networkStatus = .online
-        // Toast d'avertissement invité déjà affiché ; owner : pas de toast
-        if !wasInvite {
-            hideToast()
-        }
     }
 
     func showToast(

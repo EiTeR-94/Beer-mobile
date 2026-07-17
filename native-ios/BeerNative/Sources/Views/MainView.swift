@@ -8,6 +8,7 @@ enum BeerSheet: String, Identifiable {
 struct MainView: View {
     @EnvironmentObject private var app: AppModel
     @State private var sheet: BeerSheet?
+    @State private var showLogoutConfirm = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -38,6 +39,21 @@ struct MainView: View {
             case .pending:
                 PendingSheetView()
                     .environmentObject(app)
+            }
+        }
+        .alert(
+            app.isInvite ? "Se déconnecter ?" : "Se déconnecter ?",
+            isPresented: $showLogoutConfirm
+        ) {
+            Button("Annuler", role: .cancel) {}
+            Button("Se déconnecter", role: .destructive) {
+                Task { await app.logout() }
+            }
+        } message: {
+            if app.isInvite {
+                Text("Tu perds l'accès sur cet iPhone. Il faudra un nouveau lien d'invitation pour revenir.")
+            } else {
+                Text("Tu devras te reconnecter (Wi‑Fi maison ou VPN) pour accéder à Beer Log.")
             }
         }
         .environmentObject(app)
