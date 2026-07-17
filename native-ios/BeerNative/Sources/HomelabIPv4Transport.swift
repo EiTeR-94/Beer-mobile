@@ -1,14 +1,14 @@
 import Foundation
 import Network
 
-/// Transport IPv4 direct + SNI correct (contourne AAAA Freebox mort en 5G).
-/// Aligné sur le comportement Android (Prefer IPv4 / WAN IP).
+/// **Chemin unique invite iOS** = OkHttp Android `preferIpv4Dns` :
+/// dial IPv4 (enregistrement A) + TLS SNI `eiter.freeboxos.fr` + Host identique.
+/// Pas d'URLSession (Happy Eyeballs AAAA Freebox), pas de rewrite URL en IP.
 enum HomelabIPv4Transport {
     private static let wanIP = ServerSettings.wanIPv4
     private static let tlsHost = ServerSettings.canonicalHost
 
-    /// timeoutSeconds court par défaut (invite 5G) — plus de 120 s bloquants.
-    static func perform(_ request: URLRequest, timeoutSeconds: UInt64 = 12) async throws -> (Data, HTTPURLResponse, URL) {
+    static func perform(_ request: URLRequest, timeoutSeconds: UInt64 = 30) async throws -> (Data, HTTPURLResponse, URL) {
         try await withThrowingTaskGroup(of: (Data, HTTPURLResponse, URL).self) { group in
             group.addTask { try await performOnce(request, connectTimeout: timeoutSeconds) }
             group.addTask {
