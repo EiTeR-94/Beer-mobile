@@ -109,7 +109,7 @@ struct MainView: View {
             buttons.append(HeaderButton(title: "Patch notes") { sheet = .patchnotes })
             buttons.append(HeaderButton(title: "Admin") { sheet = .admin })
         }
-        // Invités : historique perso uniquement (pas wishlist / cadeaux / déconnexion)
+        // Invités : historique perso uniquement (pas wishlist / cadeaux)
         if !app.isInvite {
             buttons.append(HeaderButton(title: "À boire") { sheet = .wishlist })
         }
@@ -120,9 +120,8 @@ struct MainView: View {
         if app.pendingCount > 0 {
             buttons.append(HeaderButton(title: "En attente (\(app.pendingCount))") { sheet = .pending })
         }
-        if !app.isInvite {
-            buttons.append(HeaderButton(title: "Déconnexion") { Task { await app.logout() } })
-        }
+        // Déconnexion pour tout le monde (invité inclus — purge session locale)
+        buttons.append(HeaderButton(title: "Déconnexion") { Task { await app.logout() } })
         return buttons
     }
 }

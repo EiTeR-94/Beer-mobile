@@ -260,10 +260,8 @@ private fun MainScreen(vm: AppViewModel) {
                 if (pending > 0) {
                     add("En attente ($pending)" to { vm.openSheet(BeerSheet.PENDING) })
                 }
-                // Invités : pas de déconnexion (perdraient l'accès tant qu'un nouveau lien n'est pas renvoyé)
-                if (!vm.isInvite) {
-                    add("Déconnexion" to { vm.logout() })
-                }
+                // Déconnexion pour tout le monde (invité inclus — purge session locale)
+                add("Déconnexion" to { vm.logout() })
             }
             buttons.chunked(3).forEach { row ->
                 Row(

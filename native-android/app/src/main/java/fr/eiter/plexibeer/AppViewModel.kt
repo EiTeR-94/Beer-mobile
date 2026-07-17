@@ -432,19 +432,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun logout() {
-        // Comptes invités : pas de déconnexion volontaire (évite de perdre le Bearer lié au device)
-        if (isInvite) {
-            showToast(
-                "Compte invité",
-                ToastPayload.Variant.INFO,
-                detail = "Pas de déconnexion — l'accès reste sur cet appareil",
-                durationMs = 3200
-            )
-            return
-        }
         viewModelScope.launch {
+            val wasInvite = isInvite || InviteSessionStore.hasInviteSession(getApplication())
+            if (wasInvite) {
+                showToast(
+                    "Déconnexion invité",
+                    ToastPayload.Variant.WARN,
+                    detail = "Tu perds l'accès sur cet appareil — il faudra un nouveau lien d'invitation pour revenir",
+                    durationMs = 5000
+                )
+                kotlinx.coroutines.delay(600)
+            }
             try {
-                api.logout()
+                if (!wasInvite) {
+                    api.logout()
+                } else {
+                    api.clearSession()
+                }
             } catch (_: Exception) {
                 api.clearSession()
             }
@@ -455,8 +459,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             isLoggedIn = false
             BeerSessionStore.clear(getApplication())
             InviteSessionStore.clear(getApplication())
-            hideToast()
+            networkStatus = NetworkStatus.ONLINE
             sheet = null
+            // Toast d'avertissement invité déjà affiché
+            if (!wasInvite) hideToast()
         }
     }
 
