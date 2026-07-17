@@ -136,6 +136,9 @@ final class AppModel: ObservableObject {
     }
 
     init() {
+        // Keychain iOS survit à la désinstall → purger si 1er lancement de cette install
+        FreshInstallGuard.runIfNeeded()
+
         // Owner par défaut = LAN (comme Android). Invite bascule ensuite sur WAN.
         api.setBaseURL(ServerSettings.lanApiBase)
         ServerSettings.inviteMode = false

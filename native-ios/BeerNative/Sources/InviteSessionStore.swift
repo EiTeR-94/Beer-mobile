@@ -76,6 +76,20 @@ enum InviteSessionStore {
         if let kept { keychainSet(keyDevice, kept) }
     }
 
+    /// Purge totale Keychain + prefs (après désinstall iOS le Keychain peut survivre).
+    static func wipeAllIncludingDevice() {
+        keychainSet(keyToken, nil)
+        keychainSet(keyDevice, nil)
+        username = nil
+        label = nil
+        expiresAt = nil
+        ud.set(false, forKey: keyActive)
+        ud.removeObject(forKey: keyUser)
+        ud.removeObject(forKey: keyLabel)
+        ud.removeObject(forKey: keyExpires)
+        ud.removeObject(forKey: keyActive)
+    }
+
     /// Extrait le token depuis une URL join ou un token brut.
     static func parseInviteToken(_ raw: String) -> String? {
         let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
