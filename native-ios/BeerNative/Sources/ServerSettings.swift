@@ -25,12 +25,9 @@ enum ServerSettings {
     /// Mode invité : forcer WAN (jamais LAN Freebox).
     static var inviteMode: Bool = false
 
+    /// Owner = LAN puis domaine (comme Android).
     static var candidateURLs: [URL] {
-        if inviteMode {
-            return inviteCandidateURLs
-        }
-        // Owner: LAN IP first, domain for VPN
-        return [lanApiBase, apiBase]
+        [lanApiBase, apiBase]
     }
 
     static var inviteCandidateURLs: [URL] {
@@ -66,8 +63,4 @@ enum ServerSettings {
         return s + "/"
     }
 
-    /// Ne plus forcer true : en 5G ça bloquait sur le probe LAN 120s.
-    static func isLikelyOnLocalWifi() -> Bool {
-        false
-    }
 }

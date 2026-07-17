@@ -30,10 +30,12 @@ final class BeerAPI {
     static let shared = BeerAPI()
     private static let nativeClientHeader = "X-PlexiBeer-Client"
     private static let nativeClientValue = "native-ios"
-    private static let nativeUserAgentOwner = "PlexiBeer/3.4.2 (iPhone; native owner) [lan-vpn]"
-    private static let nativeUserAgentInvite = "PlexiBeer/3.4.2 (iPhone; native invite) [wan]"
+    private static let nativeUserAgentOwner = "PlexiBeer/3.5.0 (iPhone; native owner) [lan-vpn]"
+    private static let nativeUserAgentInvite = "PlexiBeer/3.5.0 (iPhone; native invite) [wan]"
 
-    private let session: URLSession
+    /// Owner LAN/VPN — URLSession + TLS homelab (pas de transport custom IPv4)
+    private let ownerSession: URLSession
+    /// Probe LAN court
     private let lanProbeSession: URLSession
     private(set) var baseURL: URL
     private(set) var activeEndpoint: String = ""
@@ -45,39 +47,27 @@ final class BeerAPI {
     init(baseURL: URL = ServerSettings.lanApiBase) {
         self.baseURL = Self.canonicalBase(baseURL)
         let sharedCookies = HTTPCookieStorage.shared
-        func baseConfig(requestTimeout: TimeInterval = 30, resourceTimeout: TimeInterval = 120, shouldSetCookies: Bool = true) -> URLSessionConfiguration {
+        func baseConfig(requestTimeout: TimeInterval, resourceTimeout: TimeInterval) -> URLSessionConfiguration {
             let config = URLSessionConfiguration.default
             config.httpCookieStorage = sharedCookies
-            config.httpShouldSetCookies = shouldSetCookies
+            config.httpShouldSetCookies = false
             config.httpCookieAcceptPolicy = .always
             config.timeoutIntervalForRequest = requestTimeout
             config.timeoutIntervalForResource = resourceTimeout
+            config.waitsForConnectivity = false
             return config
         }
-        // Owner session (LAN or VPN): custom IPv4 + TLS for LAN IP cert bypass.
-        let ownerConfig = baseConfig(shouldSetCookies: false)
-        ownerConfig.protocolClasses = [PlexiIPv4URLProtocol.self]
-        self.session = URLSession(
-            configuration: ownerConfig,
+        // Owner : session standard + HomelabTLS (accepte cert LE sur IP LAN)
+        self.ownerSession = URLSession(
+            configuration: baseConfig(requestTimeout: 20, resourceTimeout: 60),
             delegate: HomelabTLSDelegate.shared,
             delegateQueue: nil
-        )
-        let lanConfig = baseConfig(
-            requestTimeout: ServerSettings.lanProbeTimeoutSec,
-            resourceTimeout: ServerSettings.lanProbeTimeoutSec + 4,
-            shouldSetCookies: false
         )
         self.lanProbeSession = URLSession(
-            configuration: lanConfig,
+            configuration: baseConfig(requestTimeout: 5, resourceTimeout: 8),
             delegate: HomelabTLSDelegate.shared,
             delegateQueue: nil
         )
-    }
-
-    private func session(for endpoint: URL, probe: Bool = false) -> URLSession {
-        // Owner main account (LAN or VPN).
-        if probe && ServerSettings.isLanEndpoint(endpoint) { return lanProbeSession }
-        return session
     }
 
     func setBaseURL(_ url: URL) {
@@ -88,9 +78,12 @@ final class BeerAPI {
     func enableInviteMode(_ enabled: Bool) {
         ServerSettings.inviteMode = enabled
         if enabled {
-            // 5G : Freebox AAAA cassé → toujours IPv4 + SNI (HomelabIPv4Transport)
-            PlexiIPv4URLProtocol.useCustomTransport = true
             setBaseURL(ServerSettings.apiBase)
+        } else {
+            // Owner : repasser en LAN par défaut (comme Android)
+            if !ServerSettings.isLanEndpoint(baseURL) {
+                setBaseURL(ServerSettings.lanApiBase)
+            }
         }
     }
 
@@ -108,63 +101,71 @@ final class BeerAPI {
         return http.statusCode == 200
     }
 
-    /// Probe rapide IPv4 WAN (invite / 5G) — max ~12s, jamais de LAN.
-    func probeWanIPv4() async -> String? {
-        enableInviteMode(true)
+    /// Owner discover — miroir Android : LAN puis FQDN (pas de mode invite).
+    func discoverWorkingEndpoint() async -> String? {
+        if isInviteMode {
+            return await probeInviteWan()
+        }
+        let original = baseURL
+        // 1) LAN maison
+        do {
+            let lan = ServerSettings.lanApiBase
+            var req = URLRequest(url: URL(string: "api/health", relativeTo: lan)!)
+            req.httpMethod = "GET"
+            applyCommonHeaders(to: &req)
+            let (_, http, _) = try await ownerData(req, session: lanProbeSession)
+            if http.statusCode == 200 {
+                setBaseURL(lan)
+                return lan.absoluteString
+            }
+        } catch {
+            NSLog("BeerAPI LAN probe fail: \(error.localizedDescription)")
+        }
+        // 2) Domaine (VPN) via URLSession normal
+        do {
+            let wan = ServerSettings.apiBase
+            var req = URLRequest(url: URL(string: "api/health", relativeTo: wan)!)
+            req.httpMethod = "GET"
+            applyCommonHeaders(to: &req)
+            let (_, http, _) = try await ownerData(req, session: ownerSession)
+            if http.statusCode == 200 {
+                setBaseURL(wan)
+                return wan.absoluteString
+            }
+        } catch {
+            NSLog("BeerAPI domain probe fail: \(error.localizedDescription)")
+        }
+        baseURL = original
+        return nil
+    }
+
+    /// Invite only — IPv4+SNI (comme Android Prefer IPv4).
+    private func probeInviteWan() async -> String? {
         var req = URLRequest(url: URL(string: "https://\(ServerSettings.canonicalHost)/beer/api/health")!)
         req.httpMethod = "GET"
         req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
         req.setValue(Self.nativeUserAgentInvite, forHTTPHeaderField: "User-Agent")
         do {
-            let (_, http, _) = try await HomelabIPv4Transport.perform(req, timeoutSeconds: 10)
-            // 200 public ou 403 gate = serveur joignable
+            let (_, http, _) = try await HomelabIPv4Transport.perform(req, timeoutSeconds: 12)
             if http.statusCode == 200 || http.statusCode == 403 {
                 setBaseURL(ServerSettings.apiBase)
                 return ServerSettings.apiBase.absoluteString
             }
         } catch {
-            NSLog("BeerAPI probeWanIPv4 failed: \(error.localizedDescription)")
+            NSLog("BeerAPI invite probe fail: \(error.localizedDescription)")
         }
-        return nil
-    }
-
-    func discoverWorkingEndpoint() async -> String? {
-        // Invité / mode WAN forcé : IPv4 only, court
-        if isInviteMode || ServerSettings.inviteMode {
-            return await probeWanIPv4()
-        }
-
-        let originalBase = baseURL
-        // Owner : LAN d'abord (probe court 8s via lanProbeSession), puis WAN IPv4
-        if let lan = ServerSettings.candidateURLs.first(where: { ServerSettings.isLanEndpoint($0) }) {
-            do {
-                guard let healthURL = URL(string: "api/health", relativeTo: lan) else { throw BeerAPIError.invalidURL }
-                var healthProbe = URLRequest(url: healthURL)
-                healthProbe.httpMethod = "GET"
-                healthProbe.timeoutInterval = 8
-                let (_, http, _) = try await performOnEndpoint(lan, request: healthProbe, probe: true)
-                if http.statusCode == 200 {
-                    baseURL = Self.canonicalBase(lan)
-                    activeEndpoint = lan.absoluteString
-                    return lan.absoluteString
-                }
-            } catch {
-                // 5G : LAN injoignable vite → fallback WAN
-            }
-        }
-        if let wan = await probeWanIPv4() {
-            // probeWan met inviteMode true — rétablir owner
-            ServerSettings.inviteMode = false
-            return wan
-        }
-        baseURL = originalBase
         return nil
     }
 
     func login(username: String, password: String) async throws -> LoginResponse {
+        // Owner path = Android login
         enableInviteMode(false)
         InviteSessionStore.clear()
         setBaseURL(ServerSettings.lanApiBase)
+        _ = await discoverWorkingEndpoint()
+        if let cookies = HTTPCookieStorage.shared.cookies {
+            cookies.forEach { HTTPCookieStorage.shared.deleteCookie($0) }
+        }
         let body = try JSONEncoder().encode(["username": username, "password": password])
         let (data, http, responseURL) = try await request(
             path: "/api/login",
@@ -176,10 +177,7 @@ final class BeerAPI {
             throw BeerAPIError.server("Accès refusé — Wi‑Fi maison ou VPN Plexi requis pour les comptes principaux")
         }
         guard let decoded = try? JSONDecoder().decode(LoginResponse.self, from: data) else {
-            let hint = http.statusCode == 404
-                ? " — vérifie que l'URL se termine par /beer/ (ex. https://192.168.1.50:8444/beer/)"
-                : ""
-            throw BeerAPIError.server("Réponse login invalide (HTTP \(http.statusCode))\(hint)")
+            throw BeerAPIError.server("Réponse login invalide (HTTP \(http.statusCode))")
         }
         if http.statusCode == 401 || decoded.ok == false {
             throw BeerAPIError.server(decoded.error ?? "Identifiants incorrects")
@@ -191,39 +189,69 @@ final class BeerAPI {
                 HTTPCookieStorage.shared.setCookie(cookie)
             }
         }
+        // Force cookie capture even if Domain mismatched (like Android)
+        if beerSessionCookieString() == nil {
+            // try parse from raw header variants
+            if let all = http.value(forHTTPHeaderField: "Set-Cookie"), all.contains("beer_session=") {
+                // already handled above
+            }
+        }
         return decoded
     }
 
-    /// Activation invité WAN — POST /api/native/join → Bearer.
-    /// Toujours IPv4 direct + SNI (Freebox AAAA inutilisable en 5G).
+    /// Invitation WAN — miroir Android joinInvite (IPv4 first, puis IP directe).
     func joinInvite(inviteLink: String) async throws -> NativeJoinResponse {
         guard let token = InviteSessionStore.parseInviteToken(inviteLink) else {
             throw BeerAPIError.server("Lien d'invitation invalide")
         }
         let deviceId = InviteSessionStore.deviceId
-        // Pas de cookies owner pendant l'activation
         if let cookies = HTTPCookieStorage.shared.cookies {
             cookies.forEach { HTTPCookieStorage.shared.deleteCookie($0) }
         }
         BeerSessionStore.clear()
-
         enableInviteMode(true)
         setBaseURL(ServerSettings.apiBase)
 
-        let body = try JSONEncoder().encode([
-            "token": token,
-            "device_id": deviceId,
-        ])
-        var req = URLRequest(url: try url("/api/native/join"))
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
-        req.setValue(Self.nativeUserAgentInvite, forHTTPHeaderField: "User-Agent")
-        req.setValue(deviceId, forHTTPHeaderField: "X-Beer-Device")
-        req.httpBody = body
+        let body = try JSONEncoder().encode(["token": token, "device_id": deviceId])
 
-        // Chemin 5G : IPv4 + SNI, timeout court (comme Android ~30s max, pas 120s)
-        let (data, http, _) = try await HomelabIPv4Transport.perform(req, timeoutSeconds: 15)
+        func buildReq(host: String) -> URLRequest {
+            var req = URLRequest(url: URL(string: "https://\(host)/beer/api/native/join")!)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
+            req.setValue(Self.nativeUserAgentInvite, forHTTPHeaderField: "User-Agent")
+            req.setValue(deviceId, forHTTPHeaderField: "X-Beer-Device")
+            req.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
+            req.httpBody = body
+            return req
+        }
+
+        var lastError: Error?
+        // 1) FQDN via transport IPv4+SNI (comme PreferIpv4Dns Android)
+        do {
+            let (data, http, _) = try await HomelabIPv4Transport.perform(
+                buildReq(host: ServerSettings.canonicalHost),
+                timeoutSeconds: 15
+            )
+            return try parseJoin(data: data, http: http, deviceId: deviceId)
+        } catch {
+            lastError = error
+            NSLog("joinInvite FQDN fail: \(error.localizedDescription)")
+        }
+        // 2) IP directe (comme Android WAN_IPV4_API_BASE)
+        do {
+            let (data, http, _) = try await HomelabIPv4Transport.perform(
+                buildReq(host: ServerSettings.wanIPv4),
+                timeoutSeconds: 15
+            )
+            return try parseJoin(data: data, http: http, deviceId: deviceId)
+        } catch {
+            lastError = error
+        }
+        throw lastError ?? BeerAPIError.server("Serveur injoignable en 4G/5G")
+    }
+
+    private func parseJoin(data: Data, http: HTTPURLResponse, deviceId: String) throws -> NativeJoinResponse {
         guard let decoded = try? JSONDecoder().decode(NativeJoinResponse.self, from: data) else {
             throw BeerAPIError.server("Réponse join invalide (HTTP \(http.statusCode))")
         }
@@ -243,13 +271,12 @@ final class BeerAPI {
             }
             throw BeerAPIError.server(msg)
         }
-        let bound = decoded.deviceId ?? deviceId
         InviteSessionStore.save(
             accessToken: decoded.accessToken!,
             user: decoded.user ?? "invite",
             label: decoded.label,
             expiresAt: decoded.expiresAt,
-            deviceId: bound
+            deviceId: decoded.deviceId ?? deviceId
         )
         enableInviteMode(true)
         activeEndpoint = ServerSettings.apiBase.absoluteString
@@ -845,9 +872,7 @@ final class BeerAPI {
         return decoded
     }
 
-    // MARK: - HTTP
-
-    // Owner main account only (LAN/VPN).
+    // MARK: - HTTP (owner = URLSession ; invite = IPv4 transport)
 
     private func applyCommonHeaders(to req: inout URLRequest) {
         req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
@@ -870,15 +895,37 @@ final class BeerAPI {
         return nil
     }
 
+    private func ownerData(_ req: URLRequest, session: URLSession) async throws -> (Data, HTTPURLResponse, URL) {
+        do {
+            let (data, response) = try await session.data(for: req)
+            guard let http = response as? HTTPURLResponse, let u = response.url else {
+                throw BeerAPIError.decode
+            }
+            return (data, http, u)
+        } catch let err as URLError {
+            switch err.code {
+            case .cannotConnectToHost, .networkConnectionLost:
+                throw BeerAPIError.server("Injoignable (\(req.url?.host ?? "?")). Wi‑Fi maison ou VPN ?")
+            case .secureConnectionFailed, .serverCertificateUntrusted:
+                throw BeerAPIError.server("SSL refusé sur \(req.url?.host ?? "?"). Autorise « Réseau local » pour Beer Log.")
+            case .timedOut:
+                throw BeerAPIError.server("Timeout \(req.url?.host ?? "?")")
+            case .notConnectedToInternet:
+                throw BeerAPIError.server("Pas de réseau")
+            default:
+                throw BeerAPIError.network(err)
+            }
+        }
+    }
+
     private func request(
         path: String,
         method: String,
         body: Data?,
         contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse, URL) {
-        // Invité : WAN FQDN + IPv4 only, timeout 15s (parité Android)
-        if isInviteMode || ServerSettings.inviteMode {
-            enableInviteMode(true)
+        // —— INVITÉ (comme Android) : uniquement WAN IPv4 ——
+        if isInviteMode {
             baseURL = Self.canonicalBase(ServerSettings.apiBase)
             var req = URLRequest(url: try url(path))
             req.httpMethod = method
@@ -890,8 +937,9 @@ final class BeerAPI {
             return result
         }
 
+        // —— OWNER (comme Android) : LAN puis domaine ——
         var lastError: Error?
-        let candidates = ServerSettings.candidateURLs
+        let candidates = [ServerSettings.lanApiBase, ServerSettings.apiBase]
         for candidate in candidates {
             baseURL = Self.canonicalBase(candidate)
             var req = URLRequest(url: try url(path))
@@ -899,131 +947,38 @@ final class BeerAPI {
             if let contentType { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
             applyCommonHeaders(to: &req)
             req.httpBody = body
-            if InviteSessionStore.accessToken == nil {
-                if let cookieStr = beerSessionCookieString() {
-                    req.setValue(cookieStr, forHTTPHeaderField: "Cookie")
-                } else if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL), !cookies.isEmpty {
-                    let cookieString = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
-                    req.setValue(cookieString, forHTTPHeaderField: "Cookie")
-                }
+            if let cookieStr = beerSessionCookieString() {
+                req.setValue(cookieStr, forHTTPHeaderField: "Cookie")
             }
             do {
-                let result = try await performOnEndpoint(candidate, request: req, probe: false)
+                let result = try await ownerData(req, session: ownerSession)
                 activeEndpoint = candidate.absoluteString
                 return result
             } catch {
                 lastError = error
             }
         }
-        let tried = candidates.map(\.absoluteString).joined(separator: ", ")
         if let lastError { throw lastError }
         throw BeerAPIError.allEndpointsFailed(
-            "Aucun serveur joignable (\(tried)). Vérifie ta connexion Wi-Fi/VPN et l'autorisation « Réseau local » dans Réglages."
+            "Serveur injoignable. Wi‑Fi maison (192.168.1.50) ou VPN Plexi requis pour les comptes."
         )
     }
 
     private func performTransport(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
         var req = request
         applyCommonHeaders(to: &req)
-        if InviteSessionStore.accessToken == nil {
-            if let cookieStr = beerSessionCookieString() {
-                req.setValue(cookieStr, forHTTPHeaderField: "Cookie")
-            } else if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL), !cookies.isEmpty {
-                let cookieString = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
-                req.setValue(cookieString, forHTTPHeaderField: "Cookie")
+        if isInviteMode {
+            // Forcer URL absolue domaine pour le transport IPv4
+            if let u = req.url, u.host != ServerSettings.canonicalHost {
+                let path = u.path + (u.query.map { "?\($0)" } ?? "")
+                req.url = URL(string: "https://\(ServerSettings.canonicalHost)\(path)")
             }
+            return try await HomelabIPv4Transport.perform(req, timeoutSeconds: 15)
         }
-        return try await performOnEndpoint(baseURL, request: req, probe: false)
-    }
-
-    private func performOnEndpoint(
-        _ endpoint: URL,
-        request: URLRequest,
-        probe: Bool = false
-    ) async throws -> (Data, HTTPURLResponse, URL) {
-        var req = request
-        applyCommonHeaders(to: &req)
-
-        // Invité / WAN 5G : toujours IPv4 + SNI (évite AAAA Freebox mort)
-        if isInviteMode || ServerSettings.inviteMode {
-            PlexiIPv4URLProtocol.useCustomTransport = true
-            // Réécrire IP → FQDN pour le transport IPv4 (SNI + Host corrects)
-            if var components = URLComponents(url: req.url ?? endpoint, resolvingAgainstBaseURL: false) {
-                if components.host == ServerSettings.wanIPv4 || endpoint.host == ServerSettings.wanIPv4 {
-                    components.host = ServerSettings.canonicalHost
-                    components.port = nil
-                    if let fixed = components.url {
-                        req.url = fixed
-                    }
-                }
-            }
-            if req.url == nil {
-                // Construire URL absolue domaine si la requête était relative à l'IP
-                let path = req.url?.path ?? "/beer/"
-                req.url = URL(string: "https://\(ServerSettings.canonicalHost)\(path.hasPrefix("/") ? path : "/\(path)")")
-            }
-            // Force URL sur le FQDN
-            if let u = req.url, u.host == ServerSettings.wanIPv4 {
-                var c = URLComponents(url: u, resolvingAgainstBaseURL: false)!
-                c.host = ServerSettings.canonicalHost
-                c.port = nil
-                req.url = c.url
-            }
-            if req.url?.host == ServerSettings.canonicalHost || endpoint.host == ServerSettings.canonicalHost
-                || endpoint.host == ServerSettings.wanIPv4 {
-                // S'assurer que l'URL finale est bien le domaine
-                if req.url?.host != ServerSettings.canonicalHost, let path = req.url?.path {
-                    let q = req.url?.query.map { "?\($0)" } ?? ""
-                    req.url = URL(string: "https://\(ServerSettings.canonicalHost)\(path)\(q)")
-                }
-                return try await HomelabIPv4Transport.perform(req)
-            }
+        if let cookieStr = beerSessionCookieString() {
+            req.setValue(cookieStr, forHTTPHeaderField: "Cookie")
         }
-
-        let httpSession = session(for: endpoint, probe: probe)
-        do {
-            let (data, response) = try await httpSession.data(for: req)
-            guard let http = response as? HTTPURLResponse, let url = response.url else {
-                throw BeerAPIError.decode
-            }
-            return (data, http, url)
-        } catch let err as BeerAPIError {
-            throw err
-        } catch let err as URLError {
-            // Si URLSession a planté sur le domaine (souvent IPv6), retry IPv4 transport
-            if (endpoint.host == ServerSettings.canonicalHost || req.url?.host == ServerSettings.canonicalHost)
-                && !ServerSettings.isLanEndpoint(endpoint) {
-                do {
-                    if var components = URLComponents(url: req.url ?? endpoint, resolvingAgainstBaseURL: false) {
-                        components.host = ServerSettings.canonicalHost
-                        components.port = nil
-                        if let fixed = components.url { req.url = fixed }
-                    }
-                    return try await HomelabIPv4Transport.perform(req)
-                } catch {
-                    // fall through to original error mapping
-                }
-            }
-            switch err.code {
-            case .cannotConnectToHost, .networkConnectionLost:
-                throw BeerAPIError.server("Injoignable : \(endpoint.host ?? "?"). Vérifie Wi-Fi/VPN et que le serveur est up.")
-            case .secureConnectionFailed, .serverCertificateUntrusted:
-                let host = endpoint.host ?? "?"
-                if host.hasPrefix("192.168.") {
-                    throw BeerAPIError.server("SSL refusé sur \(host). Active « Réseau local » pour Beer Log dans Réglages > Confidentialité et sécurité, et réessaie.")
-                } else {
-                    throw BeerAPIError.server("SSL refusé sur \(host).")
-                }
-            case .timedOut:
-                throw BeerAPIError.server("Timeout \(endpoint.host ?? "?").")
-            case .notConnectedToInternet:
-                throw BeerAPIError.server("Pas de réseau")
-            default:
-                throw BeerAPIError.network(err)
-            }
-        } catch {
-            throw BeerAPIError.network(error)
-        }
+        return try await ownerData(req, session: ownerSession)
     }
 
     private func throwIfUnauthorized(_ status: Int) throws {
@@ -1031,12 +986,6 @@ final class BeerAPI {
             NotificationCenter.default.post(name: .beerAuthExpired, object: nil)
             throw BeerAPIError.unauthorized
         }
-    }
-
-    private func performWan(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
-        // Fallback path (for domain access if needed).
-        // No custom LAN IPv4 or TLS delegate.
-        try await performOnEndpoint(ServerSettings.apiBase, request: request)
     }
 
     private static func canonicalBase(_ url: URL) -> URL {

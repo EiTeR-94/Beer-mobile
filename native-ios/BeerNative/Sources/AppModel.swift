@@ -136,8 +136,9 @@ final class AppModel: ObservableObject {
     }
 
     init() {
-        // Ne pas partir sur le LAN par défaut : en 5G ça bloquait 2–5 min sur 192.168.1.50
-        api.setBaseURL(ServerSettings.apiBase)
+        // Owner par défaut = LAN (comme Android). Invite bascule ensuite sur WAN.
+        api.setBaseURL(ServerSettings.lanApiBase)
+        ServerSettings.inviteMode = false
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in
                 self?.handlePathUpdate(path)
@@ -156,10 +157,7 @@ final class AppModel: ObservableObject {
                 }
             }
         }
-        Task {
-            // UI login visible vite : probe en arrière-plan, pas de spinner 5 min
-            await bootstrap()
-        }
+        Task { await bootstrap() }
     }
 
     private func handlePathUpdate(_ path: NWPath) {
@@ -170,48 +168,39 @@ final class AppModel: ObservableObject {
             probeTask?.cancel()
             return
         }
-        // Finer detection: local LAN (192.168.1.x) vs VPN (192.168.27.x) vs other
         let ip = getCurrentIPAddress()
         currentLocalIP = ip
-        // Invité : toujours WAN FQDN (ne bascule jamais sur le LAN Freebox)
+
         if isInvite || InviteSessionStore.hasInviteSession {
+            // Invité : WAN only (ne touche pas au LAN)
             api.enableInviteMode(true)
-            api.setBaseURL(ServerSettings.apiBase)
-            PlexiIPv4URLProtocol.useCustomTransport = true
             isOnLocalWifi = false
             isOnVPN = false
-        } else if let ip = ip {
-            if ip.hasPrefix("192.168.1.") {
+        } else {
+            // Owner : comme avant / comme Android
+            api.enableInviteMode(false)
+            if let ip = ip, ip.hasPrefix("192.168.1.") {
                 isOnLocalWifi = true
                 isOnVPN = false
                 api.setBaseURL(ServerSettings.lanApiBase)
-                PlexiIPv4URLProtocol.useCustomTransport = false
-            } else if ip.hasPrefix("192.168.27.") {
+            } else if let ip = ip, ip.hasPrefix("192.168.27.") {
                 isOnLocalWifi = false
                 isOnVPN = true
-                api.setBaseURL(ServerSettings.apiBase) // domain for VPN
-                PlexiIPv4URLProtocol.useCustomTransport = false
+                api.setBaseURL(ServerSettings.apiBase)
+            } else if path.usesInterfaceType(.wifi) && !path.isExpensive {
+                isOnLocalWifi = true
+                isOnVPN = false
+                api.setBaseURL(ServerSettings.lanApiBase)
             } else {
                 isOnLocalWifi = false
                 isOnVPN = false
-                PlexiIPv4URLProtocol.useCustomTransport = true
-            }
-        } else if path.usesInterfaceType(.wifi) && !path.isExpensive {
-            isOnLocalWifi = true
-            isOnVPN = false
-            api.setBaseURL(ServerSettings.lanApiBase)
-            PlexiIPv4URLProtocol.useCustomTransport = false
-        } else {
-            isOnLocalWifi = false
-            isOnVPN = false
-            PlexiIPv4URLProtocol.useCustomTransport = true
-            if let last = lastSuccessfulBase {
-                api.setBaseURL(last)
+                // 5G owner : essayer domaine (compte owner hors maison = VPN normalement)
+                api.setBaseURL(ServerSettings.apiBase)
             }
         }
         scheduleServerProbe()
         scheduleSyncDebounced()
-        if isOnLocalWifi || isOnVPN || path.usesInterfaceType(.wifi) {
+        if isOnLocalWifi || isOnVPN {
             prewarmConnection()
         }
     }
@@ -255,23 +244,9 @@ final class AppModel: ObservableObject {
             return
         }
         let start = Date()
-        // Invité ou pas encore de session LAN : probe WAN IPv4 court (pas de 192.168.1.50)
-        let found: String?
-        if isInvite || InviteSessionStore.hasInviteSession {
-            found = await api.probeWanIPv4()
-        } else if isOnLocalWifi || isOnVPN {
-            found = await api.discoverWorkingEndpoint()
-        } else {
-            // 5G / réseau inconnu : WAN IPv4 only (évite 120s sur LAN mort)
-            found = await api.probeWanIPv4()
-            // probeWan active inviteMode — on le coupe si pas invité
-            if !InviteSessionStore.hasInviteSession {
-                ServerSettings.inviteMode = false
-            }
-        }
-        if found != nil {
-            let latency = Date().timeIntervalSince(start)
-            lastEndpointLatency = latency
+        // Une seule API discover : owner LAN→domaine, invite WAN IPv4
+        if await api.discoverWorkingEndpoint() != nil {
+            lastEndpointLatency = Date().timeIntervalSince(start)
             lastSuccessfulBase = api.baseURL
             networkStatus = .online
             if isLoggedIn {
@@ -279,9 +254,13 @@ final class AppModel: ObservableObject {
             }
             retryTask?.cancel()
         } else {
-            // Sur écran login invite, ne pas bloquer : laisser tenter le join
-            networkStatus = isLoggedIn ? .serverUnreachable : .online
-            if isLoggedIn { scheduleRetryProbe() }
+            // Login sans session : ne pas afficher "cache local"
+            if isLoggedIn {
+                networkStatus = .serverUnreachable
+                scheduleRetryProbe()
+            } else {
+                networkStatus = .online
+            }
         }
     }
 
@@ -315,7 +294,6 @@ final class AppModel: ObservableObject {
     }
 
     func bootstrap() async {
-        // Spinner court max : ne plus bloquer 5 min sur le LAN en 5G
         isLoading = true
         defer { isLoading = false }
 
@@ -325,20 +303,19 @@ final class AppModel: ObservableObject {
                 applySession(user: u, isAdmin: false, isInvite: true, loggedIn: true, inviteLabel: InviteSessionStore.label)
             }
         } else {
+            api.enableInviteMode(false)
             restoreOfflineSessionIfNeeded()
         }
 
-        // Sans session : afficher le login tout de suite, probe en fond
+        // Pas de session → login immédiat (owner ou invite)
         if !isLoggedIn {
-            isLoading = false
             networkStatus = .online
-            Task { await probeServerReachability() }
             return
         }
 
         await probeServerReachability()
         guard networkStatus == .online else {
-            showToast("Mode hors ligne — données en cache", variant: .info, durationMs: 3200)
+            showToast("Serveur injoignable — cache local", variant: .warn, durationMs: 3200)
             return
         }
         do {
@@ -364,31 +341,16 @@ final class AppModel: ObservableObject {
             BeerSessionStore.clear()
             InviteSessionStore.clear()
             KeychainStore.username = nil
-            showToast(wasInvite ? "Invitation expirée — demande un nouveau lien" : "Accès refusé.", variant: .error, durationMs: 4000)
+            showToast(wasInvite ? "Invitation expirée" : "Accès refusé", variant: .error, durationMs: 4000)
         } catch BeerAPIError.unauthorized {
             let wasInvite = isInvite || InviteSessionStore.hasInviteSession
             InviteSessionStore.clear()
             await clearSessionState()
-            if networkStatus == .online {
-                showToast(
-                    wasInvite
-                        ? "Invitation expirée — demande un nouveau lien"
-                        : "Session expirée — reconnecte-toi",
-                    variant: .error,
-                    durationMs: 4000
-                )
-            }
+            showToast(wasInvite ? "Invitation expirée" : "Session expirée", variant: .error, durationMs: 4000)
         } catch {
-            if !isLoggedIn, let saved = BeerSessionStore.restore() {
-                applySession(user: saved.user, isAdmin: saved.isAdmin, isInvite: saved.isInvite, loggedIn: true)
-            }
             if isLoggedIn {
-                if networkStatus == .offline {
-                    showToast("Hors ligne · \(user ?? "")", variant: .info, durationMs: 4200)
-                } else {
-                    showToast("Session locale — serveur injoignable", variant: .warn, durationMs: 3600)
-                    networkStatus = .serverUnreachable
-                }
+                showToast("Serveur injoignable — cache local", variant: .warn, durationMs: 3600)
+                networkStatus = .serverUnreachable
             }
         }
     }

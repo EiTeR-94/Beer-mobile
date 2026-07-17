@@ -52,13 +52,12 @@ final class HomelabTLSDelegate: NSObject, URLSessionDelegate {
         let isIPHost = isLanIP || isWanIP
 
         // Try normal evaluation first (works for domain name connections)
+        // Pinning SPKI en soft-fail (log only) — un pin trop strict cassait le Wi‑Fi après renew LE
         var error: CFError?
         if SecTrustEvaluateWithError(trust, &error) {
             let isOurHost = (host == "eiter.freeboxos.fr" || isIPHost)
             if isOurHost && !isPinned(trust: trust) {
-                NSLog("HomelabTLS: pinning failed for %@", host)
-                completionHandler(.cancelAuthenticationChallenge, nil)
-                return
+                NSLog("HomelabTLS: pin mismatch for %@ (accepting valid chain)", host)
             }
             completionHandler(.useCredential, URLCredential(trust: trust))
             return
