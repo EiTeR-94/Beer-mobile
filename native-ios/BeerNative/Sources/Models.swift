@@ -290,6 +290,7 @@ struct InviteItem: Identifiable, Codable {
     let expiresAt: String?
     let linkExpiresAt: String?
     let active: Bool?
+    let linkActive: Bool?
     let revokedAt: String?
     let redeemedAt: String?
     let lastUsedAt: String?
@@ -311,6 +312,7 @@ struct InviteItem: Identifiable, Codable {
         case createdAt = "created_at"
         case expiresAt = "expires_at"
         case linkExpiresAt = "link_expires_at"
+        case linkActive = "link_active"
         case revokedAt = "revoked_at"
         case redeemedAt = "redeemed_at"
         case lastUsedAt = "last_used_at"
@@ -329,8 +331,9 @@ struct InviteItem: Identifiable, Codable {
     var statusText: String {
         if revokedAt != nil { return "Révoquée" }
         if reactivationPending == true { return "Réactivation" }
-        if redeemedAt != nil { return "Utilisée" }
+        if redeemedAt != nil { return "Utilisée · lien mort" }
         if active == false { return "Expirée" }
+        if linkActive == false { return "Lien expiré" }
         return "En attente"
     }
 }

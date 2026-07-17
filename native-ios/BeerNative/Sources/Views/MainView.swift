@@ -111,6 +111,20 @@ struct MainView: View {
                             .overlay(RoundedRectangle(cornerRadius: Theme.Radius.btn).stroke(Theme.border))
                     }
                 }
+                // Bouton dédié (hors ForEach) pour que le binding @State marche à coup sûr
+                Button {
+                    showLogoutConfirm = true
+                } label: {
+                    Text("Déconnexion")
+                        .font(.system(size: Theme.Font.ghost, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color.clear)
+                        .foregroundStyle(Theme.error)
+                        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.btn).stroke(Theme.error.opacity(0.55)))
+                }
             }
         }
         .padding(.horizontal, 16)
@@ -141,8 +155,7 @@ struct MainView: View {
         if app.pendingCount > 0 {
             buttons.append(HeaderButton(title: "En attente (\(app.pendingCount))") { sheet = .pending })
         }
-        // Déconnexion pour tout le monde — confirmation via alerte (pas de toast)
-        buttons.append(HeaderButton(title: "Déconnexion") { showLogoutConfirm = true })
+        // Déconnexion = bouton dédié dans le grid (pas ici)
         return buttons
     }
 }

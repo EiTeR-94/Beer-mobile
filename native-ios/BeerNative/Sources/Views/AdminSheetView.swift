@@ -184,6 +184,11 @@ struct AdminSheetView: View {
             Text("\(inv.username ?? "—") · \(inv.checkins ?? 0) dégustation(s)")
                 .font(.caption)
                 .foregroundStyle(Theme.muted)
+            if inv.redeemedAt != nil, inv.linkActive != true {
+                Text("Lien d'invitation consommé — plus utilisable (session = appareil lié)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.muted)
+            }
 
             if inv.redeemedAt != nil {
                 inviteActivityLine(inv)
@@ -203,7 +208,9 @@ struct AdminSheetView: View {
                     if let log = inv.ipLog, !log.isEmpty {
                         inviteAction("IP") { openInviteIPs(inv) }
                     }
-                    if let url = inv.url, inv.revokedAt == nil {
+                    // Copier uniquement si le lien join est encore actif (pas après activation)
+                    if let url = inv.url, !url.isEmpty, inv.revokedAt == nil,
+                       inv.linkActive != false {
                         inviteAction("Copier") { copyInviteURL(url) }
                     }
                     if inv.canExtend == true {
