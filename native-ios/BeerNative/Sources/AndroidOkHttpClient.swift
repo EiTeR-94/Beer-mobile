@@ -101,7 +101,8 @@ enum AndroidOkHttpClient {
         params.prohibitExpensivePaths = false
         params.prohibitConstrainedPaths = false
 
-        NSLog("AndroidOkHttp: %@ %@ dial=%@ SNI=%@", method, path, dialIP, tlsHost)
+        // Logs techniques OK ; erreurs user = FQDN uniquement (jamais l’IP)
+        NSLog("AndroidOkHttp: %@ %@ host=%@ dial-v4-internal SNI=%@", method, path, tlsHost, tlsHost)
 
         let conn = NWConnection(host: NWEndpoint.Host(dialIP), port: 443, using: params)
         return try await withCheckedThrowingContinuation { cont in
@@ -117,7 +118,9 @@ enum AndroidOkHttpClient {
             let connectWatch = Task {
                 try? await Task.sleep(nanoseconds: UInt64(connectTimeout) * 1_000_000_000)
                 if !resumed {
-                    finish(.failure(BeerAPIError.server("Timeout connect \(Int(connectTimeout))s → \(dialIP)")))
+                    finish(.failure(BeerAPIError.server(
+                        "Timeout connexion \(Int(connectTimeout))s — \(tlsHost)"
+                    )))
                 }
             }
 
@@ -143,7 +146,9 @@ enum AndroidOkHttpClient {
                     }
                 case .failed(let err):
                     connectWatch.cancel()
-                    finish(.failure(BeerAPIError.server("Connect \(dialIP): \(err.localizedDescription)")))
+                    finish(.failure(BeerAPIError.server(
+                        "Connexion \(tlsHost) échouée: \(err.localizedDescription)"
+                    )))
                 case .waiting(let err):
                     // 5G : laisser jusqu'au connectTimeout — pas de kill 3s
                     NSLog("AndroidOkHttp: waiting %@", err.localizedDescription)

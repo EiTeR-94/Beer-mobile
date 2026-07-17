@@ -30,8 +30,8 @@ final class BeerAPI {
     static let shared = BeerAPI()
     private static let nativeClientHeader = "X-PlexiBeer-Client"
     private static let nativeClientValue = "native-ios"
-    private static let userAgentOwner = "PlexiBeer/3.9.0 (iPhone; native owner) [lan-vpn]"
-    private static let userAgentInvite = "PlexiBeer/3.9.0 (iPhone; native invite) [wan]"
+    private static let userAgentOwner = "PlexiBeer/3.9.1 (iPhone; native owner) [lan-vpn]"
+    private static let userAgentInvite = "PlexiBeer/3.9.1 (iPhone; native invite) [wan]"
 
     // Un seul client comme OkHttp Android (30s connect, 120s read)
     private let client: URLSession
@@ -129,8 +129,8 @@ final class BeerAPI {
             .map { "beer_session=\($0.value)" }
     }
 
-    /// Owner LAN = URLSession. **Invite = uniquement AndroidOkHttpClient** (OkHttp miroir).
-    /// Plus de PreferIPv4 rewrite URL, plus de multi-fallback, plus de HomelabTLS IP.
+    /// Invite + owner WAN : URL **toujours** `eiter.freeboxos.fr` (jamais l’IP en URL ni en erreur).
+    /// Dial IPv4 sous le capot (DNS A) avec SNI = FQDN — comme OkHttp, sans afficher 82.64…
     private func execute(
         _ request: URLRequest,
         probe: Bool = false,
@@ -139,25 +139,26 @@ final class BeerAPI {
         var req = request
         applyHeaders(to: &req)
 
-        // INVITE : strict Android OkHttp path only
-        if isInviteMode {
-            let connect: TimeInterval = probe ? ServerSettings.lanProbeTimeoutSec : 30
-            let read: TimeInterval = probe ? ServerSettings.lanProbeTimeoutSec + 4 : 120
-            do {
-                let triple = try await AndroidOkHttpClient.perform(
-                    req,
-                    connectTimeout: connect,
-                    readTimeout: read
-                )
-                return try finishHTTP(triple, allowUnauthorizedBody: allowUnauthorizedBody)
-            } catch let e as BeerAPIError {
-                throw e
-            } catch {
-                throw BeerAPIError.server(error.localizedDescription)
+        // Force FQDN dans l’URL visible / logique (pas de https://82.64…/)
+        if let host = req.url?.host,
+           host == ServerSettings.wanIPv4 || host == ServerSettings.canonicalHost,
+           var c = URLComponents(url: req.url!, resolvingAgainstBaseURL: false) {
+            c.host = ServerSettings.canonicalHost
+            c.scheme = "https"
+            c.port = nil
+            if let u = c.url {
+                req.url = u
+                req.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
             }
         }
 
-        // OWNER : URLSession + HomelabTLS (LAN :8444)
+        let host = req.url?.host ?? ""
+        let isLan = ServerSettings.isLanEndpoint(req.url ?? baseURL)
+            || ServerSettings.isLanHost(host)
+
+        // Toujours URL eiter.freeboxos.fr + URLSession d’abord (comme Safari).
+        // Secours IPv4 silencieux (DNS A + SNI FQDN) si Happy Eyeballs IPv6 foire —
+        // erreurs user = FQDN, jamais l’IP.
         if probe {
             req.timeoutInterval = ServerSettings.lanProbeTimeoutSec
         } else {
@@ -187,7 +188,45 @@ final class BeerAPI {
         } catch let e as BeerAPIError {
             throw e
         } catch let err as URLError {
+            // Invite / WAN FQDN : un secours OkHttp-style (IPv4+SNI), messages sans IP
+            let wantIPv4 = isInviteMode || host == ServerSettings.canonicalHost
+            if wantIPv4 && !isLan {
+                do {
+                    let connect: TimeInterval = probe ? 12 : 30
+                    let read: TimeInterval = probe ? 20 : 120
+                    let triple = try await AndroidOkHttpClient.perform(
+                        req,
+                        connectTimeout: connect,
+                        readTimeout: read
+                    )
+                    return try finishHTTP(triple, allowUnauthorizedBody: allowUnauthorizedBody)
+                } catch let e as BeerAPIError {
+                    throw sanitizeErrorForUser(e)
+                } catch {
+                    throw sanitizeErrorForUser(.server(error.localizedDescription))
+                }
+            }
             throw mapURLError(err)
+        }
+    }
+
+    /// Jamais d’IP brute dans les toasts (remplace 82.64… par le FQDN).
+    private func sanitizeErrorForUser(_ e: BeerAPIError) -> BeerAPIError {
+        switch e {
+        case .server(let msg):
+            var m = msg
+            m = m.replacingOccurrences(of: ServerSettings.wanIPv4, with: ServerSettings.canonicalHost)
+            // "→ 1.2.3.4" résidus
+            if let re = try? NSRegularExpression(pattern: #"\b\d{1,3}(?:\.\d{1,3}){3}\b"#) {
+                m = re.stringByReplacingMatches(
+                    in: m,
+                    range: NSRange(m.startIndex..., in: m),
+                    withTemplate: ServerSettings.canonicalHost
+                )
+            }
+            return .server(m)
+        default:
+            return e
         }
     }
 
