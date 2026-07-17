@@ -202,8 +202,9 @@ final class AppModel: ObservableObject {
                 ServerSettings.preferWanOnly = false
             }
         }
-        // Probe en fond seulement si session (évite bandeau "injoignable" à l'accueil invite)
-        if isLoggedIn || InviteSessionStore.hasInviteSession {
+        // Invité : pas de probe auto (sinon Bienvenue → « injoignable » en 2 s).
+        // Owner : probe fond OK.
+        if isLoggedIn && !isInvite && !InviteSessionStore.hasInviteSession {
             scheduleServerProbe()
         }
         scheduleSyncDebounced()
@@ -247,17 +248,17 @@ final class AppModel: ObservableObject {
             networkStatus = .offline
             return
         }
-        // Invité : ne bascule PAS en « injoignable » sur un simple health 403
-        // (c’est ce qui cassait l’UI juste après « Bienvenue »).
+        // INVITÉ : ne JAMAIS basculer en « serveur injoignable » via probe fond.
+        // C’est ça qui faisait : Bienvenue → 2 s → cache → « déconnexion ».
+        // On ne repasse offline que si /api/me renvoie 401 (révoqué) au bootstrap
+        // ou si l’utilisateur n’a plus de Bearer.
         if isInvite || InviteSessionStore.hasInviteSession {
             api.enableInviteMode(true)
             if await api.nativeSessionOK() {
                 networkStatus = .online
                 lastSuccessfulBase = api.baseURL
-            } else if isLoggedIn {
-                // Garde la session locale ; un échec réseau ne doit pas ejecter l’invité
-                networkStatus = .serverUnreachable
             }
+            // échec probe : on laisse networkStatus tel quel (souvent .online après join)
             return
         }
         if await api.discoverWorkingEndpoint() != nil {
