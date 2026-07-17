@@ -29,7 +29,7 @@ enum ServerSettings {
         return runtimeBase ?? lanApiBaseString
     }
 
-    /// Invite : **uniquement** le FQDN (jamais l’IP en URL / message).
+    /// Comme Android candidateURLs (+ skip LAN en 5G).
     static var candidateURLs: [String] {
         if inviteMode {
             return [apiBaseString]
@@ -40,8 +40,7 @@ enum ServerSettings {
         return [lanApiBaseString, apiBaseString]
     }
 
-    /// Invite : uniquement https://eiter.freeboxos.fr/beer/ — pas de candidat IP.
-    static let inviteCandidateURLs: [String] = [apiBaseString]
+    static let inviteCandidateURLs: [String] = [apiBaseString, wanIPv4ApiBaseString]
 
     static func isLanEndpoint(_ url: String) -> Bool {
         url.contains(":8444")

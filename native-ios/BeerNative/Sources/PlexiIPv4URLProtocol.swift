@@ -1,24 +1,16 @@
 import Foundation
 
-/// Custom URLProtocol that forces IPv4 connections to the canonical domain on port 443.
-///
-/// Reason: The Freebox AAAA (IPv6) record for eiter.freeboxos.fr is currently unreachable
-/// (points to the router). We force IPv4 + correct SNI to avoid SSL issues.
-/// 
-/// Used for owner LAN/VPN access (prefers direct IP, falls back to domain if needed).
-///
-/// By intercepting and delegating to HomelabIPv4Transport (IPv4 + correct SNI),
-/// we bypass the broken AAAA. Registered on the relevant URLSession configs.
+/// Optionnel — non enregistré sur le client invite principal.
+/// Si utilisé : même transport HomelabIPv4 qu'en 3.7.0.
 final class PlexiIPv4URLProtocol: URLProtocol {
-    static var useCustomTransport = true  // false on trusted local wifi/VPN to use high-level URLSession
-
+    static var useCustomTransport = false
     private var loadTask: Task<Void, Never>?
     private static let handledKey = "PlexiIPv4URLProtocolHandled"
 
     override class func canInit(with request: URLRequest) -> Bool {
         guard let url = request.url else { return false }
         if property(forKey: handledKey, in: request) != nil { return false }
-        if !useCustomTransport { return false } // on trusted local, use high-level URLSession directly
+        if !useCustomTransport { return false }
         let port = url.port ?? 443
         return url.scheme == "https"
             && url.host == ServerSettings.canonicalHost
@@ -36,20 +28,12 @@ final class PlexiIPv4URLProtocol: URLProtocol {
     override func startLoading() {
         loadTask = Task {
             do {
-                // URLSession + PreferIPv4 style : pas de NWConnection (timeout 4G)
-                var req = request
-                PreferIPv4.applyAndroidStyle(&req)
-                let (data, response) = try await URLSession.shared.data(for: req)
-                guard let http = response as? HTTPURLResponse else {
-                    throw URLError(.badServerResponse)
-                }
-                let _ = http
+                let (data, response, _) = try await HomelabIPv4Transport.perform(request)
                 client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
                 client?.urlProtocol(self, didLoad: data)
                 client?.urlProtocolDidFinishLoading(self)
             } catch {
-                // Toujours produire une erreur avec description claire pour éviter "erreur 0" générique
-                let desc = "Erreur transport: \(error.localizedDescription)" // slow link or first connect on VPN/WiFi
+                let desc = "Erreur transport: \(error.localizedDescription)"
                 let urlErr = URLError(.unknown, userInfo: [NSLocalizedDescriptionKey: desc])
                 client?.urlProtocol(self, didFailWithError: urlErr)
             }
