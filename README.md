@@ -2,6 +2,15 @@
 
 **Projet Xcode Swift/SwiftUI.** Pas de Capacitor, pas de WebView, pas de HTML.
 
+## Invités 4G/5G (v3.4+)
+
+Même système que l’APK Android :
+
+1. Installer via AltStore : `https://eiter.freeboxos.fr/mobile/beer/altstore.json`
+2. Lien d’invitation (identique Android) → app → **Invitation** → coller → Activer
+3. Bearer device-bound, WAN only, **pas de déconnexion**
+4. Backend : `POST /beer/api/native/join` (déjà en prod)
+
 ```
 native-ios/          ← ouvre avec Xcode (après xcodegen generate)
 scripts/build-native-ipa.sh

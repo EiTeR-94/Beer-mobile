@@ -151,15 +151,31 @@ class BeerAPI private constructor(context: Context) {
                 val body = resp.body?.string().orEmpty()
                 // Login/public endpoints may return 401 with a JSON error body we must parse
                 if (resp.code == 401 && !allowUnauthorizedBody) {
+                    // 401 = session absente/expirée ; ne pas wipe sur 403 (wishlist etc. réservé owner)
                     if (isInviteMode) {
                         InviteSessionStore.clear(appContext)
                     }
                     throw ApiException("Session expirée — reconnecte-toi", 401)
                 }
                 if (resp.code == 403) {
+                    val detail = try {
+                        gson.fromJson(body, OkResponse::class.java)?.error
+                    } catch (_: Exception) {
+                        null
+                    }.orEmpty()
                     val msg = if (isInviteMode) {
-                        InviteSessionStore.clear(appContext)
-                        "Invitation invalide ou expirée — demande un nouveau lien"
+                        // Ne wipe la session que si le backend le dit explicitement
+                        // (pas sur 403 nginx générique / feature owner-only)
+                        val inviteDead = detail.contains("Invitation invalide", ignoreCase = true) ||
+                            detail.contains("expir", ignoreCase = true)
+                        if (inviteDead) {
+                            InviteSessionStore.clear(appContext)
+                            "Invitation invalide ou expirée — demande un nouveau lien"
+                        } else {
+                            detail.ifBlank {
+                                "Accès refusé (invite) — réessaie ; si ça continue, rouvre le lien d'invitation"
+                            }
+                        }
                     } else {
                         "Accès refusé — Wi‑Fi maison ou VPN Plexi requis"
                     }

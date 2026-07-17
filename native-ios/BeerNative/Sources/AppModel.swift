@@ -346,9 +346,9 @@ final class AppModel: ObservableObject {
                 }
                 api.clearSession()
             } catch {
+                // 401 uniquement : 403/erreurs réseau ne doivent pas jeter le Bearer invité
+                // (sinon on reste en « cache local » après un join réussi).
                 if case BeerAPIError.unauthorized = error {
-                    api.clearSession()
-                } else if case BeerAPIError.server = error {
                     api.clearSession()
                 } else {
                     networkStatus = .serverUnreachable

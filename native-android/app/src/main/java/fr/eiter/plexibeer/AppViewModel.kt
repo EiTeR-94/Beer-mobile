@@ -219,7 +219,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     api.clearSession()
                 } catch (e: Exception) {
                     val code = (e as? BeerAPI.ApiException)?.code ?: 0
-                    if (code == 401 || code == 403) {
+                    // 401 = token mort ; 403 peut être transitoire / feature — garder le Bearer
+                    if (code == 401) {
                         api.clearSession()
                     } else {
                         networkStatus = NetworkStatus.SERVER_UNREACHABLE
