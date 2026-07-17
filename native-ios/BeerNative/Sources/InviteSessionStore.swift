@@ -14,7 +14,10 @@ enum InviteSessionStore {
     private static let ud = UserDefaults.standard
 
     static var hasInviteSession: Bool {
-        ud.bool(forKey: keyActive) && !(accessToken ?? "").isEmpty
+        // Exige le flag UserDefaults (effacé à la désinstall) + Bearer Keychain
+        // → un token Keychain orphelin après réinstall ne reconnecte pas tout seul
+        guard ud.bool(forKey: keyActive) else { return false }
+        return !(accessToken ?? "").isEmpty
     }
 
     static var accessToken: String? {

@@ -32,10 +32,11 @@ enum ServerSettings {
     /// Comme Android candidateURLs (+ skip LAN en 5G).
     static var candidateURLs: [String] {
         if inviteMode {
-            return [apiBaseString]
+            // Android : FQDN puis WAN IPv4 — transport force IPv4+SNI dans les deux cas
+            return [apiBaseString, wanIPv4ApiBaseString]
         }
         if preferWanOnly {
-            return [apiBaseString]
+            return [apiBaseString, wanIPv4ApiBaseString]
         }
         return [lanApiBaseString, apiBaseString]
     }

@@ -1,32 +1,48 @@
 import Foundation
 import Network
+import Security
 
-/// **Chemin unique invite iOS** = OkHttp Android `preferIpv4Dns` :
-/// dial IPv4 (enregistrement A) + TLS SNI `eiter.freeboxos.fr` + Host identique.
-/// Pas d'URLSession (Happy Eyeballs AAAA Freebox), pas de rewrite URL en IP.
+/// Transport WAN invite = miroir exact d'OkHttp Android `preferIpv4Dns` :
+/// 1) dial **IPv4 only** (enregistrement A / `wanIPv4`)
+/// 2) TLS **SNI** = `eiter.freeboxos.fr` (cert LE normal)
+/// 3) HTTP **Host** = même FQDN
+///
+/// URLSession seul sur le FQDN fait Happy Eyeballs → AAAA Freebox morte → SSL/timeout aléatoire.
+/// Rewrite URL en IP casse le SNI (Host header souvent écrasé par CFNetwork).
+///
+/// Fallback déterministe (pas aléatoire) : si NWConnection échoue, PreferIPv4+URLSession+HomelabTLS.
 enum HomelabIPv4Transport {
     private static let wanIP = ServerSettings.wanIPv4
     private static let tlsHost = ServerSettings.canonicalHost
 
+    /// Point d'entrée unique pour tout le trafic invite/WAN.
     static func perform(_ request: URLRequest, timeoutSeconds: UInt64 = 30) async throws -> (Data, HTTPURLResponse, URL) {
-        try await withThrowingTaskGroup(of: (Data, HTTPURLResponse, URL).self) { group in
-            group.addTask { try await performOnce(request, connectTimeout: timeoutSeconds) }
-            group.addTask {
-                try await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
-                throw BeerAPIError.server("Timeout \(timeoutSeconds)s — \(tlsHost)")
+        var lastError: Error?
+        // 2 tentatives NW (micro blip 5G), puis fallback URLSession IPv4
+        for attempt in 1...2 {
+            do {
+                return try await performNW(request, timeoutSeconds: timeoutSeconds)
+            } catch {
+                lastError = error
+                NSLog("HomelabIPv4: NW attempt %d failed: %@", attempt, "\(error)")
+                if attempt < 2 {
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                }
             }
-            defer { group.cancelAll() }
-            guard let result = try await group.next() else {
-                throw BeerAPIError.server("Timeout \(timeoutSeconds)s — \(tlsHost)")
-            }
-            return result
+        }
+        do {
+            NSLog("HomelabIPv4: fallback PreferIPv4+URLSession")
+            return try await performURLSessionFallback(request, timeoutSeconds: timeoutSeconds)
+        } catch {
+            throw lastError ?? error
         }
     }
 
-    private static func performOnce(_ request: URLRequest, connectTimeout: UInt64) async throws -> (Data, HTTPURLResponse, URL) {
+    // MARK: - Primary: Network.framework IPv4 + SNI FQDN
+
+    private static func performNW(_ request: URLRequest, timeoutSeconds: UInt64) async throws -> (Data, HTTPURLResponse, URL) {
         guard let url = request.url else { throw BeerAPIError.invalidURL }
 
-        // Path HTTP absolu (nginx attend /beer/...)
         let path: String = {
             var p = url.path
             if p.isEmpty { p = "/" }
@@ -36,52 +52,64 @@ enum HomelabIPv4Transport {
         let method = request.httpMethod ?? "GET"
         let body = request.httpBody ?? Data()
 
+        let dialIP = PreferIPv4.firstIPv4(tlsHost) ?? wanIP
+        guard let ipv4 = IPv4Address(dialIP) else {
+            throw BeerAPIError.server("IPv4 invalide pour \(tlsHost)")
+        }
+
         let tcp = NWProtocolTCP.Options()
-        tcp.connectionTimeout = Int(min(max(connectTimeout, 8), 30))
+        tcp.connectionTimeout = Int(min(max(timeoutSeconds, 10), 45))
         tcp.noDelay = true
+        tcp.enableKeepalive = true
+        tcp.keepaliveIdle = 10
+
         let tls = NWProtocolTLS.Options()
         let secOpts = tls.securityProtocolOptions
-        // SNI = FQDN (comme OkHttp — PAS l'IP)
         sec_protocol_options_set_tls_server_name(secOpts, tlsHost)
+        sec_protocol_options_add_tls_application_protocol(secOpts, "http/1.1")
         sec_protocol_options_set_verify_block(secOpts, { _, secTrust, complete in
             let trust = sec_trust_copy_ref(secTrust).takeRetainedValue()
-            let policy = SecPolicyCreateSSL(true, tlsHost as CFString)
-            SecTrustSetPolicies(trust, policy)
-            var err: CFError?
-            complete(SecTrustEvaluateWithError(trust, &err))
+            complete(evaluateTrust(trust))
         }, .global())
+
         let params = NWParameters(tls: tls, tcp: tcp)
         params.prohibitExpensivePaths = false
         params.prohibitConstrainedPaths = false
         params.allowLocalEndpointReuse = true
+        if #available(iOS 17.0, *) {
+            params.preferNoProxies = true
+        }
 
-        let dialIP = PreferIPv4.firstIPv4(tlsHost) ?? wanIP
-        NSLog("HomelabIPv4: dial v4 SNI=%@", tlsHost)
-        let conn = NWConnection(host: NWEndpoint.Host(dialIP), port: 443, using: params)
+        NSLog("HomelabIPv4: dial %@ SNI=%@ path=%@", dialIP, tlsHost, path)
+        let conn = NWConnection(
+            host: NWEndpoint.Host.ipv4(ipv4),
+            port: 443,
+            using: params
+        )
+
         return try await withCheckedThrowingContinuation { cont in
-            let queue = DispatchQueue(label: "fr.eiter.plexibeer.ipv4")
+            let queue = DispatchQueue(label: "fr.eiter.plexibeer.ipv4", qos: .userInitiated)
+            let lock = NSLock()
             var resumed = false
             func finish(_ result: Result<(Data, HTTPURLResponse, URL), Error>) {
-                guard !resumed else { return }
-                resumed = true
+                lock.lock()
+                let already = resumed
+                if !already { resumed = true }
+                lock.unlock()
+                guard !already else { return }
+                // cancel HORS du lock (évite deadlock si stateUpdate re-entrant)
                 conn.cancel()
                 cont.resume(with: result)
             }
 
-            // Un seul timeout (plus de kill waiting 3s qui cassait la 5G)
-            let connectTimeoutTask = Task {
-                try? await Task.sleep(nanoseconds: connectTimeout * 1_000_000_000)
-                if !resumed {
-                    finish(.failure(BeerAPIError.server(
-                        "Timeout connexion \(Int(connectTimeout))s — \(tlsHost)"
-                    )))
-                }
+            let deadline = DispatchTime.now() + .seconds(Int(timeoutSeconds))
+            queue.asyncAfter(deadline: deadline) {
+                finish(.failure(BeerAPIError.server("Timeout \(timeoutSeconds)s — \(tlsHost)")))
             }
 
-            conn.stateUpdateHandler = { (state: NWConnection.State) in
+            conn.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
-                    connectTimeoutTask.cancel()
                     Task {
                         do {
                             let out = try await exchange(
@@ -98,17 +126,15 @@ enum HomelabIPv4Transport {
                         }
                     }
                 case .failed(let err):
-                    connectTimeoutTask.cancel()
                     finish(.failure(BeerAPIError.server(
                         "Connexion \(tlsHost) échouée: \(err.localizedDescription)"
                     )))
                 case .waiting(let err):
+                    // Laisser NW retry jusqu'au deadline (5G path establishment)
                     NSLog("HomelabIPv4: waiting %@", err.localizedDescription)
                 case .cancelled:
-                    connectTimeoutTask.cancel()
-                    if !resumed {
-                        finish(.failure(BeerAPIError.server("Connexion interrompue")))
-                    }
+                    // Ignore : cancel volontaire après succès/timeout
+                    break
                 default:
                     break
                 }
@@ -116,6 +142,75 @@ enum HomelabIPv4Transport {
             conn.start(queue: queue)
         }
     }
+
+    private static func evaluateTrust(_ trust: SecTrust) -> Bool {
+        var error: CFError?
+        let ssl = SecPolicyCreateSSL(true, tlsHost as CFString)
+        SecTrustSetPolicies(trust, ssl)
+        if SecTrustEvaluateWithError(trust, &error) {
+            return true
+        }
+        let basic = SecPolicyCreateBasicX509()
+        SecTrustSetPolicies(trust, basic)
+        error = nil
+        if SecTrustEvaluateWithError(trust, &error), leafMatchesDomain(trust) {
+            return true
+        }
+        return leafMatchesDomain(trust)
+    }
+
+    private static func leafMatchesDomain(_ trust: SecTrust) -> Bool {
+        guard let cfArr = SecTrustCopyCertificateChain(trust) else { return false }
+        let n = CFArrayGetCount(cfArr)
+        guard n > 0 else { return false }
+        let cert = unsafeBitCast(CFArrayGetValueAtIndex(cfArr, 0), to: SecCertificate.self)
+        if let summary = SecCertificateCopySubjectSummary(cert) as String?,
+           summary.localizedCaseInsensitiveContains(tlsHost) {
+            return true
+        }
+        let data = SecCertificateCopyData(cert) as Data
+        if let needle = tlsHost.data(using: .utf8), data.range(of: needle) != nil {
+            return true
+        }
+        return false
+    }
+
+    // MARK: - Fallback: PreferIPv4 rewrite + URLSession + HomelabTLS
+
+    private static func performURLSessionFallback(
+        _ request: URLRequest,
+        timeoutSeconds: UInt64
+    ) async throws -> (Data, HTTPURLResponse, URL) {
+        var req = request
+        // URL logique FQDN puis rewrite A (évite AAAA)
+        if var c = URLComponents(url: req.url ?? ServerSettings.apiBase, resolvingAgainstBaseURL: false) {
+            c.host = tlsHost
+            c.scheme = "https"
+            c.port = nil
+            if let u = c.url { req.url = u }
+        }
+        PreferIPv4.applyAndroidStyle(&req)
+        req.timeoutInterval = TimeInterval(timeoutSeconds)
+
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = TimeInterval(timeoutSeconds)
+        cfg.timeoutIntervalForResource = TimeInterval(timeoutSeconds) + 30
+        cfg.waitsForConnectivity = false
+        cfg.httpShouldSetCookies = false
+        cfg.httpCookieAcceptPolicy = .never
+        let session = URLSession(configuration: cfg, delegate: HomelabTLSDelegate.shared, delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else { throw BeerAPIError.decode }
+        let logical = URL(string: "https://\(tlsHost)\(req.url?.path ?? "/beer/")") ?? response.url ?? ServerSettings.apiBase
+        if let setCookie = http.value(forHTTPHeaderField: "Set-Cookie"), !setCookie.isEmpty {
+            storeCookiesForURLSession([setCookie])
+        }
+        return (data, http, logical)
+    }
+
+    // MARK: - HTTP/1.1 exchange
 
     private static func exchange(
         conn: NWConnection,
@@ -150,7 +245,6 @@ enum HomelabIPv4Transport {
         try await send(conn: conn, data: payload)
         let (headersData, bodyData) = try await receiveResponse(conn: conn)
         let raw = headersData + bodyData
-        // URL logique = toujours le FQDN (jamais l'IP dans l'app)
         let logical = URL(string: "https://\(tlsHost)\(path)") ?? url
         let parsed = try parseHTTP(raw, url: logical)
         storeCookiesForURLSession(parsed.setCookieLines)

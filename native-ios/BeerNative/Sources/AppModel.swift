@@ -328,47 +328,64 @@ final class AppModel: ObservableObject {
             return
         }
 
-        // Invité : Bearer d'abord — ne jamais retomber en mode owner (LAN) si le token existe
+        // Invité : Bearer d'abord — ne jamais retomber en mode owner (LAN) si le token existe.
+        // Retry 3× comme un vrai client stable (pas « 1 blip 5G = déconnecté »).
         if InviteSessionStore.hasInviteSession {
             api.enableInviteMode(true)
             let t0 = Date()
-            do {
-                let me = try await api.me()
-                lastEndpointLatency = Date().timeIntervalSince(t0)
-                if let u = me.user, !u.isEmpty {
-                    networkStatus = .online
-                    lastSuccessfulBase = api.baseURL
-                    applySession(user: u, isAdmin: false, isInvite: true, loggedIn: true, inviteLabel: InviteSessionStore.label)
-                    serverVersion = (try? await api.version()) ?? ""
-                    await syncPending()
-                    Task { await prewarmRecentPhotos() }
-                    cache.prune(maxFiles: 16)
-                    return
-                }
-                // user vide = révoqué / invalide (même si pas 401)
-                api.clearSession()
-                BeerSessionStore.clear()
-                await clearSessionState()
-                return
-            } catch {
-                lastEndpointLatency = Date().timeIntervalSince(t0)
-                if case BeerAPIError.unauthorized = error {
-                    // Invitation révoquée ou expirée
+            var lastErr: Error?
+            for attempt in 1...3 {
+                do {
+                    let me = try await api.me()
+                    lastEndpointLatency = Date().timeIntervalSince(t0)
+                    if let u = me.user, !u.isEmpty {
+                        networkStatus = .online
+                        lastSuccessfulBase = api.baseURL
+                        applySession(user: u, isAdmin: false, isInvite: true, loggedIn: true, inviteLabel: InviteSessionStore.label)
+                        serverVersion = (try? await api.version()) ?? ""
+                        await syncPending()
+                        Task { await prewarmRecentPhotos() }
+                        cache.prune(maxFiles: 16)
+                        return
+                    }
+                    // user vide = révoqué / invalide (même si pas 401)
                     api.clearSession()
                     BeerSessionStore.clear()
                     await clearSessionState()
-                    showToast("Invitation révoquée ou expirée", variant: .error, durationMs: 4000)
                     return
-                } else {
-                    // Réseau temporaire : garde le Bearer + cache
-                    networkStatus = .serverUnreachable
-                    restoreOfflineSessionIfNeeded()
-                    if isLoggedIn {
-                        showToast("Serveur injoignable", variant: .warn, detail: "Cache iPhone — réessaie", durationMs: 3500)
+                } catch {
+                    lastErr = error
+                    if case BeerAPIError.unauthorized = error {
+                        api.clearSession()
+                        BeerSessionStore.clear()
+                        await clearSessionState()
+                        showToast("Invitation révoquée ou expirée", variant: .error, durationMs: 4000)
+                        return
                     }
-                    return
+                    // 403 métier invite morte
+                    if case BeerAPIError.server(let msg) = error,
+                       msg.localizedCaseInsensitiveContains("Invitation invalide")
+                        || msg.localizedCaseInsensitiveContains("expir") {
+                        api.clearSession()
+                        BeerSessionStore.clear()
+                        await clearSessionState()
+                        showToast("Invitation invalide ou expirée", variant: .error, durationMs: 4000)
+                        return
+                    }
+                    if attempt < 3 {
+                        try? await Task.sleep(nanoseconds: UInt64(attempt) * 800_000_000)
+                    }
                 }
             }
+            lastEndpointLatency = Date().timeIntervalSince(t0)
+            // Réseau temporaire : garde le Bearer + session UI (pas de wipe)
+            networkStatus = .serverUnreachable
+            restoreOfflineSessionIfNeeded()
+            if isLoggedIn || InviteSessionStore.hasInviteSession {
+                let detail = (lastErr as? LocalizedError)?.errorDescription ?? "Réessaie dans un instant"
+                showToast("Serveur injoignable", variant: .warn, detail: detail, durationMs: 3500)
+            }
+            return
         }
 
         // Owner only à partir d'ici
