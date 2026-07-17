@@ -243,7 +243,9 @@ enum class BeerSheet {
 data class ToastPayload(
     val message: String,
     val variant: Variant = Variant.INFO,
-    val detail: String? = null
+    val detail: String? = null,
+    /** Libellé court type iOS (« Invitation », « Succès »…) — optionnel. */
+    val label: String? = null
 ) {
-    enum class Variant { INFO, SUCCESS, WARN, ERROR }
+    enum class Variant { INFO, SUCCESS, WARN, ERROR, DUPLICATE }
 }

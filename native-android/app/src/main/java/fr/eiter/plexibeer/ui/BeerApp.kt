@@ -7,6 +7,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -60,7 +61,8 @@ fun BeerApp(vm: AppViewModel) {
             !vm.isLoggedIn -> LoginScreen(vm)
             else -> MainScreen(vm)
         }
-        ToastOverlay(vm.toast)
+        // Bannière haut d'écran = iOS (tap ou × pour fermer)
+        ToastOverlay(toast = vm.toast, onDismiss = { vm.hideToast() })
     }
 }
 
@@ -260,8 +262,7 @@ private fun MainScreen(vm: AppViewModel) {
                 if (pending > 0) {
                     add("En attente ($pending)" to { vm.openSheet(BeerSheet.PENDING) })
                 }
-                // Déconnexion pour tout le monde (invité inclus — purge session locale)
-                add("Déconnexion" to { vm.logout() })
+                // Déconnexion = bouton dédié hors grille (confirmation alerte, comme iOS)
             }
             buttons.chunked(3).forEach { row ->
                 Row(
@@ -274,6 +275,46 @@ private fun MainScreen(vm: AppViewModel) {
                     // pad incomplete rows
                     repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                 }
+            }
+            // Bouton déconnexion rouge + alerte confirmation (parité iOS 4.2.7)
+            var showLogoutConfirm by remember { mutableStateOf(false) }
+            OutlinedButton(
+                onClick = { showLogoutConfirm = true },
+                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = BeerColors.error),
+                border = BorderStroke(1.dp, BeerColors.error.copy(alpha = 0.55f)),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("Déconnexion", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            }
+            if (showLogoutConfirm) {
+                val invite = vm.isInvite
+                AlertDialog(
+                    onDismissRequest = { showLogoutConfirm = false },
+                    title = { Text("Se déconnecter ?") },
+                    text = {
+                        Text(
+                            if (invite) {
+                                "Tu perds l'accès sur cet appareil. Il faudra un nouveau lien d'invitation pour revenir."
+                            } else {
+                                "Tu devras te reconnecter (Wi‑Fi maison ou VPN) pour accéder à Beer Log."
+                            }
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showLogoutConfirm = false
+                            vm.logout()
+                        }) {
+                            Text("Se déconnecter", color = BeerColors.error)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showLogoutConfirm = false }) {
+                            Text("Annuler")
+                        }
+                    }
+                )
             }
         }
 

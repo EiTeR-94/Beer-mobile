@@ -382,26 +382,86 @@ fun NetworkStatusBar(status: NetworkStatus, pending: Int, latencyMs: Long?) {
     }
 }
 
+/**
+ * Bannière toast type iOS 4.2.7 — haut d'écran, non-modale, fermable.
+ * Pas de voile noir plein écran.
+ */
 @Composable
-fun ToastOverlay(toast: ToastPayload?) {
+fun ToastOverlay(toast: ToastPayload?, onDismiss: () -> Unit = {}) {
     if (toast == null) return
-    val color = when (toast.variant) {
+    val accent = when (toast.variant) {
         ToastPayload.Variant.SUCCESS -> BeerColors.ok
-        ToastPayload.Variant.WARN -> BeerColors.accent
+        ToastPayload.Variant.WARN, ToastPayload.Variant.DUPLICATE -> BeerColors.accent
         ToastPayload.Variant.ERROR -> BeerColors.error
-        ToastPayload.Variant.INFO -> BeerColors.muted
+        ToastPayload.Variant.INFO -> BeerColors.accent
     }
-    Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.TopCenter) {
-        Column(
+    val icon = when (toast.variant) {
+        ToastPayload.Variant.SUCCESS -> "✓"
+        ToastPayload.Variant.WARN -> "!"
+        ToastPayload.Variant.ERROR -> "✕"
+        ToastPayload.Variant.DUPLICATE -> "🍺"
+        ToastPayload.Variant.INFO -> "ℹ"
+    }
+    val defaultLabel = when (toast.variant) {
+        ToastPayload.Variant.SUCCESS -> "Succès"
+        ToastPayload.Variant.WARN -> "Attention"
+        ToastPayload.Variant.ERROR -> "Erreur"
+        ToastPayload.Variant.DUPLICATE -> "Déjà dégustée"
+        ToastPayload.Variant.INFO -> "Info"
+    }
+    val label = toast.label ?: defaultLabel
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        Row(
             Modifier
-                .clip(RoundedCornerShape(12.dp))
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
                 .background(BeerColors.card)
-                .border(1.dp, color, RoundedCornerShape(12.dp))
-                .padding(12.dp)
+                .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+                .clickable(onClick = onDismiss)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.Top
         ) {
-            Text(toast.message, color = BeerColors.text, fontWeight = FontWeight.SemiBold)
-            toast.detail?.let {
-                Text(it, color = BeerColors.muted, fontSize = 12.sp)
+            Box(
+                Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(accent.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(icon, color = accent, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    label.uppercase(),
+                    color = accent,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.6.sp
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(toast.message, color = BeerColors.text, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                toast.detail?.takeIf { it.isNotBlank() }?.let {
+                    Spacer(Modifier.height(3.dp))
+                    Text(it, color = BeerColors.muted, fontSize = 12.5.sp)
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            Box(
+                Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(BeerColors.bg.copy(alpha = 0.65f))
+                    .clickable(onClick = onDismiss),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("×", color = BeerColors.muted, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }
         }
     }

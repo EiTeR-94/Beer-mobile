@@ -301,10 +301,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         message: String,
         variant: ToastPayload.Variant = ToastPayload.Variant.INFO,
         detail: String? = null,
+        label: String? = null,
         durationMs: Long = 2800
     ) {
         toastJob?.cancel()
-        toast = ToastPayload(message, variant, detail)
+        toast = ToastPayload(message, variant, detail, label)
         toastJob = viewModelScope.launch {
             delay(durationMs)
             toast = null
@@ -416,11 +417,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 } catch (_: Exception) {
                     ""
                 }
+                // Même toast que iOS 4.2.7 (bannière succès)
+                kotlinx.coroutines.delay(350)
+                val name = (resp.label ?: resp.user ?: "").trim()
+                val hello = if (name.isEmpty()) "Bienvenue !" else "Bienvenue, $name !"
                 showToast(
-                    "Bienvenue${resp.label?.let { " $it" } ?: ""}",
-                    ToastPayload.Variant.INFO,
-                    detail = "Compte invité · 4G/5G OK",
-                    durationMs = 3500
+                    hello,
+                    ToastPayload.Variant.SUCCESS,
+                    detail = "Compte invité prêt — 4G/5G OK",
+                    label = "Invitation",
+                    durationMs = 3200
                 )
                 syncPending()
                 prewarmRecentPhotos()
@@ -431,18 +437,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Déconnexion effective — après confirmation UI (comme iOS).
+     * Pas de toast : l’alerte système gère l’avertissement invité.
+     */
     fun logout() {
         viewModelScope.launch {
             val wasInvite = isInvite || InviteSessionStore.hasInviteSession(getApplication())
-            if (wasInvite) {
-                showToast(
-                    "Déconnexion invité",
-                    ToastPayload.Variant.WARN,
-                    detail = "Tu perds l'accès sur cet appareil — il faudra un nouveau lien d'invitation pour revenir",
-                    durationMs = 5000
-                )
-                kotlinx.coroutines.delay(600)
-            }
+            hideToast()
             try {
                 if (!wasInvite) {
                     api.logout()
@@ -461,8 +463,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             InviteSessionStore.clear(getApplication())
             networkStatus = NetworkStatus.ONLINE
             sheet = null
-            // Toast d'avertissement invité déjà affiché
-            if (!wasInvite) hideToast()
         }
     }
 
