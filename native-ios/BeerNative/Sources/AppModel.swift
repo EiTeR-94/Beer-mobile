@@ -311,32 +311,16 @@ final class AppModel: ObservableObject {
             return
         }
 
-        if hasInvite {
-            api.enableInviteMode(true)
-        } else {
-            api.enableInviteMode(false)
-        }
-
-        let t0 = Date()
-        let ep = await api.discoverWorkingEndpoint()
-        lastEndpointLatency = Date().timeIntervalSince(t0)
-        if ep == nil {
-            networkStatus = .serverUnreachable
-            restoreOfflineSessionIfNeeded()
-            // Toast seulement si déjà logué (Android)
-            if isLoggedIn {
-                showToast("Serveur injoignable", variant: .warn, detail: "Cache local", durationMs: 3500)
-            }
-            return
-        }
-        networkStatus = .online
-        lastSuccessfulBase = api.baseURL
-
+        // Invité : comme Android — session Bearer d'abord, pas de probe LAN, pas de health obligatoire
         if InviteSessionStore.hasInviteSession {
             api.enableInviteMode(true)
+            let t0 = Date()
             do {
                 let me = try await api.me()
+                lastEndpointLatency = Date().timeIntervalSince(t0)
                 if let u = me.user, !u.isEmpty {
+                    networkStatus = .online
+                    lastSuccessfulBase = api.baseURL
                     applySession(user: u, isAdmin: false, isInvite: true, loggedIn: true, inviteLabel: InviteSessionStore.label)
                     serverVersion = (try? await api.version()) ?? ""
                     await syncPending()
@@ -346,17 +330,36 @@ final class AppModel: ObservableObject {
                 }
                 api.clearSession()
             } catch {
-                // 401 uniquement : 403/erreurs réseau ne doivent pas jeter le Bearer invité
-                // (sinon on reste en « cache local » après un join réussi).
+                lastEndpointLatency = Date().timeIntervalSince(t0)
                 if case BeerAPIError.unauthorized = error {
                     api.clearSession()
                 } else {
                     networkStatus = .serverUnreachable
                     restoreOfflineSessionIfNeeded()
+                    if isLoggedIn {
+                        showToast("Serveur injoignable", variant: .warn, detail: "Cache local", durationMs: 3500)
+                    }
                     return
                 }
             }
-        } else if HTTPCookieStorage.shared.cookies?.contains(where: { $0.name == "beer_session" }) == true {
+        }
+
+        api.enableInviteMode(false)
+        let t0 = Date()
+        let ep = await api.discoverWorkingEndpoint()
+        lastEndpointLatency = Date().timeIntervalSince(t0)
+        if ep == nil {
+            networkStatus = .serverUnreachable
+            restoreOfflineSessionIfNeeded()
+            if isLoggedIn {
+                showToast("Serveur injoignable", variant: .warn, detail: "Cache local", durationMs: 3500)
+            }
+            return
+        }
+        networkStatus = .online
+        lastSuccessfulBase = api.baseURL
+
+        if HTTPCookieStorage.shared.cookies?.contains(where: { $0.name == "beer_session" }) == true {
             api.enableInviteMode(false)
             do {
                 let me = try await api.me()

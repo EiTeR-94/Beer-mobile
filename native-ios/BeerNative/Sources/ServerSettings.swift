@@ -29,19 +29,19 @@ enum ServerSettings {
         return runtimeBase ?? lanApiBaseString
     }
 
-    /// Comme Android candidateURLs (+ skip LAN en 5G).
+    /// Comme Android `candidateURLs` (invite = FQDN puis IP littérale).
     static var candidateURLs: [String] {
         if inviteMode {
-            return [apiBaseString]
+            return [apiBaseString, wanIPv4ApiBaseString]
         }
         if preferWanOnly {
-            return [apiBaseString]
+            return [apiBaseString, wanIPv4ApiBaseString]
         }
         return [lanApiBaseString, apiBaseString]
     }
 
-    /// FQDN seulement : execute() essaie déjà FQDN → IP → HomelabIPv4.
-    static let inviteCandidateURLs: [String] = [apiBaseString]
+    /// Comme Android `inviteCandidateURLs`.
+    static let inviteCandidateURLs: [String] = [apiBaseString, wanIPv4ApiBaseString]
 
     static func isLanEndpoint(_ url: String) -> Bool {
         url.contains(":8444")
