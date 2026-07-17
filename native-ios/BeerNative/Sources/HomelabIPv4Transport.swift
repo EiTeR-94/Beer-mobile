@@ -13,11 +13,11 @@ enum HomelabIPv4Transport {
             group.addTask { try await performOnce(request, connectTimeout: timeoutSeconds) }
             group.addTask {
                 try await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
-                throw BeerAPIError.server("Timeout \(timeoutSeconds)s — réseau lent ou 5G bloquée")
+                throw BeerAPIError.server("Timeout \(timeoutSeconds)s — \(tlsHost)")
             }
             defer { group.cancelAll() }
             guard let result = try await group.next() else {
-                throw BeerAPIError.server("Timeout \(timeoutSeconds)s — réseau lent ou 5G bloquée")
+                throw BeerAPIError.server("Timeout \(timeoutSeconds)s — \(tlsHost)")
             }
             return result
         }
