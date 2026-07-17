@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct LoginView: View {
     @EnvironmentObject private var app: AppModel
@@ -8,6 +9,7 @@ struct LoginView: View {
     @State private var inviteLink = ""
     @State private var error: String?
     @State private var busy = false
+    @State private var clipboardHint: String?
 
     private enum LoginMode {
         case owner, invite
@@ -38,6 +40,7 @@ struct LoginView: View {
                         modeButton(title: "Invitation", selected: mode == .invite) {
                             mode = .invite
                             error = nil
+                            Task { await prepareInviteFromClipboard(autoActivate: false) }
                         }
                     }
                     .padding(.bottom, 16)
@@ -72,18 +75,44 @@ struct LoginView: View {
                                 .foregroundStyle(Theme.muted)
                                 .padding(.top, 10)
                         } else {
-                            Text("Colle le lien d'invitation reçu (WhatsApp, SMS…). Fonctionne en 4G/5G, sans VPN.")
+                            Text("Ouvre le lien reçu (WhatsApp/SMS) ou copie-le puis appuie ci‑dessous — pas besoin de coller à la main.")
                                 .font(.system(size: 13))
                                 .foregroundStyle(Theme.muted)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.top, 14)
 
-                            BeerField(
-                                label: "Lien d'invitation",
-                                text: $inviteLink,
-                                placeholder: "https://eiter.freeboxos.fr/beer/join/…"
-                            )
+                            // CTA principal : 1 tap = presse-papiers → activation
+                            BeerPrimaryButton(
+                                title: busy ? "Activation…" : "Activer depuis le presse‑papiers",
+                                disabled: busy,
+                                busy: busy
+                            ) {
+                                Task { await activateFromClipboard() }
+                            }
                             .padding(.top, 14)
+
+                            BeerSecondaryButton(title: "Relire le presse‑papiers") {
+                                Task { await prepareInviteFromClipboard(autoActivate: false) }
+                            }
+                            .padding(.top, 8)
+
+                            if let clipboardHint {
+                                Text(clipboardHint)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Theme.ok)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.top, 8)
+                            }
+
+                            // Détail discret (token / lien détecté)
+                            if !inviteLink.isEmpty {
+                                Text(shortInvitePreview(inviteLink))
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(Theme.muted)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.top, 8)
+                                    .lineLimit(2)
+                            }
 
                             if let error {
                                 Text(error)
@@ -96,14 +125,28 @@ struct LoginView: View {
                             NetworkStatusBar(status: app.networkStatus)
                                 .padding(.top, 8)
 
-                            BeerPrimaryButton(
-                                title: busy ? "Activation…" : "Activer l'invitation",
-                                disabled: inviteLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy,
-                                busy: busy
-                            ) {
-                                Task { await submitInvite() }
+                            // Fallback si le lien n'est pas dans le presse-papiers
+                            DisclosureGroup("Saisie manuelle (rare)") {
+                                BeerField(
+                                    label: "Lien d'invitation",
+                                    text: $inviteLink,
+                                    placeholder: "https://eiter.freeboxos.fr/beer/join/…"
+                                )
+                                .padding(.top, 10)
+                                BeerPrimaryButton(
+                                    title: busy ? "Activation…" : "Activer ce lien",
+                                    disabled: inviteLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy,
+                                    busy: busy
+                                ) {
+                                    Task { await submitInvite() }
+                                }
+                                .padding(.top, 10)
                             }
-                            Text("1 iPhone par invitation · pas de déconnexion")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.muted)
+                            .padding(.top, 12)
+
+                            Text("1 iPhone par invitation · 4G/5G OK")
                                 .font(.system(size: 11))
                                 .foregroundStyle(Theme.muted)
                                 .padding(.top, 10)
@@ -128,13 +171,26 @@ struct LoginView: View {
             if let pending = app.pendingInviteLink, !pending.isEmpty {
                 mode = .invite
                 inviteLink = pending
+                Task { await submitInvite() }
+                return
+            }
+            // Si un lien join est déjà dans le presse-papiers → onglet Invitation prêt
+            if let clip = readInviteFromClipboard() {
+                mode = .invite
+                inviteLink = clip
+                clipboardHint = "Lien d'invitation détecté dans le presse‑papiers"
             }
         }
         .onChange(of: app.pendingInviteLink) { newVal in
             if let newVal, !newVal.isEmpty {
                 mode = .invite
                 inviteLink = newVal
+                Task { await submitInvite() }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            guard mode == .invite, !busy, inviteLink.isEmpty else { return }
+            Task { await prepareInviteFromClipboard(autoActivate: false) }
         }
     }
 
@@ -147,6 +203,52 @@ struct LoginView: View {
                 .foregroundStyle(Theme.text)
                 .overlay(RoundedRectangle(cornerRadius: Theme.Radius.btn).stroke(selected ? Theme.accent : Theme.border))
         }
+    }
+
+    private func shortInvitePreview(_ raw: String) -> String {
+        if let t = InviteSessionStore.parseInviteToken(raw) {
+            let head = String(t.prefix(10))
+            let tail = String(t.suffix(6))
+            return "Token : \(head)…\(tail)"
+        }
+        return String(raw.prefix(48)) + (raw.count > 48 ? "…" : "")
+    }
+
+    /// Lit le presse-papiers et ne garde qu'un lien/token d'invitation Beer valide.
+    private func readInviteFromClipboard() -> String? {
+        guard let s = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !s.isEmpty else { return nil }
+        // URL join ou token brut
+        if InviteSessionStore.parseInviteToken(s) != nil {
+            return s
+        }
+        // Cherche une URL join dans un texte collé plus large
+        if let range = s.range(of: #"https?://[^\s]+/beer/join/[A-Za-z0-9_-]{24,}"#, options: .regularExpression) {
+            let url = String(s[range])
+            if InviteSessionStore.parseInviteToken(url) != nil { return url }
+        }
+        return nil
+    }
+
+    @MainActor
+    private func prepareInviteFromClipboard(autoActivate: Bool) async {
+        guard let clip = readInviteFromClipboard() else {
+            clipboardHint = nil
+            if autoActivate {
+                error = "Aucun lien d'invitation dans le presse‑papiers — copie le lien reçu puis réessaie"
+            }
+            return
+        }
+        inviteLink = clip
+        clipboardHint = "Lien d'invitation prêt"
+        error = nil
+        if autoActivate {
+            await submitInvite()
+        }
+    }
+
+    private func activateFromClipboard() async {
+        await prepareInviteFromClipboard(autoActivate: true)
     }
 
     private func submitOwner() async {
@@ -170,21 +272,27 @@ struct LoginView: View {
     }
 
     private func submitInvite() async {
-        await MainActor.run {
+        let link = await MainActor.run { () -> String in
             busy = true
             error = nil
+            return inviteLink.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        // Message d'attente visible tout de suite (plus d'échec « instantané » sans feedback)
-        await MainActor.run {
-            error = nil
+        guard !link.isEmpty else {
+            await MainActor.run {
+                busy = false
+                error = "Lien d'invitation manquant"
+            }
+            return
         }
         do {
-            try await app.joinInvite(inviteLink: inviteLink.trimmingCharacters(in: .whitespacesAndNewlines))
-            await MainActor.run { busy = false }
+            try await app.joinInvite(inviteLink: link)
+            await MainActor.run {
+                busy = false
+                app.pendingInviteLink = nil
+            }
         } catch {
             await MainActor.run {
                 busy = false
-                // Affiche l'erreur réelle (plus de faux « Timeout 30s » inventé)
                 self.error = error.localizedDescription
             }
         }
