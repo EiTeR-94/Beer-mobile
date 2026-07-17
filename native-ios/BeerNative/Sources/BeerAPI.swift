@@ -30,8 +30,8 @@ final class BeerAPI {
     static let shared = BeerAPI()
     private static let nativeClientHeader = "X-PlexiBeer-Client"
     private static let nativeClientValue = "native-ios"
-    private static let userAgentOwner = "PlexiBeer/4.2.1 (iPhone; native owner) [lan-vpn]"
-    private static let userAgentInvite = "PlexiBeer/4.2.1 (iPhone; native invite) [wan]"
+    private static let userAgentOwner = "PlexiBeer/4.2.2 (iPhone; native owner) [lan-vpn]"
+    private static let userAgentInvite = "PlexiBeer/4.2.2 (iPhone; native invite) [wan]"
 
     // Un seul client comme OkHttp Android (30s connect, 120s read)
     private let client: URLSession
@@ -129,9 +129,10 @@ final class BeerAPI {
             .map { "beer_session=\($0.value)" }
     }
 
-    /// **UN SEUL chemin invite = OkHttp Android** :
-    /// dial IPv4 + TLS SNI/Host = `eiter.freeboxos.fr` via `HomelabIPv4Transport`
-    /// (jamais Happy Eyeballs AAAA Freebox, jamais SNI=IP).
+    /// **Invite WAN = URLSession uniquement** (comme les join 200 en logs prod).
+    /// PreferIPv4 force dial `82.64.151.113` (jamais AAAA Freebox).
+    /// HomelabTLS accepte le cert LE du domaine sur l'IP.
+    /// **Zéro** NWConnection / HomelabIPv4 — c'est ça qui jetait « Timeout 30s » en instantané.
     /// Owner LAN : URLSession + HomelabTLS inchangé.
     private func execute(
         _ request: URLRequest,
@@ -145,42 +146,26 @@ final class BeerAPI {
         let isLan = ServerSettings.isLanEndpoint(req.url ?? baseURL)
             || ServerSettings.isLanHost(rawHost)
 
-        // ——— INVITE / WAN public : même sémantique qu'Android preferIpv4Dns ———
+        // Invite / WAN : forcer IPv4 hardcodée (équivalent preferIpv4Dns OkHttp)
         if isInviteMode || (!isLan && (rawHost == ServerSettings.canonicalHost || rawHost == ServerSettings.wanIPv4)) {
-            // URL logique toujours FQDN (path nginx /beer/...)
             if var c = URLComponents(url: req.url ?? ServerSettings.apiBase, resolvingAgainstBaseURL: false) {
+                // Path/query conservés ; host repassera en IPv4 via PreferIPv4
                 c.host = ServerSettings.canonicalHost
                 c.scheme = "https"
                 c.port = nil
                 if let u = c.url { req.url = u }
             }
+            PreferIPv4.applyAndroidStyle(&req)
+        } else if rawHost == ServerSettings.wanIPv4 {
             req.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
-            let t: UInt64 = probe ? 15 : 35
-            do {
-                let (data, http, u) = try await HomelabIPv4Transport.perform(req, timeoutSeconds: t)
-                return try finishHTTPInviteAware(
-                    data: data,
-                    http: http,
-                    url: u,
-                    allowUnauthorizedBody: allowUnauthorizedBody
-                )
-            } catch let e as BeerAPIError {
-                throw e
-            } catch let err as URLError {
-                throw mapURLErrorNoSslRefuse(err)
-            } catch {
-                throw BeerAPIError.server("Connexion \(ServerSettings.canonicalHost) impossible — réessaie")
-            }
         }
 
-        // ——— OWNER LAN :8444 ———
-        if probe {
-            req.timeoutInterval = 12
-        } else {
-            req.timeoutInterval = 45
-        }
+        // Timeouts réalistes — message d'erreur ne ment plus sur la durée
+        let timeout: TimeInterval = probe ? 15 : 45
+        req.timeoutInterval = timeout
 
         let session = probe ? probeClient : client
+        let started = Date()
         do {
             let (data, response) = try await session.data(for: req)
             guard let http = response as? HTTPURLResponse, let u = response.url else {
@@ -210,7 +195,10 @@ final class BeerAPI {
         } catch let e as BeerAPIError {
             throw e
         } catch let err as URLError {
-            throw mapURLErrorNoSslRefuse(err)
+            let elapsed = Date().timeIntervalSince(started)
+            throw mapURLError(err, elapsed: elapsed, budget: timeout)
+        } catch {
+            throw BeerAPIError.server("Connexion \(ServerSettings.canonicalHost) impossible — réessaie")
         }
     }
 
@@ -252,19 +240,27 @@ final class BeerAPI {
         return (data, code, http, url)
     }
 
-    private func mapURLErrorNoSslRefuse(_ err: URLError) -> BeerAPIError {
+    /// Mappe les URLError avec la **vraie** durée écoulée — plus de « Timeout 30s » instantané mensonger.
+    private func mapURLError(_ err: URLError, elapsed: TimeInterval, budget: TimeInterval) -> BeerAPIError {
         let host = ServerSettings.canonicalHost
+        let secs = max(0, Int(elapsed.rounded()))
         switch err.code {
         case .timedOut:
-            return .server("Timeout vers \(host) — réessaie")
+            if elapsed < 2 {
+                // Échec immédiat mal étiqueté « timeout » par CFNetwork
+                return .server("Connexion refusée vers \(host) (immédiat) — réessaie")
+            }
+            return .server("Timeout après \(secs)s vers \(host) — réessaie")
         case .notConnectedToInternet:
-            return .server("Pas de réseau")
-        case .cannotConnectToHost, .networkConnectionLost:
-            return .server("Injoignable — \(host)")
-        case .secureConnectionFailed, .serverCertificateUntrusted:
-            return .server("Certificat / TLS vers \(host) refusé — réessaie")
+            return .server("Pas de réseau cellulaire / Wi‑Fi")
+        case .cannotConnectToHost, .networkConnectionLost, .cannotFindHost:
+            return .server("Injoignable \(host) (\(secs)s) — \(err.localizedDescription)")
+        case .secureConnectionFailed, .serverCertificateUntrusted, .clientCertificateRejected:
+            return .server("TLS vers \(host) refusé (\(secs)s) — réessaie")
+        case .cancelled:
+            return .server("Connexion annulée")
         default:
-            return .network(err)
+            return .server("Réseau \(host): \(err.localizedDescription) (\(secs)s)")
         }
     }
 

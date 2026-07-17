@@ -174,13 +174,17 @@ struct LoginView: View {
             busy = true
             error = nil
         }
-        defer {
-            Task { @MainActor in busy = false }
+        // Message d'attente visible tout de suite (plus d'échec « instantané » sans feedback)
+        await MainActor.run {
+            error = nil
         }
         do {
             try await app.joinInvite(inviteLink: inviteLink.trimmingCharacters(in: .whitespacesAndNewlines))
+            await MainActor.run { busy = false }
         } catch {
             await MainActor.run {
+                busy = false
+                // Affiche l'erreur réelle (plus de faux « Timeout 30s » inventé)
                 self.error = error.localizedDescription
             }
         }

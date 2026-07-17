@@ -1,28 +1,41 @@
 import Foundation
 import Darwin
 
-/// Miroir d'Android `preferIpv4Dns` pour URLSession (pas de Dns custom iOS).
-/// OkHttp : URL FQDN + socket sur l'A. Ici : on réécrit l'URL en IPv4 pour le dial,
-/// Host = FQDN (interceptor Android), HomelabTLS accepte le cert domaine sur l'IP.
+/// Miroir d'Android `preferIpv4Dns` pour URLSession.
+///
+/// Freebox : AAAA de `eiter.freeboxos.fr` est morte sur :443 → Happy Eyeballs iOS
+/// tape IPv6 et échoue (SSL/timeout) de façon **aléatoire**.
+///
+/// Fix déterministe : dial **toujours** l'IPv4 WAN connue (`82.64.151.113`),
+/// Host HTTP = FQDN (nginx). HomelabTLS accepte le cert LE du domaine sur l'IP.
 enum PreferIPv4 {
+    /// IPv4 WAN canonique (même IP qu'Android résout en A).
+    static var wanIPv4: String { ServerSettings.wanIPv4 }
+
     static func firstIPv4(_ hostname: String) -> String? {
         if isIPv4Literal(hostname) { return hostname }
-        return resolveA(hostname).first
+        // Préférer l'IP hardcodée pour le host canonique (pas de DNS flaky en 5G)
+        if hostname == ServerSettings.canonicalHost {
+            return wanIPv4
+        }
+        return resolveA(hostname).first ?? (hostname == ServerSettings.canonicalHost ? wanIPv4 : nil)
     }
 
-    /// Applique preferIpv4Dns + Host interceptor Android sur la requête.
+    /// Force dial IPv4 + Host FQDN (équivalent OkHttp interceptor WAN).
     static func applyAndroidStyle(_ request: inout URLRequest) {
         guard let url = request.url, let host = url.host, !host.isEmpty else { return }
 
-        // Déjà en IP littérale : Host = FQDN (comme OkHttp interceptor WAN_IPV4)
         if isIPv4Literal(host) {
+            // Déjà en IP : Host = FQDN pour nginx
             request.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
             return
         }
 
-        // FQDN public → dial l'enregistrement A (jamais AAAA)
-        guard host == ServerSettings.canonicalHost else { return }
-        let ip = firstIPv4(host) ?? ServerSettings.wanIPv4
+        // FQDN public (ou tout host invite) → dial IPv4 hardcodée, jamais AAAA
+        let ip = (host == ServerSettings.canonicalHost)
+            ? wanIPv4
+            : (firstIPv4(host) ?? wanIPv4)
+
         guard var c = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
         c.host = ip
         c.scheme = "https"
@@ -33,7 +46,7 @@ enum PreferIPv4 {
         NSLog("PreferIPv4: %@ → %@ (Host=%@)", host, ip, ServerSettings.canonicalHost)
     }
 
-    private static func isIPv4Literal(_ s: String) -> Bool {
+    static func isIPv4Literal(_ s: String) -> Bool {
         var a = in_addr()
         return s.withCString { inet_pton(AF_INET, $0, &a) } == 1
     }
