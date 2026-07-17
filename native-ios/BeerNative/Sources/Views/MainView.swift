@@ -10,6 +10,13 @@ struct MainView: View {
     @State private var sheet: BeerSheet?
     @State private var showLogoutConfirm = false
 
+    private var logoutWarning: String {
+        if app.isInvite || InviteSessionStore.hasInviteSession {
+            return "Tu perds l'accès sur cet iPhone. Il faudra un nouveau lien d'invitation pour revenir."
+        }
+        return "Tu devras te reconnecter (Wi‑Fi maison ou VPN) pour accéder à Beer Log."
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -22,6 +29,19 @@ struct MainView: View {
             BeerWizardView(step: $app.wizardStep)
         }
         .background(Theme.bg)
+        // confirmationDialog AVANT fullScreenCover — sinon l'alerte ne sort pas (bug SwiftUI)
+        .confirmationDialog(
+            "Se déconnecter ?",
+            isPresented: $showLogoutConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Se déconnecter", role: .destructive) {
+                Task { await app.logout() }
+            }
+            Button("Annuler", role: .cancel) {}
+        } message: {
+            Text(logoutWarning)
+        }
         .fullScreenCover(item: $sheet) { s in
             switch s {
             case .history:
@@ -39,21 +59,6 @@ struct MainView: View {
             case .pending:
                 PendingSheetView()
                     .environmentObject(app)
-            }
-        }
-        .alert(
-            app.isInvite ? "Se déconnecter ?" : "Se déconnecter ?",
-            isPresented: $showLogoutConfirm
-        ) {
-            Button("Annuler", role: .cancel) {}
-            Button("Se déconnecter", role: .destructive) {
-                Task { await app.logout() }
-            }
-        } message: {
-            if app.isInvite {
-                Text("Tu perds l'accès sur cet iPhone. Il faudra un nouveau lien d'invitation pour revenir.")
-            } else {
-                Text("Tu devras te reconnecter (Wi‑Fi maison ou VPN) pour accéder à Beer Log.")
             }
         }
         .environmentObject(app)
@@ -136,8 +141,8 @@ struct MainView: View {
         if app.pendingCount > 0 {
             buttons.append(HeaderButton(title: "En attente (\(app.pendingCount))") { sheet = .pending })
         }
-        // Déconnexion pour tout le monde (invité inclus — purge session locale)
-        buttons.append(HeaderButton(title: "Déconnexion") { Task { await app.logout() } })
+        // Déconnexion pour tout le monde — confirmation via alerte (pas de toast)
+        buttons.append(HeaderButton(title: "Déconnexion") { showLogoutConfirm = true })
         return buttons
     }
 }
