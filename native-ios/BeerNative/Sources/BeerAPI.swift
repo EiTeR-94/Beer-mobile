@@ -129,7 +129,11 @@ final class BeerAPI {
             .map { "beer_session=\($0.value)" }
     }
 
-    /// Comme Android execute() — Prefer IPv4 pour le FQDN Freebox.
+    /// Comme Android execute().
+    /// IMPORTANT : ne JAMAIS réécrire l'URL en IP pour URLSession (casse le SNI → "SSL refusé").
+    /// Android PreferIpv4Dns change seulement la résolution DNS, le SNI reste le hostname.
+    /// Sur iOS : domaine/WAN → HomelabIPv4Transport (TCP IPv4 + SNI eiter.freeboxos.fr).
+    /// LAN 192.168.1.50 → URLSession + HomelabTLS.
     private func execute(
         _ request: URLRequest,
         probe: Bool = false,
@@ -138,23 +142,37 @@ final class BeerAPI {
         var req = request
         applyHeaders(to: &req)
 
-        // Prefer IPv4 DNS (Android preferIpv4Dns)
-        if let host = req.url?.host, host == ServerSettings.canonicalHost,
-           let ipv4 = PreferIPv4.firstIPv4(host),
-           var comps = URLComponents(url: req.url!, resolvingAgainstBaseURL: false) {
-            comps.host = ipv4
-            if let newURL = comps.url {
-                req.url = newURL
-                req.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
-            }
-        }
+        let host = req.url?.host ?? ""
+        let useIPv4Transport =
+            isInviteMode
+            || host == ServerSettings.canonicalHost
+            || host == ServerSettings.wanIPv4
 
-        let session = probe ? probeClient : client
         do {
-            let (data, response) = try await session.data(for: req)
-            guard let http = response as? HTTPURLResponse, let u = response.url else {
-                throw BeerAPIError.decode
+            let data: Data
+            let http: HTTPURLResponse
+            let u: URL
+            if useIPv4Transport {
+                // Force hostname in URL for path building; transport always dials wanIPv4 + SNI
+                if host == ServerSettings.wanIPv4, var c = URLComponents(url: req.url!, resolvingAgainstBaseURL: false) {
+                    c.host = ServerSettings.canonicalHost
+                    c.port = nil
+                    if let fixed = c.url { req.url = fixed }
+                }
+                let timeout: UInt64 = probe ? 8 : 15
+                (data, http, u) = try await HomelabIPv4Transport.perform(req, timeoutSeconds: timeout)
+            } else {
+                // LAN IP :8444
+                let session = probe ? probeClient : client
+                let (d, response) = try await session.data(for: req)
+                guard let h = response as? HTTPURLResponse, let url = response.url else {
+                    throw BeerAPIError.decode
+                }
+                data = d
+                http = h
+                u = url
             }
+
             // Capture Set-Cookie (comme Android cookieJar.ingestResponse)
             if let setCookie = http.value(forHTTPHeaderField: "Set-Cookie"), !setCookie.isEmpty {
                 let cookies = HTTPCookie.cookies(
@@ -162,7 +180,6 @@ final class BeerAPI {
                     for: u
                 )
                 for c in cookies { HTTPCookieStorage.shared.setCookie(c) }
-                // Aussi stocker pour domaine si réponse sur IP
                 if let domainURL = URL(string: "https://\(ServerSettings.canonicalHost)/beer/") {
                     let cookies2 = HTTPCookie.cookies(
                         withResponseHeaderFields: ["Set-Cookie": setCookie],
@@ -215,7 +232,7 @@ final class BeerAPI {
         return (200..<300).contains(code)
     }
 
-    /// Android discoverWorkingEndpoint — candidateURLs, isSuccessful only (pas execute()).
+    /// Android discoverWorkingEndpoint — candidateURLs, isSuccessful (2xx).
     func discoverWorkingEndpoint() async -> String? {
         let original = baseURL.absoluteString
         for candidate in ServerSettings.candidateURLs {
@@ -224,21 +241,9 @@ final class BeerAPI {
                 var req = URLRequest(url: absURL("api/health"))
                 req.httpMethod = "GET"
                 applyHeaders(to: &req)
-                // Prefer IPv4 like execute
-                if let host = req.url?.host, host == ServerSettings.canonicalHost,
-                   let ipv4 = PreferIPv4.firstIPv4(host),
-                   var comps = URLComponents(url: req.url!, resolvingAgainstBaseURL: false) {
-                    comps.host = ipv4
-                    if let newURL = comps.url {
-                        req.url = newURL
-                        req.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
-                    }
-                }
-                let session = ServerSettings.isLanEndpoint(candidate) ? probeClient : client
-                let (_, response) = try await session.data(for: req)
-                guard let http = response as? HTTPURLResponse else { continue }
-                // Android: it.isSuccessful → 2xx only
-                if (200..<300).contains(http.statusCode) {
+                // Utilise execute (LAN=URLSession, domaine=IPv4+SNI) — pas de rewrite host cassant SSL
+                let (_, code, _, _) = try await execute(req, probe: true, allowUnauthorizedBody: true)
+                if (200..<300).contains(code) {
                     return candidate
                 }
             } catch {
@@ -294,67 +299,48 @@ final class BeerAPI {
         }
         BeerSessionStore.clear()
 
-        var lastError: Error?
-        for candidate in ServerSettings.inviteCandidateURLs {
-            do {
-                setBaseURL(candidate)
-                enableInviteMode(true)
-                let body = try JSONEncoder().encode(["token": token, "device_id": deviceId])
-                var req = URLRequest(url: absURL("api/native/join"))
-                req.httpMethod = "POST"
-                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
-                req.setValue(Self.userAgentInvite, forHTTPHeaderField: "User-Agent")
-                req.setValue(deviceId, forHTTPHeaderField: "X-Beer-Device")
-                req.httpBody = body
-                let (data, code, _, _) = try await execute(req, allowUnauthorizedBody: true)
-                guard let decoded = try? JSONDecoder().decode(NativeJoinResponse.self, from: data) else {
-                    throw BeerAPIError.server("Réponse join invalide (HTTP \(code))")
-                }
-                if code == 429 {
-                    throw BeerAPIError.server("Trop de tentatives — réessaie dans une minute")
-                }
-                if code == 403, decoded.error == "wrong_device" {
-                    throw BeerAPIError.server("Cette invitation est déjà liée à un autre téléphone")
-                }
-                if code >= 400 || !decoded.ok || (decoded.accessToken ?? "").isEmpty {
-                    let msg: String
-                    switch decoded.error {
-                    case "invalid": msg = "Invitation invalide ou expirée"
-                    case "invalid_device": msg = "Identifiant appareil invalide"
-                    case "disabled": msg = "Invitations natives désactivées"
-                    default: msg = decoded.error ?? "Activation impossible (HTTP \(code))"
-                    }
-                    // business error: don't try next candidate
-                    if code == 400 || code == 403 || code == 503 {
-                        throw BeerAPIError.server(msg)
-                    }
-                    throw BeerAPIError.server(msg)
-                }
-                InviteSessionStore.save(
-                    accessToken: decoded.accessToken!,
-                    user: decoded.user ?? "invite",
-                    label: decoded.label,
-                    expiresAt: decoded.expiresAt,
-                    deviceId: decoded.deviceId ?? deviceId
-                )
-                enableInviteMode(true)
-                return decoded
-            } catch let e as BeerAPIError {
-                if case .server(let msg) = e {
-                    let lower = msg.lowercased()
-                    if lower.contains("invitation") || lower.contains("appareil")
-                        || lower.contains("tentatives") || lower.contains("invalide")
-                        || lower.contains("liée") || lower.contains("désactiv") {
-                        throw e
-                    }
-                }
-                lastError = e
-            } catch {
-                lastError = error
-            }
+        enableInviteMode(true)
+        setBaseURL(ServerSettings.apiBaseString)
+
+        let body = try JSONEncoder().encode(["token": token, "device_id": deviceId])
+        // Toujours URL FQDN : le transport IPv4 met le SNI correct (pas de rewrite host → SSL refusé)
+        var req = URLRequest(url: URL(string: "https://\(ServerSettings.canonicalHost)/beer/api/native/join")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
+        req.setValue(Self.userAgentInvite, forHTTPHeaderField: "User-Agent")
+        req.setValue(deviceId, forHTTPHeaderField: "X-Beer-Device")
+        req.httpBody = body
+
+        let (data, code, _, _) = try await execute(req, allowUnauthorizedBody: true)
+        guard let decoded = try? JSONDecoder().decode(NativeJoinResponse.self, from: data) else {
+            throw BeerAPIError.server("Réponse join invalide (HTTP \(code))")
         }
-        throw lastError ?? BeerAPIError.server("Serveur injoignable en 4G/5G — réessaie")
+        if code == 429 {
+            throw BeerAPIError.server("Trop de tentatives — réessaie dans une minute")
+        }
+        if code == 403, decoded.error == "wrong_device" {
+            throw BeerAPIError.server("Cette invitation est déjà liée à un autre téléphone")
+        }
+        if code >= 400 || !decoded.ok || (decoded.accessToken ?? "").isEmpty {
+            let msg: String
+            switch decoded.error {
+            case "invalid": msg = "Invitation invalide ou expirée"
+            case "invalid_device": msg = "Identifiant appareil invalide"
+            case "disabled": msg = "Invitations natives désactivées"
+            default: msg = decoded.error ?? "Activation impossible (HTTP \(code))"
+            }
+            throw BeerAPIError.server(msg)
+        }
+        InviteSessionStore.save(
+            accessToken: decoded.accessToken!,
+            user: decoded.user ?? "invite",
+            label: decoded.label,
+            expiresAt: decoded.expiresAt,
+            deviceId: decoded.deviceId ?? deviceId
+        )
+        enableInviteMode(true)
+        return decoded
     }
 
     func clearAllAuth() { clearSession() }

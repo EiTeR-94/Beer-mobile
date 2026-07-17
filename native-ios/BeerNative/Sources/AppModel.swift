@@ -177,7 +177,7 @@ final class AppModel: ObservableObject {
             isOnLocalWifi = false
             isOnVPN = false
         } else {
-            // Owner : comme avant / comme Android
+            // Owner : comme Android
             api.enableInviteMode(false)
             if let ip = ip, ip.hasPrefix("192.168.1.") {
                 isOnLocalWifi = true
@@ -192,17 +192,19 @@ final class AppModel: ObservableObject {
                 isOnVPN = false
                 api.setBaseURL(ServerSettings.lanApiBase)
             } else {
+                // 5G : pas de probe LAN (15s mort) — WAN only
                 isOnLocalWifi = false
                 isOnVPN = false
-                // 5G owner : essayer domaine (compte owner hors maison = VPN normalement)
                 api.setBaseURL(ServerSettings.apiBase)
+                // Forcer candidate invite-style pour discover : FQDN only
+                // (owner hors maison sans VPN : normalement injoignable, OK)
             }
         }
-        scheduleServerProbe()
-        scheduleSyncDebounced()
-        if isOnLocalWifi || isOnVPN {
-            prewarmConnection()
+        // Ne pas bloquer l'UI : probe en fond seulement si session
+        if isLoggedIn || InviteSessionStore.hasInviteSession {
+            scheduleServerProbe()
         }
+        scheduleSyncDebounced()
     }
 
     private func scheduleServerProbe() {
