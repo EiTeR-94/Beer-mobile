@@ -18,6 +18,8 @@ enum ServerSettings {
 
     /// Mode invité : forcer WAN (jamais LAN Freebox).
     static var inviteMode: Bool = false
+    /// 5G : ne pas sonder le LAN.
+    static var preferWanOnly: Bool = false
 
     static var effectiveBase: String {
         if inviteMode {
@@ -27,10 +29,13 @@ enum ServerSettings {
         return runtimeBase ?? lanApiBaseString
     }
 
-    /// Comme Android candidateURLs.
+    /// Comme Android candidateURLs (+ skip LAN en 5G).
     static var candidateURLs: [String] {
         if inviteMode {
-            return [apiBaseString, wanIPv4ApiBaseString]
+            return [apiBaseString]
+        }
+        if preferWanOnly {
+            return [apiBaseString]
         }
         return [lanApiBaseString, apiBaseString]
     }

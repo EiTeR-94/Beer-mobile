@@ -30,8 +30,8 @@ final class BeerAPI {
     static let shared = BeerAPI()
     private static let nativeClientHeader = "X-PlexiBeer-Client"
     private static let nativeClientValue = "native-ios"
-    private static let userAgentOwner = "PlexiBeer/3.6.1 (iPhone; native owner) [lan-vpn]"
-    private static let userAgentInvite = "PlexiBeer/3.6.1 (iPhone; native invite) [wan]"
+    private static let userAgentOwner = "PlexiBeer/3.7.0 (iPhone; native owner) [lan-vpn]"
+    private static let userAgentInvite = "PlexiBeer/3.7.0 (iPhone; native invite) [wan]"
 
     // Un seul client comme OkHttp Android (30s connect, 120s read)
     private let client: URLSession
@@ -129,11 +129,12 @@ final class BeerAPI {
             .map { "beer_session=\($0.value)" }
     }
 
-    /// Comme Android execute().
-    /// IMPORTANT : ne JAMAIS réécrire l'URL en IP pour URLSession (casse le SNI → "SSL refusé").
-    /// Android PreferIpv4Dns change seulement la résolution DNS, le SNI reste le hostname.
-    /// Sur iOS : domaine/WAN → HomelabIPv4Transport (TCP IPv4 + SNI eiter.freeboxos.fr).
-    /// LAN 192.168.1.50 → URLSession + HomelabTLS.
+    /// Comme Android OkHttp execute().
+    /// - LAN : URLSession direct sur 192.168.1.50:8444 + HomelabTLS
+    /// - Domaine / invite : URLSession sur le **hostname** (SNI correct, comme OkHttp).
+    ///   Ne JAMAIS réécrire l'URL en IP (casse SNI → SSL refusé).
+    ///   Prefer IPv4 = le système/Happy Eyeballs ; on ne force plus NWConnection TCP IP
+    ///   (Timeout TCP 15s vers 82.64… vu en 5G avec HomelabIPv4Transport).
     private func execute(
         _ request: URLRequest,
         probe: Bool = false,
@@ -142,38 +143,31 @@ final class BeerAPI {
         var req = request
         applyHeaders(to: &req)
 
-        let host = req.url?.host ?? ""
-        let useIPv4Transport =
-            isInviteMode
-            || host == ServerSettings.canonicalHost
-            || host == ServerSettings.wanIPv4
+        // Si on a une URL en IP WAN pure, repasser en FQDN pour le SNI URLSession
+        if req.url?.host == ServerSettings.wanIPv4,
+           var c = URLComponents(url: req.url!, resolvingAgainstBaseURL: false) {
+            c.host = ServerSettings.canonicalHost
+            c.port = nil
+            if let fixed = c.url {
+                req.url = fixed
+                req.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
+            }
+        }
+
+        let session = probe ? probeClient : client
+        // Timeouts plus courts en probe / invite
+        if probe {
+            req.timeoutInterval = 8
+        } else if isInviteMode {
+            req.timeoutInterval = 20
+        }
 
         do {
-            let data: Data
-            let http: HTTPURLResponse
-            let u: URL
-            if useIPv4Transport {
-                // Force hostname in URL for path building; transport always dials wanIPv4 + SNI
-                if host == ServerSettings.wanIPv4, var c = URLComponents(url: req.url!, resolvingAgainstBaseURL: false) {
-                    c.host = ServerSettings.canonicalHost
-                    c.port = nil
-                    if let fixed = c.url { req.url = fixed }
-                }
-                let timeout: UInt64 = probe ? 8 : 15
-                (data, http, u) = try await HomelabIPv4Transport.perform(req, timeoutSeconds: timeout)
-            } else {
-                // LAN IP :8444
-                let session = probe ? probeClient : client
-                let (d, response) = try await session.data(for: req)
-                guard let h = response as? HTTPURLResponse, let url = response.url else {
-                    throw BeerAPIError.decode
-                }
-                data = d
-                http = h
-                u = url
+            let (data, response) = try await session.data(for: req)
+            guard let http = response as? HTTPURLResponse, let u = response.url else {
+                throw BeerAPIError.decode
             }
 
-            // Capture Set-Cookie (comme Android cookieJar.ingestResponse)
             if let setCookie = http.value(forHTTPHeaderField: "Set-Cookie"), !setCookie.isEmpty {
                 let cookies = HTTPCookie.cookies(
                     withResponseHeaderFields: ["Set-Cookie": setCookie],
@@ -210,6 +204,37 @@ final class BeerAPI {
         } catch let e as BeerAPIError {
             throw e
         } catch let err as URLError {
+            // Dernier recours invite : transport IPv4+SNI explicite (si Happy Eyeballs a foiré)
+            if isInviteMode || req.url?.host == ServerSettings.canonicalHost {
+                do {
+                    var retry = req
+                    if retry.url?.host != ServerSettings.canonicalHost,
+                       var c = URLComponents(url: retry.url ?? ServerSettings.apiBase, resolvingAgainstBaseURL: false) {
+                        c.host = ServerSettings.canonicalHost
+                        c.scheme = "https"
+                        c.port = nil
+                        retry.url = c.url
+                    }
+                    let (data, http, u) = try await HomelabIPv4Transport.perform(retry, timeoutSeconds: 12)
+                    let code = http.statusCode
+                    if code == 401 && !allowUnauthorizedBody {
+                        throw BeerAPIError.unauthorized
+                    }
+                    if code == 403 && !allowUnauthorizedBody {
+                        if isInviteMode {
+                            InviteSessionStore.clear()
+                            throw BeerAPIError.server("Invitation invalide ou expirée — demande un nouveau lien")
+                        }
+                        throw BeerAPIError.forbidden
+                    }
+                    if !(200..<300).contains(code) && code != 401 && code != 409 {
+                        throw BeerAPIError.server("Erreur serveur: \(code)")
+                    }
+                    return (data, code, http, u)
+                } catch {
+                    // garder l'erreur URLSession d'origine si fallback aussi mort
+                }
+            }
             switch err.code {
             case .timedOut:
                 throw BeerAPIError.server("Timeout")

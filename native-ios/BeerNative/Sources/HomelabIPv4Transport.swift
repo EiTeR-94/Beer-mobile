@@ -37,13 +37,19 @@ enum HomelabIPv4Transport {
         let body = request.httpBody ?? Data()
 
         let tcp = NWProtocolTCP.Options()
-        tcp.connectionTimeout = Int(connectTimeout)
+        tcp.connectionTimeout = Int(min(connectTimeout, 12))
+        tcp.noDelay = true
         let tls = NWProtocolTLS.Options()
         sec_protocol_options_set_tls_server_name(tls.securityProtocolOptions, tlsHost)
-        // Pas de requiredInterfaceType : laisse 5G / Wi‑Fi public
         let params = NWParameters(tls: tls, tcp: tcp)
+        // Autoriser explicitement 5G / low data mode
+        params.prohibitExpensivePaths = false
+        params.prohibitConstrainedPaths = false
+        params.allowLocalEndpointReuse = true
 
-        let conn = NWConnection(host: NWEndpoint.Host(wanIP), port: 443, using: params)
+        // Résoudre A dynamiquement (comme PreferIpv4Dns Android), fallback IP figée
+        let dialIP = PreferIPv4.firstIPv4(tlsHost) ?? wanIP
+        let conn = NWConnection(host: NWEndpoint.Host(dialIP), port: 443, using: params)
         return try await withCheckedThrowingContinuation { cont in
             let queue = DispatchQueue(label: "fr.eiter.plexibeer.ipv4")
             var resumed = false
@@ -57,7 +63,15 @@ enum HomelabIPv4Transport {
             let connectTimeoutTask = Task {
                 try? await Task.sleep(nanoseconds: connectTimeout * 1_000_000_000)
                 if !resumed {
-                    finish(.failure(BeerAPIError.server("Timeout TCP \(connectTimeout)s vers \(wanIP)")))
+                    finish(.failure(BeerAPIError.server("Timeout TCP \(connectTimeout)s vers \(dialIP)")))
+                }
+            }
+
+            // Fail fast si stuck en waiting (souvent path 5G non prêt)
+            let waitingFailTask = Task {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if !resumed {
+                    finish(.failure(BeerAPIError.server("Réseau 5G pas prêt (waiting) vers \(dialIP)")))
                 }
             }
 
@@ -65,6 +79,7 @@ enum HomelabIPv4Transport {
                 switch state {
                 case .ready:
                     connectTimeoutTask.cancel()
+                    waitingFailTask.cancel()
                     Task {
                         do {
                             let out = try await exchange(
@@ -82,14 +97,16 @@ enum HomelabIPv4Transport {
                     }
                 case .failed(let err):
                     connectTimeoutTask.cancel()
+                    waitingFailTask.cancel()
                     finish(.failure(BeerAPIError.server(
-                        "Connexion \(wanIP) échouée: \(err.localizedDescription)"
+                        "Connexion \(dialIP) échouée: \(err.localizedDescription)"
                     )))
                 case .waiting(let err):
-                    // Ne pas rester bloqué en waiting (souvent path cellular)
                     NSLog("HomelabIPv4: waiting \(err.localizedDescription)")
+                    // laisser waitingFailTask couper à 3s
                 case .cancelled:
                     connectTimeoutTask.cancel()
+                    waitingFailTask.cancel()
                     if !resumed {
                         finish(.failure(BeerAPIError.server("Connexion interrompue")))
                     }

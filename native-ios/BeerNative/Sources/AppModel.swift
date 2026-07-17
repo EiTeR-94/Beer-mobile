@@ -192,15 +192,17 @@ final class AppModel: ObservableObject {
                 isOnVPN = false
                 api.setBaseURL(ServerSettings.lanApiBase)
             } else {
-                // 5G : pas de probe LAN (15s mort) — WAN only
+                // 5G / réseau non-LAN : pas de probe 192.168.1.50
                 isOnLocalWifi = false
                 isOnVPN = false
+                ServerSettings.preferWanOnly = true
                 api.setBaseURL(ServerSettings.apiBase)
-                // Forcer candidate invite-style pour discover : FQDN only
-                // (owner hors maison sans VPN : normalement injoignable, OK)
+            }
+            if isOnLocalWifi || isOnVPN {
+                ServerSettings.preferWanOnly = false
             }
         }
-        // Ne pas bloquer l'UI : probe en fond seulement si session
+        // Probe en fond seulement si session (évite bandeau "injoignable" à l'accueil invite)
         if isLoggedIn || InviteSessionStore.hasInviteSession {
             scheduleServerProbe()
         }
