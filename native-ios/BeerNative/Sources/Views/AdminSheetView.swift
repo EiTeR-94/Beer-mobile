@@ -27,6 +27,7 @@ struct AdminSheetView: View {
     @State private var ipTitle = "IP invités"
     @State private var ipEntries: [InviteIpEntry] = []
     @State private var inviteToRevoke: InviteItem?
+    @State private var inviteCheckinsTarget: InviteItem?
     @State private var showSettings = false
 
     private let validityOptions: [(String, String)] = [
@@ -144,6 +145,11 @@ struct AdminSheetView: View {
             InviteIPsSheetView(title: ipTitle, entries: ipEntries)
                 .beerSheetChrome()
         }
+        .sheet(item: $inviteCheckinsTarget) { inv in
+            InviteCheckinsSheetView(invite: inv)
+                .environmentObject(app)
+                .beerSheetChrome()
+        }
         .sheet(isPresented: $showSettings) {
             SettingsSheetView()
                 .environmentObject(app)
@@ -190,6 +196,10 @@ struct AdminSheetView: View {
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
+                    // Dégustations toujours dispo si compte lié (même 0 pour empty state)
+                    if inv.redeemedAt != nil || (inv.checkins ?? 0) > 0 {
+                        inviteAction("Dégustations") { inviteCheckinsTarget = inv }
+                    }
                     if let log = inv.ipLog, !log.isEmpty {
                         inviteAction("IP") { openInviteIPs(inv) }
                     }

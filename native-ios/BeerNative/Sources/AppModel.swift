@@ -492,8 +492,17 @@ final class AppModel: ObservableObject {
         networkStatus = .online
         lastSuccessfulBase = api.baseURL
         hideToast()
-        let label = resp.label.map { " \($0)" } ?? ""
-        showToast("Bienvenue\(label)", variant: .info, detail: "Compte invité · 4G/5G OK", durationMs: 3500)
+        // Petit délai pour laisser l’UI basculer Login → Main (évite toast collé à la transition)
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        let name = (resp.label ?? resp.user ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let hello = name.isEmpty ? "Bienvenue !" : "Bienvenue, \(name) !"
+        showToast(
+            hello,
+            variant: .success,
+            detail: "Compte invité prêt — 4G/5G OK",
+            label: "Invitation",
+            durationMs: 3200
+        )
         // Ne pas lancer un probe health agressif juste après join
         probeTask?.cancel()
         await syncPending()

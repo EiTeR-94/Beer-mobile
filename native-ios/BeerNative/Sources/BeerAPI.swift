@@ -30,8 +30,8 @@ final class BeerAPI {
     static let shared = BeerAPI()
     private static let nativeClientHeader = "X-PlexiBeer-Client"
     private static let nativeClientValue = "native-ios"
-    private static let userAgentOwner = "PlexiBeer/4.2.2 (iPhone; native owner) [lan-vpn]"
-    private static let userAgentInvite = "PlexiBeer/4.2.2 (iPhone; native invite) [wan]"
+    private static let userAgentOwner = "PlexiBeer/4.2.3 (iPhone; native owner) [lan-vpn]"
+    private static let userAgentInvite = "PlexiBeer/4.2.3 (iPhone; native invite) [wan]"
 
     // Un seul client comme OkHttp Android (30s connect, 120s read)
     private let client: URLSession
@@ -690,6 +690,23 @@ final class BeerAPI {
             throw BeerAPIError.unauthorized
         }
         return (try? JSONDecoder().decode([InviteItem].self, from: data)) ?? []
+    }
+
+    /// Admin : dégustations d'un invité (lecture seule).
+    func adminInviteCheckins(inviteId: Int, limit: Int = 30, offset: Int = 0) async throws -> [CheckinItem] {
+        let (data, http, _) = try await request(
+            path: "/api/invites/\(inviteId)/checkins?limit=\(limit)&offset=\(offset)",
+            method: "GET",
+            body: nil
+        )
+        if http.statusCode == 401 || http.statusCode == 403 {
+            if http.statusCode == 401 { NotificationCenter.default.post(name: .beerAuthExpired, object: nil) }
+            throw BeerAPIError.unauthorized
+        }
+        if http.statusCode == 404 {
+            throw BeerAPIError.server("Invitation introuvable")
+        }
+        return (try? JSONDecoder().decode([CheckinItem].self, from: data)) ?? []
     }
 
     func adminCreateInvite(label: String, validity: String = "7d") async throws -> CreateInviteResponse {

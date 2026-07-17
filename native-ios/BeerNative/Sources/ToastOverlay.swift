@@ -11,72 +11,87 @@ struct ToastPayload: Equatable {
     var label: String?
 }
 
+/// Bannière non-modale en haut d’écran — ne masque plus toute l’UI (plus de voile noir superposé).
 struct ToastOverlay: View {
     let toast: ToastPayload?
     let onDismiss: () -> Void
 
     var body: some View {
-        ZStack {
+        VStack(spacing: 0) {
             if let toast {
-                Color.black.opacity(0.42)
-                    .ignoresSafeArea()
-                    .transition(.opacity)
-                    .onTapGesture(perform: onDismiss)
-
-                ToastCard(payload: toast)
-                    .transition(.scale(scale: 0.92).combined(with: .opacity))
-                    .onTapGesture(perform: onDismiss)
+                ToastBanner(payload: toast, onDismiss: onDismiss)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 8)
+                    .transition(
+                        .asymmetric(
+                            insertion: .move(edge: .top).combined(with: .opacity),
+                            removal: .opacity
+                        )
+                    )
             }
+            Spacer(minLength: 0)
         }
-        .animation(.easeOut(duration: 0.22), value: toast)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .allowsHitTesting(toast != nil)
+        .animation(.spring(response: 0.38, dampingFraction: 0.86), value: toast)
     }
 }
 
-private struct ToastCard: View {
+private struct ToastBanner: View {
     let payload: ToastPayload
+    let onDismiss: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
+        HStack(alignment: .top, spacing: 12) {
             Text(icon)
-                .font(.system(size: 24))
-                .padding(.bottom, 4)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(accent)
+                .frame(width: 28, height: 28)
+                .background(accent.opacity(0.16))
+                .clipShape(Circle())
 
-            if let label = payload.label ?? defaultLabel {
-                Text(label)
+            VStack(alignment: .leading, spacing: 3) {
+                if let label = payload.label ?? defaultLabel {
+                    Text(label)
+                        .font(.system(size: 10, weight: .bold))
+                        .kerning(0.6)
+                        .textCase(.uppercase)
+                        .foregroundStyle(accent)
+                }
+                Text(payload.message)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let detail = payload.detail, !detail.isEmpty {
+                    Text(detail)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Theme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .bold))
-                    .kerning(0.8)
-                    .textCase(.uppercase)
-                    .foregroundStyle(labelColor)
-            }
-
-            Text(payload.message)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Theme.text)
-                .multilineTextAlignment(.center)
-                .padding(.top, 6)
-
-            if let detail = payload.detail, !detail.isEmpty {
-                Text(detail)
-                    .font(.system(size: 13))
                     .foregroundStyle(Theme.muted)
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 10)
-                    .overlay(alignment: .top) {
-                        Rectangle()
-                            .fill(Theme.border)
-                            .frame(height: 1)
-                            .padding(.horizontal, -8)
-                    }
+                    .frame(width: 28, height: 28)
+                    .background(Theme.bg.opacity(0.65))
+                    .clipShape(Circle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Fermer")
         }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 20)
-        .frame(maxWidth: 360)
-        .background(cardBackground)
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(borderColor))
-        .clipShape(RoundedRectangle(cornerRadius: 18))
-        .beerShadow(radius: 20, y: 10)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(bannerBackground)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(accent.opacity(0.35), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .beerShadow(radius: 14, y: 6)
+        .onTapGesture(perform: onDismiss)
     }
 
     private var icon: String {
@@ -99,7 +114,7 @@ private struct ToastCard: View {
         }
     }
 
-    private var labelColor: Color {
+    private var accent: Color {
         switch payload.variant {
         case .success: return Theme.ok
         case .info, .warn, .duplicate: return Theme.accent
@@ -107,25 +122,14 @@ private struct ToastCard: View {
         }
     }
 
-    private var borderColor: Color {
-        switch payload.variant {
-        case .success: return Theme.ok.opacity(0.42)
-        case .info, .warn, .duplicate: return Theme.accent.opacity(0.42)
-        case .error: return Theme.error.opacity(0.42)
+    private var bannerBackground: some View {
+        ZStack {
+            Theme.card
+            LinearGradient(
+                colors: [accent.opacity(0.14), Color.clear],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
         }
-    }
-
-    private var cardBackground: LinearGradient {
-        let tint: Color
-        switch payload.variant {
-        case .success: tint = Theme.ok
-        case .info, .warn, .duplicate: tint = Theme.accent
-        case .error: tint = Theme.error
-        }
-        return LinearGradient(
-            colors: [tint.opacity(0.1), Theme.card],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
     }
 }
