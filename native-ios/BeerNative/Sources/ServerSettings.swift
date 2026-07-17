@@ -40,8 +40,7 @@ enum ServerSettings {
         return [lanApiBaseString, apiBaseString]
     }
 
-    /// Un seul endpoint FQDN : le dial IPv4 est forcé dans HomelabIPv4Transport
-    /// (candidate IP pure + rewrite cassait le SNI / doublonnait le FQDN).
+    /// FQDN seulement : execute() essaie déjà FQDN → IP → HomelabIPv4.
     static let inviteCandidateURLs: [String] = [apiBaseString]
 
     static func isLanEndpoint(_ url: String) -> Bool {

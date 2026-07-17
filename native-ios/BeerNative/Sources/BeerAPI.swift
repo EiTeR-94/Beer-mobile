@@ -30,8 +30,8 @@ final class BeerAPI {
     static let shared = BeerAPI()
     private static let nativeClientHeader = "X-PlexiBeer-Client"
     private static let nativeClientValue = "native-ios"
-    private static let userAgentOwner = "PlexiBeer/3.7.1 (iPhone; native owner) [lan-vpn]"
-    private static let userAgentInvite = "PlexiBeer/3.7.1 (iPhone; native invite) [wan]"
+    private static let userAgentOwner = "PlexiBeer/3.7.2 (iPhone; native owner) [lan-vpn]"
+    private static let userAgentInvite = "PlexiBeer/3.7.2 (iPhone; native invite) [wan]"
 
     // Un seul client comme OkHttp Android (30s connect, 120s read)
     private let client: URLSession
@@ -130,8 +130,11 @@ final class BeerAPI {
     }
 
     /// Comme Android OkHttp execute().
-    /// - LAN (:8444) : URLSession + HomelabTLS (cert domaine sur IP privée)
-    /// - Domaine / invite WAN : **IPv4 forcé d’abord** (AAAA Freebox mort → « SSL refusé » sinon)
+    /// - LAN (:8444) : URLSession + HomelabTLS
+    /// - WAN / invite : **URLSession d’abord** (prouvé OK en 4G/5G dans les logs),
+    ///   puis URL en IPv4 littérale (évite AAAA), puis HomelabIPv4 en dernier recours.
+    /// Bug 3.7.1 : HomelabIPv4 en premier → Timeout TCP 22s et **aucun fallback**
+    /// (BeerAPIError rethrow) alors que URLSession cellulaire marchait.
     private func execute(
         _ request: URLRequest,
         probe: Bool = false,
@@ -140,47 +143,123 @@ final class BeerAPI {
         var req = request
         applyHeaders(to: &req)
 
-        // Toujours FQDN dans l’URL logique (Host/cookies) ; le dial IPv4 est dans HomelabIPv4Transport
-        if let host = req.url?.host,
-           host == ServerSettings.wanIPv4 || host == ServerSettings.canonicalHost,
-           var c = URLComponents(url: req.url!, resolvingAgainstBaseURL: false) {
-            c.host = ServerSettings.canonicalHost
-            c.scheme = "https"
-            c.port = nil
-            if let fixed = c.url {
-                req.url = fixed
-                req.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
-            }
-        }
-
         let host = req.url?.host ?? ""
         let isLan = ServerSettings.isLanEndpoint(req.url ?? baseURL)
             || ServerSettings.isLanHost(host)
-        // Invite ou FQDN public : jamais Happy Eyeballs IPv6 (AAAA Freebox = connection refused)
-        let forceIPv4 = isInviteMode || host == ServerSettings.canonicalHost
 
-        if forceIPv4 && !isLan {
-            let timeout: UInt64 = probe ? 12 : 22
+        if isLan {
+            return try await urlSessionOnce(req, probe: probe, allowUnauthorizedBody: allowUnauthorizedBody)
+        }
+
+        // --- WAN : même ordre d’idées qu’Android (FQDN → IP), timeouts courts pour basculer ---
+        var attempts: [(label: String, request: URLRequest)] = []
+
+        // 1) FQDN — Happy Eyeballs ; souvent IPv4 en 4G. Timeout court si AAAA pourrit.
+        var fqdnReq = req
+        if var c = URLComponents(url: req.url ?? ServerSettings.apiBase, resolvingAgainstBaseURL: false) {
+            c.host = ServerSettings.canonicalHost
+            c.scheme = "https"
+            c.port = nil
+            if let u = c.url {
+                fqdnReq.url = u
+                fqdnReq.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
+            }
+        }
+        attempts.append(("fqdn", fqdnReq))
+
+        // 2) https://82.64…/ + HomelabTLS (cert domaine) — zéro AAAA, comme Android WAN_IPV4
+        var ipReq = fqdnReq
+        if var c = URLComponents(url: fqdnReq.url ?? ServerSettings.apiBase, resolvingAgainstBaseURL: false) {
+            c.host = ServerSettings.wanIPv4
+            c.scheme = "https"
+            c.port = nil
+            if let u = c.url {
+                ipReq.url = u
+                ipReq.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
+            }
+        }
+        attempts.append(("wan-ip", ipReq))
+
+        var lastNetError: Error?
+        for (label, attempt) in attempts {
             do {
-                return try await finishHTTP(
-                    try await HomelabIPv4Transport.perform(req, timeoutSeconds: timeout),
-                    allowUnauthorizedBody: allowUnauthorizedBody
-                )
+                var a = attempt
+                applyHeaders(to: &a)
+                // Timeouts courts : bascule FQDN→IP en <10s, pas 22s bloquants
+                a.timeoutInterval = probe ? 6 : (label == "fqdn" ? 8 : 12)
+                NSLog("BeerAPI: try %@", label)
+                return try await urlSessionOnce(a, probe: probe, allowUnauthorizedBody: allowUnauthorizedBody)
             } catch let e as BeerAPIError {
-                throw e
+                // Erreurs HTTP métier : ne pas essayer un autre host (même serveur)
+                if isLogicalHTTPError(e) { throw e }
+                lastNetError = e
+                NSLog("BeerAPI: %@ soft-fail: %@", label, e.localizedDescription)
             } catch {
-                // Un seul essai URLSession en secours (Wi‑Fi Freebox hairpin parfois OK en v4)
-                NSLog("BeerAPI: IPv4 primary failed: %@", error.localizedDescription)
+                lastNetError = error
+                NSLog("BeerAPI: %@ net-fail: %@", label, error.localizedDescription)
             }
         }
 
-        let session = probe ? probeClient : client
-        if probe {
-            req.timeoutInterval = 8
-        } else if isInviteMode {
-            req.timeoutInterval = 22
+        // 3) Dernier recours NWConnection IPv4 (parfois bloqué en 5G — d’où pas en premier)
+        do {
+            NSLog("BeerAPI: try HomelabIPv4 last resort")
+            let t: UInt64 = probe ? 8 : 12
+            return try await finishHTTP(
+                try await HomelabIPv4Transport.perform(fqdnReq, timeoutSeconds: t),
+                allowUnauthorizedBody: allowUnauthorizedBody
+            )
+        } catch let e as BeerAPIError {
+            if isLogicalHTTPError(e) { throw e }
+            lastNetError = e
+        } catch {
+            lastNetError = error
         }
 
+        if let err = lastNetError as? BeerAPIError { throw err }
+        if let err = lastNetError as? URLError {
+            throw mapURLError(err)
+        }
+        throw BeerAPIError.server("Serveur injoignable en 4G/5G — réessaie")
+    }
+
+    private func isLogicalHTTPError(_ e: BeerAPIError) -> Bool {
+        switch e {
+        case .unauthorized, .forbidden, .decode, .invalidURL:
+            return true
+        case .server(let msg):
+            let m = msg.lowercased()
+            if m.contains("timeout") || m.contains("injoignable") || m.contains("réseau")
+                || m.contains("ipv4") || m.contains("tcp") || m.contains("connexion")
+                || m.contains("ssl") || m.contains("pas de réseau") {
+                return false
+            }
+            return true
+        case .network, .allEndpointsFailed:
+            return false
+        }
+    }
+
+    private func mapURLError(_ err: URLError) -> BeerAPIError {
+        switch err.code {
+        case .timedOut:
+            return .server("Timeout")
+        case .notConnectedToInternet:
+            return .server("Pas de réseau")
+        case .cannotConnectToHost, .networkConnectionLost:
+            return .server("Injoignable (réseau)")
+        case .secureConnectionFailed, .serverCertificateUntrusted:
+            return .server("Connexion sécurisée impossible — réessaie")
+        default:
+            return .network(err)
+        }
+    }
+
+    private func urlSessionOnce(
+        _ req: URLRequest,
+        probe: Bool,
+        allowUnauthorizedBody: Bool
+    ) async throws -> (Data, Int, HTTPURLResponse, URL) {
+        let session = probe ? probeClient : client
         do {
             let (data, response) = try await session.data(for: req)
             guard let http = response as? HTTPURLResponse, let u = response.url else {
@@ -204,35 +283,7 @@ final class BeerAPI {
         } catch let e as BeerAPIError {
             throw e
         } catch let err as URLError {
-            // Secours IPv4 si on était encore sur URLSession (ex. owner sur domaine)
-            if !isLan {
-                do {
-                    let timeout: UInt64 = probe ? 12 : 20
-                    return try await finishHTTP(
-                        try await HomelabIPv4Transport.perform(req, timeoutSeconds: timeout),
-                        allowUnauthorizedBody: allowUnauthorizedBody
-                    )
-                } catch let e as BeerAPIError {
-                    throw e
-                } catch {
-                    NSLog("BeerAPI: IPv4 fallback failed: %@", error.localizedDescription)
-                }
-            }
-            switch err.code {
-            case .timedOut:
-                throw BeerAPIError.server("Timeout")
-            case .notConnectedToInternet:
-                throw BeerAPIError.server("Pas de réseau")
-            case .cannotConnectToHost, .networkConnectionLost:
-                throw BeerAPIError.server("Injoignable (réseau)")
-            case .secureConnectionFailed, .serverCertificateUntrusted:
-                // Message honnête : c’est presque toujours l’AAAA Freebox, pas le cert LE
-                throw BeerAPIError.server(
-                    "Connexion sécurisée impossible (IPv6 Freebox). Réessaie en 4G ou rouvre le lien."
-                )
-            default:
-                throw BeerAPIError.network(err)
-            }
+            throw mapURLError(err)
         }
     }
 
