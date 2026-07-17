@@ -150,10 +150,12 @@ enum HomelabIPv4Transport {
         try await send(conn: conn, data: payload)
         let (headersData, bodyData) = try await receiveResponse(conn: conn)
         let raw = headersData + bodyData
-        let parsed = try parseHTTP(raw, url: url)
+        // URL logique = toujours le FQDN (jamais l'IP dans l'app)
+        let logical = URL(string: "https://\(tlsHost)\(path)") ?? url
+        let parsed = try parseHTTP(raw, url: logical)
         storeCookiesForURLSession(parsed.setCookieLines)
         conn.cancel()
-        return (parsed.body, parsed.response, url)
+        return (parsed.body, parsed.response, logical)
     }
 
     private static func storeCookiesForURLSession(_ lines: [String]) {

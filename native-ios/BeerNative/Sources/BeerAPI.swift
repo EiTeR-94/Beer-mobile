@@ -129,13 +129,11 @@ final class BeerAPI {
             .map { "beer_session=\($0.value)" }
     }
 
-    /// Invite = même idée qu'OkHttp Android `preferIpv4Dns` :
-    /// 1) résoudre l'A de eiter.freeboxos.fr
-    /// 2) dial IPv4 (URLSession, **pas** NWConnection)
-    /// 3) Host = eiter.freeboxos.fr + HomelabTLS (cert LE domaine)
-    ///
-    /// Ne JAMAIS appeler URLSession sur le FQDN brut en invite :
-    /// Happy Eyeballs prend l'AAAA Freebox morte → « SSL refusé ».
+    /// **UN SEUL** chemin invite = équivalent OkHttp Android :
+    /// - DNS A only (`PreferIPv4.firstIPv4`)
+    /// - dial TCP IPv4
+    /// - TLS SNI + HTTP Host = `eiter.freeboxos.fr` (cert LE normal)
+    /// Owner LAN : URLSession inchangé.
     private func execute(
         _ request: URLRequest,
         probe: Bool = false,
@@ -148,11 +146,8 @@ final class BeerAPI {
         let isLan = ServerSettings.isLanEndpoint(req.url ?? baseURL)
             || ServerSettings.isLanHost(rawHost)
 
-        let inviteOrWan = isInviteMode
-            || (!isLan && (rawHost == ServerSettings.canonicalHost || rawHost == ServerSettings.wanIPv4))
-
-        // Invite/WAN : forcer URL FQDN logique, dial IPv4 via PreferIPv4
-        if inviteOrWan {
+        // ——— INVITE / WAN public : HomelabIPv4Transport UNIQUEMENT (pas d'URLSession) ———
+        if isInviteMode || (!isLan && rawHost == ServerSettings.canonicalHost) {
             if var c = URLComponents(url: req.url ?? ServerSettings.apiBase, resolvingAgainstBaseURL: false) {
                 c.host = ServerSettings.canonicalHost
                 c.scheme = "https"
@@ -160,112 +155,54 @@ final class BeerAPI {
                 if let u = c.url { req.url = u }
             }
             req.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
-            PreferIPv4.applyAndroidStyle(&req) // → https://A/… + Host FQDN
+            let t: UInt64 = probe ? 15 : 30
+            do {
+                let (data, http, u) = try await HomelabIPv4Transport.perform(req, timeoutSeconds: t)
+                return try finishHTTPInviteAware(
+                    data: data,
+                    http: http,
+                    url: u,
+                    allowUnauthorizedBody: allowUnauthorizedBody
+                )
+            } catch let e as BeerAPIError {
+                throw e
+            } catch {
+                throw BeerAPIError.server(
+                    "Connexion \(ServerSettings.canonicalHost) impossible — réessaie"
+                )
+            }
         }
 
-        let session = probe ? probeClient : client
+        // ——— OWNER LAN :8444 ———
         if probe {
             req.timeoutInterval = 10
         } else {
             req.timeoutInterval = 30
         }
-
+        let session = probe ? probeClient : client
         do {
-            return try await urlSessionOnce(
-                req,
-                session: session,
+            let (data, response) = try await session.data(for: req)
+            guard let http = response as? HTTPURLResponse, let u = response.url else {
+                throw BeerAPIError.decode
+            }
+            if let setCookie = http.value(forHTTPHeaderField: "Set-Cookie"), !setCookie.isEmpty {
+                let cookies = HTTPCookie.cookies(
+                    withResponseHeaderFields: ["Set-Cookie": setCookie],
+                    for: u
+                )
+                for c in cookies { HTTPCookieStorage.shared.setCookie(c) }
+            }
+            return try finishHTTPInviteAware(
+                data: data,
+                http: http,
+                url: u,
                 allowUnauthorizedBody: allowUnauthorizedBody
             )
         } catch let e as BeerAPIError {
-            // SSL sur IP (SNI IP) → secours OkHttp-like : NW IPv4 + SNI FQDN
-            if inviteOrWan, case .server(let msg) = e,
-               msg.localizedCaseInsensitiveContains("sécurisée")
-                || msg.localizedCaseInsensitiveContains("ssl") {
-                do {
-                    var fqdnReq = request
-                    applyHeaders(to: &fqdnReq)
-                    if var c = URLComponents(url: fqdnReq.url ?? ServerSettings.apiBase, resolvingAgainstBaseURL: false) {
-                        c.host = ServerSettings.canonicalHost
-                        c.scheme = "https"
-                        c.port = nil
-                        fqdnReq.url = c.url
-                    }
-                    fqdnReq.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
-                    let t: UInt64 = probe ? 15 : 30
-                    let (data, http, u) = try await HomelabIPv4Transport.perform(fqdnReq, timeoutSeconds: t)
-                    return try finishHTTPInviteAware(
-                        data: data,
-                        http: http,
-                        url: u,
-                        allowUnauthorizedBody: allowUnauthorizedBody
-                    )
-                } catch let e2 as BeerAPIError {
-                    throw e2
-                } catch {
-                    throw mapURLErrorNoSslRefuse(error as? URLError ?? URLError(.secureConnectionFailed))
-                }
-            }
             throw e
         } catch let err as URLError {
-            if inviteOrWan,
-               err.code == .secureConnectionFailed || err.code == .serverCertificateUntrusted {
-                do {
-                    var fqdnReq = request
-                    applyHeaders(to: &fqdnReq)
-                    if var c = URLComponents(url: fqdnReq.url ?? ServerSettings.apiBase, resolvingAgainstBaseURL: false) {
-                        c.host = ServerSettings.canonicalHost
-                        c.scheme = "https"
-                        c.port = nil
-                        fqdnReq.url = c.url
-                    }
-                    fqdnReq.setValue(ServerSettings.canonicalHost, forHTTPHeaderField: "Host")
-                    let t: UInt64 = probe ? 15 : 30
-                    let (data, http, u) = try await HomelabIPv4Transport.perform(fqdnReq, timeoutSeconds: t)
-                    return try finishHTTPInviteAware(
-                        data: data,
-                        http: http,
-                        url: u,
-                        allowUnauthorizedBody: allowUnauthorizedBody
-                    )
-                } catch let e2 as BeerAPIError {
-                    throw e2
-                } catch {
-                    throw mapURLErrorNoSslRefuse(err)
-                }
-            }
             throw mapURLErrorNoSslRefuse(err)
         }
-    }
-
-    private func urlSessionOnce(
-        _ req: URLRequest,
-        session: URLSession,
-        allowUnauthorizedBody: Bool
-    ) async throws -> (Data, Int, HTTPURLResponse, URL) {
-        let (data, response) = try await session.data(for: req)
-        guard let http = response as? HTTPURLResponse, let u = response.url else {
-            throw BeerAPIError.decode
-        }
-        if let setCookie = http.value(forHTTPHeaderField: "Set-Cookie"), !setCookie.isEmpty {
-            let cookies = HTTPCookie.cookies(
-                withResponseHeaderFields: ["Set-Cookie": setCookie],
-                for: u
-            )
-            for c in cookies { HTTPCookieStorage.shared.setCookie(c) }
-            if let domainURL = URL(string: "https://\(ServerSettings.canonicalHost)/beer/") {
-                let cookies2 = HTTPCookie.cookies(
-                    withResponseHeaderFields: ["Set-Cookie": setCookie],
-                    for: domainURL
-                )
-                for c in cookies2 { HTTPCookieStorage.shared.setCookie(c) }
-            }
-        }
-        return try finishHTTPInviteAware(
-            data: data,
-            http: http,
-            url: u,
-            allowUnauthorizedBody: allowUnauthorizedBody
-        )
     }
 
     private func finishHTTPInviteAware(
