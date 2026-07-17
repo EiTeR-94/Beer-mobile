@@ -30,8 +30,8 @@ final class BeerAPI {
     static let shared = BeerAPI()
     private static let nativeClientHeader = "X-PlexiBeer-Client"
     private static let nativeClientValue = "native-ios"
-    private static let userAgentOwner = "PlexiBeer/3.6.0 (iPhone; native owner) [lan-vpn]"
-    private static let userAgentInvite = "PlexiBeer/3.6.0 (iPhone; native invite) [wan]"
+    private static let userAgentOwner = "PlexiBeer/3.6.1 (iPhone; native owner) [lan-vpn]"
+    private static let userAgentInvite = "PlexiBeer/3.6.1 (iPhone; native invite) [wan]"
 
     // Un seul client comme OkHttp Android (30s connect, 120s read)
     private let client: URLSession

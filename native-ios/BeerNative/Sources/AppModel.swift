@@ -295,8 +295,19 @@ final class AppModel: ObservableObject {
             return
         }
 
-        // Android: inviteMode avant discover pour candidateURLs WAN only
-        if InviteSessionStore.hasInviteSession {
+        // Pas de session → écran login immédiat (pas de toast "injoignable" ni attente LAN)
+        let hasInvite = InviteSessionStore.hasInviteSession
+        let hasCookie = HTTPCookieStorage.shared.cookies?.contains(where: { $0.name == "beer_session" }) == true
+        if !hasInvite && !hasCookie && BeerSessionStore.restore() == nil {
+            api.enableInviteMode(false)
+            networkStatus = .online
+            isLoading = false
+            // probe en fond, n'affiche rien si hors ligne
+            Task { _ = await api.discoverWorkingEndpoint() }
+            return
+        }
+
+        if hasInvite {
             api.enableInviteMode(true)
         } else {
             api.enableInviteMode(false)
@@ -308,6 +319,7 @@ final class AppModel: ObservableObject {
         if ep == nil {
             networkStatus = .serverUnreachable
             restoreOfflineSessionIfNeeded()
+            // Toast seulement si déjà logué (Android)
             if isLoggedIn {
                 showToast("Serveur injoignable", variant: .warn, detail: "Cache local", durationMs: 3500)
             }
