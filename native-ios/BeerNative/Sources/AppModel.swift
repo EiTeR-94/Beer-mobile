@@ -136,7 +136,8 @@ final class AppModel: ObservableObject {
     }
 
     init() {
-        api.setBaseURL(ServerSettings.lanApiBase)
+        // Ne pas partir sur le LAN par défaut : en 5G ça bloquait 2–5 min sur 192.168.1.50
+        api.setBaseURL(ServerSettings.apiBase)
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in
                 self?.handlePathUpdate(path)
@@ -150,15 +151,14 @@ final class AppModel: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                if self.isLoggedIn {
-                    // Ne plus clear automatiquement pour éviter de délogguer sur un appel raté (ex: styles)
+                if self.isLoggedIn && !self.isInvite {
                     self.showToast("Session expirée — reconnecte-toi", variant: .error, durationMs: 3500)
                 }
             }
         }
-        Task { 
+        Task {
+            // UI login visible vite : probe en arrière-plan, pas de spinner 5 min
             await bootstrap()
-            prewarmConnection()
         }
     }
 
@@ -255,16 +255,33 @@ final class AppModel: ObservableObject {
             return
         }
         let start = Date()
-        if await api.discoverWorkingEndpoint() != nil {
+        // Invité ou pas encore de session LAN : probe WAN IPv4 court (pas de 192.168.1.50)
+        let found: String?
+        if isInvite || InviteSessionStore.hasInviteSession {
+            found = await api.probeWanIPv4()
+        } else if isOnLocalWifi || isOnVPN {
+            found = await api.discoverWorkingEndpoint()
+        } else {
+            // 5G / réseau inconnu : WAN IPv4 only (évite 120s sur LAN mort)
+            found = await api.probeWanIPv4()
+            // probeWan active inviteMode — on le coupe si pas invité
+            if !InviteSessionStore.hasInviteSession {
+                ServerSettings.inviteMode = false
+            }
+        }
+        if found != nil {
             let latency = Date().timeIntervalSince(start)
             lastEndpointLatency = latency
             lastSuccessfulBase = api.baseURL
             networkStatus = .online
-            serverVersion = (try? await api.version()) ?? serverVersion
+            if isLoggedIn {
+                serverVersion = (try? await api.version()) ?? serverVersion
+            }
             retryTask?.cancel()
         } else {
-            networkStatus = .serverUnreachable
-            scheduleRetryProbe()
+            // Sur écran login invite, ne pas bloquer : laisser tenter le join
+            networkStatus = isLoggedIn ? .serverUnreachable : .online
+            if isLoggedIn { scheduleRetryProbe() }
         }
     }
 
@@ -298,9 +315,10 @@ final class AppModel: ObservableObject {
     }
 
     func bootstrap() async {
+        // Spinner court max : ne plus bloquer 5 min sur le LAN en 5G
         isLoading = true
         defer { isLoading = false }
-        // Restaurer session invite Bearer en premier
+
         if InviteSessionStore.hasInviteSession {
             api.enableInviteMode(true)
             if let u = InviteSessionStore.username {
@@ -309,20 +327,24 @@ final class AppModel: ObservableObject {
         } else {
             restoreOfflineSessionIfNeeded()
         }
+
+        // Sans session : afficher le login tout de suite, probe en fond
+        if !isLoggedIn {
+            isLoading = false
+            networkStatus = .online
+            Task { await probeServerReachability() }
+            return
+        }
+
         await probeServerReachability()
         guard networkStatus == .online else {
-            if isLoggedIn {
-                showToast("Mode hors ligne — données en cache", variant: .info, durationMs: 3200)
-            }
+            showToast("Mode hors ligne — données en cache", variant: .info, durationMs: 3200)
             return
         }
         do {
             let me = try await fetchMe()
             if me.auth && me.user == nil {
-                if isInvite {
-                    // Ne pas auto-logout invité sur /api/me sans user (public)
-                    return
-                }
+                if isInvite { return }
                 await logout()
                 return
             }

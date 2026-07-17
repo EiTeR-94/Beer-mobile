@@ -30,8 +30,8 @@ final class BeerAPI {
     static let shared = BeerAPI()
     private static let nativeClientHeader = "X-PlexiBeer-Client"
     private static let nativeClientValue = "native-ios"
-    private static let nativeUserAgentOwner = "PlexiBeer/3.4.1 (iPhone; native owner) [lan-vpn]"
-    private static let nativeUserAgentInvite = "PlexiBeer/3.4.1 (iPhone; native invite) [wan]"
+    private static let nativeUserAgentOwner = "PlexiBeer/3.4.2 (iPhone; native owner) [lan-vpn]"
+    private static let nativeUserAgentInvite = "PlexiBeer/3.4.2 (iPhone; native invite) [wan]"
 
     private let session: URLSession
     private let lanProbeSession: URLSession
@@ -108,72 +108,54 @@ final class BeerAPI {
         return http.statusCode == 200
     }
 
-    func discoverWorkingEndpoint() async -> String? {
-        let originalBase = baseURL
-        let candidates = ServerSettings.candidateURLs
-        // Invite: WAN only (FQDN then IPv4)
-        if isInviteMode {
-            for candidate in candidates {
-                do {
-                    guard let healthURL = URL(string: "api/health", relativeTo: candidate) else { continue }
-                    var healthProbe = URLRequest(url: healthURL)
-                    healthProbe.httpMethod = "GET"
-                    let (_, http, _) = try await performOnEndpoint(candidate, request: healthProbe, probe: false)
-                    // health peut être public ou 403 gate — on teste join plutôt pour invite
-                    if http.statusCode == 200 || http.statusCode == 403 {
-                        baseURL = Self.canonicalBase(candidate)
-                        activeEndpoint = candidate.absoluteString
-                        if http.statusCode == 200 { return candidate.absoluteString }
-                        // 403 health = endpoint joignable ; tenter quand même
-                        return candidate.absoluteString
-                    }
-                } catch {
-                    continue
-                }
+    /// Probe rapide IPv4 WAN (invite / 5G) — max ~12s, jamais de LAN.
+    func probeWanIPv4() async -> String? {
+        enableInviteMode(true)
+        var req = URLRequest(url: URL(string: "https://\(ServerSettings.canonicalHost)/beer/api/health")!)
+        req.httpMethod = "GET"
+        req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
+        req.setValue(Self.nativeUserAgentInvite, forHTTPHeaderField: "User-Agent")
+        do {
+            let (_, http, _) = try await HomelabIPv4Transport.perform(req, timeoutSeconds: 10)
+            // 200 public ou 403 gate = serveur joignable
+            if http.statusCode == 200 || http.statusCode == 403 {
+                setBaseURL(ServerSettings.apiBase)
+                return ServerSettings.apiBase.absoluteString
             }
-            baseURL = originalBase
-            return nil
+        } catch {
+            NSLog("BeerAPI probeWanIPv4 failed: \(error.localizedDescription)")
         }
-        // Owner: prefer LAN IP first
-        if let lan = candidates.first(where: { ServerSettings.isLanEndpoint($0) }) {
+        return nil
+    }
+
+    func discoverWorkingEndpoint() async -> String? {
+        // Invité / mode WAN forcé : IPv4 only, court
+        if isInviteMode || ServerSettings.inviteMode {
+            return await probeWanIPv4()
+        }
+
+        let originalBase = baseURL
+        // Owner : LAN d'abord (probe court 8s via lanProbeSession), puis WAN IPv4
+        if let lan = ServerSettings.candidateURLs.first(where: { ServerSettings.isLanEndpoint($0) }) {
             do {
                 guard let healthURL = URL(string: "api/health", relativeTo: lan) else { throw BeerAPIError.invalidURL }
                 var healthProbe = URLRequest(url: healthURL)
                 healthProbe.httpMethod = "GET"
-                let (_, http, _) = try await performOnEndpoint(
-                    lan,
-                    request: healthProbe,
-                    probe: false
-                )
+                healthProbe.timeoutInterval = 8
+                let (_, http, _) = try await performOnEndpoint(lan, request: healthProbe, probe: true)
                 if http.statusCode == 200 {
                     baseURL = Self.canonicalBase(lan)
                     activeEndpoint = lan.absoluteString
                     return lan.absoluteString
                 }
             } catch {
-                if !ServerSettings.isLikelyOnLocalWifi() {
-                    // fall to domain
-                }
+                // 5G : LAN injoignable vite → fallback WAN
             }
         }
-        for candidate in candidates where !ServerSettings.isLanEndpoint(candidate) {
-            do {
-                guard let healthURL = URL(string: "api/health", relativeTo: candidate) else { throw BeerAPIError.invalidURL }
-                var healthProbe = URLRequest(url: healthURL)
-                healthProbe.httpMethod = "GET"
-                let (_, http, _) = try await performOnEndpoint(
-                    candidate,
-                    request: healthProbe,
-                    probe: false
-                )
-                if http.statusCode == 200 {
-                    baseURL = Self.canonicalBase(candidate)
-                    activeEndpoint = candidate.absoluteString
-                    return candidate.absoluteString
-                }
-            } catch {
-                continue
-            }
+        if let wan = await probeWanIPv4() {
+            // probeWan met inviteMode true — rétablir owner
+            ServerSettings.inviteMode = false
+            return wan
         }
         baseURL = originalBase
         return nil
@@ -240,8 +222,8 @@ final class BeerAPI {
         req.setValue(deviceId, forHTTPHeaderField: "X-Beer-Device")
         req.httpBody = body
 
-        // Chemin 5G fiable : NWConnection IPv4 + SNI (pas de résolution AAAA)
-        let (data, http, _) = try await HomelabIPv4Transport.perform(req)
+        // Chemin 5G : IPv4 + SNI, timeout court (comme Android ~30s max, pas 120s)
+        let (data, http, _) = try await HomelabIPv4Transport.perform(req, timeoutSeconds: 15)
         guard let decoded = try? JSONDecoder().decode(NativeJoinResponse.self, from: data) else {
             throw BeerAPIError.server("Réponse join invalide (HTTP \(http.statusCode))")
         }
@@ -894,7 +876,7 @@ final class BeerAPI {
         body: Data?,
         contentType: String? = nil
     ) async throws -> (Data, HTTPURLResponse, URL) {
-        // Invité : un seul endpoint WAN FQDN + transport IPv4 forcé
+        // Invité : WAN FQDN + IPv4 only, timeout 15s (parité Android)
         if isInviteMode || ServerSettings.inviteMode {
             enableInviteMode(true)
             baseURL = Self.canonicalBase(ServerSettings.apiBase)
@@ -903,7 +885,7 @@ final class BeerAPI {
             if let contentType { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
             applyCommonHeaders(to: &req)
             req.httpBody = body
-            let result = try await HomelabIPv4Transport.perform(req)
+            let result = try await HomelabIPv4Transport.perform(req, timeoutSeconds: 15)
             activeEndpoint = ServerSettings.apiBase.absoluteString
             return result
         }

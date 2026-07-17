@@ -66,8 +66,8 @@ enum ServerSettings {
         return s + "/"
     }
 
-    /// Heuristic: local WiFi where LAN IP is preferred (used by BeerAPI discover).
+    /// Ne plus forcer true : en 5G ça bloquait sur le probe LAN 120s.
     static func isLikelyOnLocalWifi() -> Bool {
-        true
+        false
     }
 }

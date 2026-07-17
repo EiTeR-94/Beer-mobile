@@ -1,36 +1,33 @@
 import Foundation
 import Network
 
-/// Low-level IP transport (LAN/VPN focus).
-///
-/// Connects with correct SNI to handle Freebox IPv6 issues when using the domain.
-/// Activated via PlexiIPv4URLProtocol for https://eiter.freeboxos.fr on 443.
-///
-/// See also: PlexiIPv4URLProtocol and ServerSettings.wanIPv4
+/// Transport IPv4 direct + SNI correct (contourne AAAA Freebox mort en 5G).
+/// Aligné sur le comportement Android (Prefer IPv4 / WAN IP).
 enum HomelabIPv4Transport {
     private static let wanIP = ServerSettings.wanIPv4
     private static let tlsHost = ServerSettings.canonicalHost
-    private static let timeoutSeconds: UInt64 = 120  // generous for owner VPN/LAN/slow links
 
-    static func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
+    /// timeoutSeconds court par défaut (invite 5G) — plus de 120 s bloquants.
+    static func perform(_ request: URLRequest, timeoutSeconds: UInt64 = 12) async throws -> (Data, HTTPURLResponse, URL) {
         try await withThrowingTaskGroup(of: (Data, HTTPURLResponse, URL).self) { group in
-            group.addTask { try await performOnce(request) }
+            group.addTask { try await performOnce(request, connectTimeout: timeoutSeconds) }
             group.addTask {
                 try await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
-                throw BeerAPIError.server("Timeout connexion (établissement lent). Vérifie ton WiFi/VPN.")
+                throw BeerAPIError.server("Timeout \(timeoutSeconds)s — réseau lent ou 5G bloquée")
             }
+            defer { group.cancelAll() }
             guard let result = try await group.next() else {
-                throw BeerAPIError.server("Timeout connexion (établissement lent). Vérifie ton WiFi/VPN.")
+                throw BeerAPIError.server("Timeout \(timeoutSeconds)s — réseau lent ou 5G bloquée")
             }
-            group.cancelAll()
             return result
         }
     }
 
-    private static func performOnce(_ request: URLRequest) async throws -> (Data, HTTPURLResponse, URL) {
+    private static func performOnce(_ request: URLRequest, connectTimeout: UInt64) async throws -> (Data, HTTPURLResponse, URL) {
         guard let url = request.url else { throw BeerAPIError.invalidURL }
 
-        let path = {
+        // Path HTTP absolu (nginx attend /beer/...)
+        let path: String = {
             var p = url.path
             if p.isEmpty { p = "/" }
             if let q = url.query { p += "?\(q)" }
@@ -40,12 +37,13 @@ enum HomelabIPv4Transport {
         let body = request.httpBody ?? Data()
 
         let tcp = NWProtocolTCP.Options()
+        tcp.connectionTimeout = Int(connectTimeout)
         let tls = NWProtocolTLS.Options()
         sec_protocol_options_set_tls_server_name(tls.securityProtocolOptions, tlsHost)
+        // Pas de requiredInterfaceType : laisse 5G / Wi‑Fi public
         let params = NWParameters(tls: tls, tcp: tcp)
 
-        let hostStr = wanIP  // direct IPv4 (avoids Freebox IPv6 issues)
-        let conn = NWConnection(host: NWEndpoint.Host(hostStr), port: 443, using: params)
+        let conn = NWConnection(host: NWEndpoint.Host(wanIP), port: 443, using: params)
         return try await withCheckedThrowingContinuation { cont in
             let queue = DispatchQueue(label: "fr.eiter.plexibeer.ipv4")
             var resumed = false
@@ -56,11 +54,10 @@ enum HomelabIPv4Transport {
                 cont.resume(with: result)
             }
 
-            // Connect timeout for VPN/slow links - very patient for owner use
             let connectTimeoutTask = Task {
-                try? await Task.sleep(nanoseconds: 120_000_000_000) // 120s
+                try? await Task.sleep(nanoseconds: connectTimeout * 1_000_000_000)
                 if !resumed {
-                    finish(.failure(BeerAPIError.server("Timeout connexion (établissement lent). Vérifie ton WiFi/VPN.")))
+                    finish(.failure(BeerAPIError.server("Timeout TCP \(connectTimeout)s vers \(wanIP)")))
                 }
             }
 
@@ -70,7 +67,14 @@ enum HomelabIPv4Transport {
                     connectTimeoutTask.cancel()
                     Task {
                         do {
-                            let out = try await exchange(conn: conn, method: method, path: path, request: request, body: body, url: url)
+                            let out = try await exchange(
+                                conn: conn,
+                                method: method,
+                                path: path,
+                                request: request,
+                                body: body,
+                                url: url
+                            )
                             finish(.success(out))
                         } catch {
                             finish(.failure(error))
@@ -78,9 +82,12 @@ enum HomelabIPv4Transport {
                     }
                 case .failed(let err):
                     connectTimeoutTask.cancel()
-                    finish(.failure(BeerAPIError.server("Erreur de connexion: \(err.localizedDescription) (code: \((err as NSError).code))")))
-                case .waiting(_):
-                    break
+                    finish(.failure(BeerAPIError.server(
+                        "Connexion \(wanIP) échouée: \(err.localizedDescription)"
+                    )))
+                case .waiting(let err):
+                    // Ne pas rester bloqué en waiting (souvent path cellular)
+                    NSLog("HomelabIPv4: waiting \(err.localizedDescription)")
                 case .cancelled:
                     connectTimeoutTask.cancel()
                     if !resumed {
@@ -102,7 +109,13 @@ enum HomelabIPv4Transport {
         body: Data,
         url: URL
     ) async throws -> (Data, HTTPURLResponse, URL) {
-        var lines = ["\(method) \(path) HTTP/1.1", "Host: \(tlsHost)", "Accept: */*", "Accept-Encoding: identity", "Connection: close"]
+        var lines = [
+            "\(method) \(path) HTTP/1.1",
+            "Host: \(tlsHost)",
+            "Accept: */*",
+            "Accept-Encoding: identity",
+            "Connection: close",
+        ]
         if !body.isEmpty {
             lines.append("Content-Length: \(body.count)")
         }
@@ -111,7 +124,8 @@ enum HomelabIPv4Transport {
         }
         for (key, value) in request.allHTTPHeaderFields ?? [:] {
             let low = key.lowercased()
-            if low == "host" || low == "connection" || low == "accept-encoding" || low == "cookie" { continue }
+            if low == "host" || low == "connection" || low == "accept-encoding"
+                || low == "cookie" || low == "content-length" { continue }
             lines.append("\(key): \(value)")
         }
         var payload = (lines.joined(separator: "\r\n") + "\r\n\r\n").data(using: .utf8) ?? Data()
@@ -122,7 +136,6 @@ enum HomelabIPv4Transport {
         let raw = headersData + bodyData
         let parsed = try parseHTTP(raw, url: url)
         storeCookiesForURLSession(parsed.setCookieLines)
-        // Close promptly; do not rely on server FIN for body end
         conn.cancel()
         return (parsed.body, parsed.response, url)
     }
@@ -157,22 +170,22 @@ enum HomelabIPv4Transport {
     private static func send(conn: NWConnection, data: Data) async throws {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             conn.send(content: data, completion: .contentProcessed { err in
-                if let err { cont.resume(throwing: BeerAPIError.server("Erreur envoi requête: \(err.localizedDescription)")) }
-                else { cont.resume() }
+                if let err {
+                    cont.resume(throwing: BeerAPIError.server("Envoi: \(err.localizedDescription)"))
+                } else {
+                    cont.resume()
+                }
             })
         }
     }
 
-    /// Receive headers (until blank line) then body using Content-Length when present.
-    /// Avoids hanging on servers that delay FIN despite "Connection: close".
     private static func receiveResponse(conn: NWConnection) async throws -> (Data, Data) {
         var buffer = Data()
-        // Read until we have headers separator
         while true {
-            let (chunk, _): (Data?, Bool) = try await withCheckedThrowingContinuation { cont in
+            let (chunk, isComplete): (Data?, Bool) = try await withCheckedThrowingContinuation { cont in
                 conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, isComplete, err in
                     if let err {
-                        cont.resume(throwing: BeerAPIError.server("Erreur réception en-têtes: \(err.localizedDescription)"))
+                        cont.resume(throwing: BeerAPIError.server("Réception: \(err.localizedDescription)"))
                         return
                     }
                     cont.resume(returning: (data, isComplete))
@@ -182,39 +195,35 @@ enum HomelabIPv4Transport {
             if buffer.range(of: Data([13, 10, 13, 10])) != nil || buffer.range(of: Data([10, 10])) != nil {
                 break
             }
-            // safety to avoid infinite on broken
-            if buffer.count > 64 * 1024 { break }
+            if isComplete || buffer.count > 64 * 1024 { break }
         }
         guard !buffer.isEmpty else { throw BeerAPIError.server("Réponse vide") }
 
-        // Parse just enough to find Content-Length
         guard let sepRange = buffer.range(of: Data([13, 10, 13, 10])) ?? buffer.range(of: Data([10, 10])) else {
-            throw BeerAPIError.server("Réponse invalide (pas de séparateur headers)")
+            throw BeerAPIError.server("Réponse invalide (headers)")
         }
         let headerEnd = sepRange.upperBound
         let headerData = buffer.subdata(in: 0..<headerEnd)
         let headerText = String(data: headerData, encoding: .utf8) ?? ""
-        var contentLength: Int? = nil
+        var contentLength: Int?
         for line in headerText.split(separator: "\n") {
             let t = line.trimmingCharacters(in: .whitespacesAndNewlines)
             if let colon = t.firstIndex(of: ":") {
                 let k = String(t[..<colon]).trimmingCharacters(in: .whitespaces).lowercased()
                 if k == "content-length" {
-                    if let v = Int(String(t[t.index(after: colon)...]).trimmingCharacters(in: .whitespaces)) {
-                        contentLength = v
-                    }
+                    contentLength = Int(String(t[t.index(after: colon)...]).trimmingCharacters(in: .whitespaces))
                 }
             }
         }
 
         var body = buffer.subdata(in: headerEnd..<buffer.count)
         if let needed = contentLength {
-            while body.count < needed && body.count < 2*1024*1024 {
+            while body.count < needed && body.count < 2 * 1024 * 1024 {
                 let toRead = min(needed - body.count, 65536)
                 let (chunk, _): (Data?, Bool) = try await withCheckedThrowingContinuation { cont in
                     conn.receive(minimumIncompleteLength: 0, maximumLength: toRead) { data, _, isComplete, err in
                         if let err {
-                            cont.resume(throwing: BeerAPIError.server("Erreur réception body: \(err.localizedDescription)"))
+                            cont.resume(throwing: BeerAPIError.server("Body: \(err.localizedDescription)"))
                             return
                         }
                         cont.resume(returning: (data, isComplete))
@@ -227,24 +236,21 @@ enum HomelabIPv4Transport {
                 }
             }
         } else {
-            // No content-length: read until connection closes or reasonable max
             var safety = 0
-            while safety < 100 {
+            while safety < 40 {
                 let (chunk, isComplete): (Data?, Bool) = try await withCheckedThrowingContinuation { cont in
                     conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, isComplete, err in
                         if let err {
-                            cont.resume(throwing: BeerAPIError.server("Erreur réception body: \(err.localizedDescription)"))
+                            cont.resume(throwing: BeerAPIError.server("Body: \(err.localizedDescription)"))
                             return
                         }
                         cont.resume(returning: (data, isComplete))
                     }
                 }
-                if let chunk, !chunk.isEmpty {
-                    body.append(chunk)
-                }
+                if let chunk, !chunk.isEmpty { body.append(chunk) }
                 if isComplete { break }
                 safety += 1
-                if body.count > 2*1024*1024 { break }
+                if body.count > 2 * 1024 * 1024 { break }
             }
         }
         return (headerData, body)
