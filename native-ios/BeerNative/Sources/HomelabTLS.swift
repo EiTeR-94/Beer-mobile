@@ -37,8 +37,8 @@ final class HomelabTLSDelegate: NSObject, URLSessionDelegate {
 
         let host = challenge.protectionSpace.host
 
-        // Only relax hostname check for private LAN IPs.
-        // All other hosts (domain, WAN IP) go through normal validation + pinning.
+        // Relax hostname check for private LAN IPs + WAN IPv4 (même cert LE domaine).
+        let isWanIP = (host == ServerSettings.wanIPv4)
         let isLanIP = host.hasPrefix("192.168.") ||
                       host.hasPrefix("10.") ||
                       host.hasPrefix("172.16.") || host.hasPrefix("172.17.") ||
@@ -49,11 +49,12 @@ final class HomelabTLSDelegate: NSObject, URLSessionDelegate {
                       host.hasPrefix("172.26.") || host.hasPrefix("172.27.") ||
                       host.hasPrefix("172.28.") || host.hasPrefix("172.29.") ||
                       host.hasPrefix("172.30.") || host.hasPrefix("172.31.")
+        let isIPHost = isLanIP || isWanIP
 
         // Try normal evaluation first (works for domain name connections)
         var error: CFError?
         if SecTrustEvaluateWithError(trust, &error) {
-            let isOurHost = (host == "eiter.freeboxos.fr" || isLanIP)
+            let isOurHost = (host == "eiter.freeboxos.fr" || isIPHost)
             if isOurHost && !isPinned(trust: trust) {
                 NSLog("HomelabTLS: pinning failed for %@", host)
                 completionHandler(.cancelAuthenticationChallenge, nil)
@@ -63,20 +64,18 @@ final class HomelabTLSDelegate: NSObject, URLSessionDelegate {
             return
         }
 
-        // If normal eval failed and this is a LAN IP, retry with a policy that
-        // validates the certificate against the real domain name (eiter.freeboxos.fr).
-        // This is required because the LE cert's SAN matches the domain, not the IP address.
-        if isLanIP {
+        // Si eval normal échoue (IP ≠ SAN cert), revalider contre eiter.freeboxos.fr
+        if isIPHost {
             let domain = "eiter.freeboxos.fr" as CFString
             let policy = SecPolicyCreateSSL(true, domain)
             SecTrustSetPolicies(trust, [policy] as CFArray)
 
             if SecTrustEvaluateWithError(trust, &error) {
-                NSLog("HomelabTLS: accepted LAN IP %@ using domain policy", host)
+                NSLog("HomelabTLS: accepted IP %@ using domain policy", host)
                 completionHandler(.useCredential, URLCredential(trust: trust))
                 return
             } else {
-                NSLog("HomelabTLS: domain policy validation failed for LAN IP %@ - %@", host, (error as Error?)?.localizedDescription ?? "unknown")
+                NSLog("HomelabTLS: domain policy validation failed for IP %@ - %@", host, (error as Error?)?.localizedDescription ?? "unknown")
             }
         }
 
