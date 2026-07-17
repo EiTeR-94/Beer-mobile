@@ -243,26 +243,14 @@ final class AppModel: ObservableObject {
             networkStatus = .offline
             return
         }
-        let start = Date()
-        // Une seule API discover : owner LAN→domaine, invite WAN IPv4
         if await api.discoverWorkingEndpoint() != nil {
-            lastEndpointLatency = Date().timeIntervalSince(start)
-            lastSuccessfulBase = api.baseURL
             networkStatus = .online
-            if isLoggedIn {
-                serverVersion = (try? await api.version()) ?? serverVersion
-            }
-            retryTask?.cancel()
-        } else {
-            // Login sans session : ne pas afficher "cache local"
-            if isLoggedIn {
-                networkStatus = .serverUnreachable
-                scheduleRetryProbe()
-            } else {
-                networkStatus = .online
-            }
+            lastSuccessfulBase = api.baseURL
+        } else if isLoggedIn {
+            networkStatus = .serverUnreachable
         }
     }
+
 
     func applySession(user: String?, isAdmin: Bool, isInvite: Bool, loggedIn: Bool, inviteLabel: String? = nil) {
         self.user = user
@@ -293,66 +281,91 @@ final class AppModel: ObservableObject {
         )
     }
 
+    /// Bootstrap = Android AppViewModel.bootstrap()
     func bootstrap() async {
         isLoading = true
         defer { isLoading = false }
 
+        guard isOnline else {
+            networkStatus = .offline
+            restoreOfflineSessionIfNeeded()
+            if isLoggedIn {
+                showToast("Mode hors ligne", variant: .info, detail: "Cache local", durationMs: 3500)
+            }
+            return
+        }
+
+        // Android: inviteMode avant discover pour candidateURLs WAN only
         if InviteSessionStore.hasInviteSession {
             api.enableInviteMode(true)
-            if let u = InviteSessionStore.username {
-                applySession(user: u, isAdmin: false, isInvite: true, loggedIn: true, inviteLabel: InviteSessionStore.label)
-            }
         } else {
             api.enableInviteMode(false)
+        }
+
+        let t0 = Date()
+        let ep = await api.discoverWorkingEndpoint()
+        lastEndpointLatency = Date().timeIntervalSince(t0)
+        if ep == nil {
+            networkStatus = .serverUnreachable
             restoreOfflineSessionIfNeeded()
-        }
-
-        // Pas de session → login immédiat (owner ou invite)
-        if !isLoggedIn {
-            networkStatus = .online
-            return
-        }
-
-        await probeServerReachability()
-        guard networkStatus == .online else {
-            showToast("Serveur injoignable — cache local", variant: .warn, durationMs: 3200)
-            return
-        }
-        do {
-            let me = try await fetchMe()
-            if me.auth && me.user == nil {
-                if isInvite { return }
-                await logout()
-                return
-            }
-            applySession(
-                user: me.user,
-                isAdmin: me.isAdmin,
-                isInvite: me.isInvite || InviteSessionStore.hasInviteSession,
-                loggedIn: me.user != nil,
-                inviteLabel: InviteSessionStore.label
-            )
-            if isLoggedIn { await syncPending() }
-            cache.prune(maxFiles: 12)
-            await prewarmRecentPhotos()
-        } catch BeerAPIError.forbidden {
-            let wasInvite = isInvite || InviteSessionStore.hasInviteSession
-            await clearSessionState()
-            BeerSessionStore.clear()
-            InviteSessionStore.clear()
-            KeychainStore.username = nil
-            showToast(wasInvite ? "Invitation expirée" : "Accès refusé", variant: .error, durationMs: 4000)
-        } catch BeerAPIError.unauthorized {
-            let wasInvite = isInvite || InviteSessionStore.hasInviteSession
-            InviteSessionStore.clear()
-            await clearSessionState()
-            showToast(wasInvite ? "Invitation expirée" : "Session expirée", variant: .error, durationMs: 4000)
-        } catch {
             if isLoggedIn {
-                showToast("Serveur injoignable — cache local", variant: .warn, durationMs: 3600)
-                networkStatus = .serverUnreachable
+                showToast("Serveur injoignable", variant: .warn, detail: "Cache local", durationMs: 3500)
+            }
+            return
+        }
+        networkStatus = .online
+        lastSuccessfulBase = api.baseURL
+
+        if InviteSessionStore.hasInviteSession {
+            api.enableInviteMode(true)
+            do {
+                let me = try await api.me()
+                if let u = me.user, !u.isEmpty {
+                    applySession(user: u, isAdmin: false, isInvite: true, loggedIn: true, inviteLabel: InviteSessionStore.label)
+                    serverVersion = (try? await api.version()) ?? ""
+                    await syncPending()
+                    await prewarmRecentPhotos()
+                    cache.prune(maxFiles: 16)
+                    return
+                }
+                api.clearSession()
+            } catch {
+                if case BeerAPIError.unauthorized = error {
+                    api.clearSession()
+                } else if case BeerAPIError.server = error {
+                    api.clearSession()
+                } else {
+                    networkStatus = .serverUnreachable
+                    restoreOfflineSessionIfNeeded()
+                    return
+                }
+            }
+        } else if HTTPCookieStorage.shared.cookies?.contains(where: { $0.name == "beer_session" }) == true {
+            api.enableInviteMode(false)
+            do {
+                let me = try await api.me()
+                if let u = me.user, !u.isEmpty {
+                    applySession(user: u, isAdmin: me.isAdmin, isInvite: me.isInvite, loggedIn: true)
+                    serverVersion = (try? await api.version()) ?? ""
+                    await syncPending()
+                    await prewarmRecentPhotos()
+                    cache.prune(maxFiles: 16)
+                    return
+                }
+                api.clearSession()
+                BeerSessionStore.clear()
+            } catch {
+                if case BeerAPIError.unauthorized = error {
+                    api.clearSession()
+                    BeerSessionStore.clear()
+                } else {
+                    networkStatus = .serverUnreachable
+                    restoreOfflineSessionIfNeeded()
+                    return
+                }
             }
         }
+        restoreOfflineSessionIfNeeded()
     }
 
     func applyServerURL(_ raw: String) {

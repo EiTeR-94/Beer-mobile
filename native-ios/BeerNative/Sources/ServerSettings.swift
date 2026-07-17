@@ -1,44 +1,62 @@
 import Foundation
 
+/// Miroir exact d'Android `ServerSettings.kt`
 enum ServerSettings {
     static let canonicalHost = "eiter.freeboxos.fr"
-    /// IPv4 fallback for domain access (owner uses LAN IP or VPN).
     static let wanIPv4 = "82.64.151.113"
-
-    /// URL for main account (via LAN IP or VPN).
     static let apiBaseString = "https://\(canonicalHost)/beer/"
+    /// Fallback 4G si AAAA Freebox casse le TLS (IPv4 + SNI host).
+    static let wanIPv4ApiBaseString = "https://\(wanIPv4)/beer/"
+    static let lanApiBaseString = "https://192.168.1.50:8444/beer/"
+    static let lanProbeTimeoutSec: TimeInterval = 15
 
-    static var apiBase: URL {
-        URL(string: apiBaseString)!
-    }
+    static var apiBase: URL { URL(string: apiBaseString)! }
+    static var wanIPv4ApiBase: URL { URL(string: wanIPv4ApiBaseString)! }
+    static var lanApiBase: URL { URL(string: lanApiBaseString)! }
 
-    /// Fallback IPv4 direct (4G si AAAA Freebox casse le TLS).
-    static var wanIPv4ApiBase: URL {
-        URL(string: "https://\(wanIPv4)/beer/")!
-    }
-
-    /// Direct LAN IP for owner (WiFi or VPN). Avoids domain IPv6 issues on Freebox.
-    static var lanApiBase: URL {
-        URL(string: "https://192.168.1.50:8444/beer/")!
-    }
+    private static var runtimeBase: String?
 
     /// Mode invité : forcer WAN (jamais LAN Freebox).
     static var inviteMode: Bool = false
 
-    /// Owner = LAN puis domaine (comme Android).
-    static var candidateURLs: [URL] {
-        [lanApiBase, apiBase]
+    static var effectiveBase: String {
+        if inviteMode {
+            if let r = runtimeBase, !isLanEndpoint(r) { return r }
+            return apiBaseString
+        }
+        return runtimeBase ?? lanApiBaseString
     }
 
-    static var inviteCandidateURLs: [URL] {
-        [apiBase, wanIPv4ApiBase]
+    /// Comme Android candidateURLs.
+    static var candidateURLs: [String] {
+        if inviteMode {
+            return [apiBaseString, wanIPv4ApiBaseString]
+        }
+        return [lanApiBaseString, apiBaseString]
     }
 
-    /// Probe timeout for LAN/VPN. Short for quick fail, longer for VPN latency.
-    static let lanProbeTimeoutSec: TimeInterval = 15
+    static let inviteCandidateURLs: [String] = [apiBaseString, wanIPv4ApiBaseString]
+
+    static func isLanEndpoint(_ url: String) -> Bool {
+        url.contains(":8444")
+    }
 
     static func isLanEndpoint(_ url: URL) -> Bool {
         url.port == 8444
+    }
+
+    static func normalizeInput(_ raw: String) -> String {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        while s.hasSuffix("/") { s.removeLast() }
+        return s + "/"
+    }
+
+    static func setRuntimeBase(_ url: String?) {
+        runtimeBase = (url?.isEmpty == false) ? normalizeInput(url!) : nil
+    }
+
+    static func resetToLan() {
+        runtimeBase = nil
     }
 
     static func serverOrigin(from base: URL = apiBase) -> String {
@@ -54,13 +72,11 @@ enum ServerSettings {
         if path.hasPrefix("http") { return URL(string: path) }
         let origin = serverOrigin(from: base)
         let p = path.hasPrefix("/") ? path : "/\(path)"
-        return URL(string: origin + p)
+        if p.hasPrefix("/beer/") || p.hasPrefix("/static/") || p.hasPrefix("/photos/") {
+            return URL(string: origin + p)
+        }
+        let root = normalizeInput(base.absoluteString)
+        return URL(string: root + (p.hasPrefix("/") ? String(p.dropFirst()) : p))
     }
-
-    static func normalizeInput(_ raw: String) -> String {
-        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        while s.hasSuffix("/") { s.removeLast() }
-        return s + "/"
-    }
-
 }
+
