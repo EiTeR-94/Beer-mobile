@@ -109,16 +109,119 @@ struct GrimoireSheetView: View {
     @ViewBuilder
     private func badgesTab(_ st: RpgState) -> some View {
         let badges = st.badges ?? []
-        let earned = badges.filter { $0.earned == true }.count
+        let earnedList = badges.filter { $0.earned == true }
+            .sorted { rarityOrder($0.rarity) > rarityOrder($1.rarity) }
+        let locked = badges.filter { $0.earned != true }
+        let inProgress = locked
+            .filter { ($0.progress ?? 0) > 0 }
+            .sorted {
+                let ta = max(1, $0.target ?? 1)
+                let tb = max(1, $1.target ?? 1)
+                return (Double($0.progress ?? 0) / Double(ta)) > (Double($1.progress ?? 0) / Double(tb))
+            }
+        let untouched = locked.filter { ($0.progress ?? 0) <= 0 }
+        let common = untouched.filter { ($0.rarity ?? "common").lowercased() == "common" }
+        let rare = untouched.filter { ($0.rarity ?? "").lowercased() == "rare" }
+        let epic = untouched.filter { ($0.rarity ?? "").lowercased() == "epic" }
+        let legendary = untouched.filter { ($0.rarity ?? "").lowercased() == "legendary" }
+        let nEarned = earnedList.count
+        let nTotal = badges.count
+        let pctAll = nTotal > 0 ? (nEarned * 100 / nTotal) : 0
+
         ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("\(earned) / \(badges.count) badges")
-                    .font(.footnote).foregroundStyle(Theme.muted)
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 8) {
-                    ForEach(badges) { BadgeTileView(b: $0) }
+            VStack(alignment: .leading, spacing: 12) {
+                // Hero salle des trophées (parité webapp)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("SALLE DES TROPHÉES")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(Color.yellow.opacity(0.9))
+                        .tracking(1.4)
+                    Text("🏅 Collection de badges")
+                        .font(.headline).foregroundStyle(Theme.text)
+                    Text("Chaque badge a un objectif clair. Touche une tuile pour voir la progression.")
+                        .font(.footnote).foregroundStyle(Theme.muted)
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 6) {
+                        stat("🏆", "\(nEarned)", "Obtenus")
+                        stat("🔒", "\(locked.count)", "À faire")
+                        stat("📊", "\(pctAll)%", "Complétion")
+                    }
+                    ProgressView(value: Double(pctAll) / 100.0)
+                        .tint(Color.purple)
+                    HStack {
+                        Text("\(nEarned) / \(nTotal) badges")
+                            .font(.caption.weight(.semibold)).foregroundStyle(Theme.text)
+                        Spacer()
+                        Text("\(max(0, nTotal - nEarned)) restants")
+                            .font(.caption).foregroundStyle(Theme.muted)
+                    }
+                    HStack(spacing: 12) {
+                        legendDot(Color.gray, "Commun")
+                        legendDot(Color(red: 0.38, green: 0.65, blue: 0.98), "Rare")
+                        legendDot(Color.purple, "Épique")
+                        legendDot(Color.orange, "Légendaire")
+                    }
                 }
+                .padding(12)
+                .background(
+                    LinearGradient(
+                        colors: [Color(red: 0.1, green: 0.09, blue: 0.05), Theme.card],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                )
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.yellow.opacity(0.28)))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+
+                badgeGroup("En cours", "⚔️", inProgress)
+                badgeGroup("Commun", "⚪", common)
+                badgeGroup("Rare", "🔵", rare)
+                badgeGroup("Épique", "🟣", epic)
+                badgeGroup("Légendaire", "🟡", legendary)
+                badgeGroup("Obtenus", "✅", earnedList)
             }
             .padding(12)
+        }
+    }
+
+    private func rarityOrder(_ r: String?) -> Int {
+        switch (r ?? "common").lowercased() {
+        case "legendary": return 3
+        case "epic": return 2
+        case "rare": return 1
+        default: return 0
+        }
+    }
+
+    private func legendDot(_ color: Color, _ label: String) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 8, height: 8)
+            Text(label).font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.muted)
+        }
+    }
+
+    @ViewBuilder
+    private func badgeGroup(_ title: String, _ ico: String, _ list: [RpgBadge]) -> some View {
+        if !list.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("\(ico) \(title)")
+                        .font(.subheadline.weight(.bold)).foregroundStyle(Theme.text)
+                    Spacer()
+                    Text("\(list.count)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Theme.muted)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(Theme.fieldBg)
+                        .clipShape(Capsule())
+                }
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
+                    ForEach(list) { BadgeTileView(b: $0) }
+                }
+            }
+            .padding(10)
+            .background(Theme.card)
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.border))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
         }
     }
 
@@ -190,6 +293,62 @@ struct BqHudCard: View {
     let profile: RpgProfile
     var onTap: () -> Void
 
+    private struct FrameStyle {
+        let band: String
+        let border: Color
+        let borderWidth: CGFloat
+        let outer: Color?
+        let bgTop: Color
+        let accent: Color
+        let seal: Color
+    }
+
+    private var frame: FrameStyle {
+        if profile.beerMaster == true {
+            return FrameStyle(
+                band: profile.prestige?.ribbon ?? "Beer Master",
+                border: Color.yellow.opacity(0.75),
+                borderWidth: 2,
+                outer: Color.yellow.opacity(0.3),
+                bgTop: Color(red: 0.47, green: 0.21, blue: 0.06).opacity(0.45),
+                accent: .yellow,
+                seal: .yellow
+            )
+        }
+        let lvl = profile.level ?? 1
+        let band = profile.titleBand?.name
+        switch lvl {
+        case ...4:
+            return FrameStyle(band: band ?? "Premiers pas", border: Theme.border, borderWidth: 1,
+                              outer: nil, bgTop: Theme.card, accent: Theme.accent, seal: Color.gray)
+        case ...8:
+            return FrameStyle(band: band ?? "Apprentissage", border: Color.orange.opacity(0.55), borderWidth: 1.5,
+                              outer: nil, bgTop: Color(red: 0.11, green: 0.08, blue: 0.06), accent: .orange, seal: .orange)
+        case ...12:
+            return FrameStyle(band: band ?? "Exploration", border: Color.green.opacity(0.5), borderWidth: 1.5,
+                              outer: nil, bgTop: Color(red: 0.06, green: 0.1, blue: 0.09), accent: .green, seal: .green)
+        case ...16:
+            return FrameStyle(band: band ?? "Affirmation", border: Color(red: 0.38, green: 0.65, blue: 0.98).opacity(0.55), borderWidth: 1.5,
+                              outer: nil, bgTop: Color(red: 0.06, green: 0.09, blue: 0.12),
+                              accent: Color(red: 0.38, green: 0.65, blue: 0.98), seal: Color(red: 0.38, green: 0.65, blue: 0.98))
+        case ...20:
+            return FrameStyle(band: band ?? "Expertise", border: Color.purple.opacity(0.55), borderWidth: 1.5,
+                              outer: nil, bgTop: Color(red: 0.09, green: 0.06, blue: 0.12), accent: .purple, seal: .purple)
+        case ...24:
+            return FrameStyle(band: band ?? "Renommée", border: Color.yellow.opacity(0.5), borderWidth: 1.5,
+                              outer: Color.yellow.opacity(0.18), bgTop: Color(red: 0.1, green: 0.09, blue: 0.05),
+                              accent: .yellow, seal: .yellow)
+        case ...28:
+            return FrameStyle(band: band ?? "Légende", border: Color.yellow.opacity(0.7), borderWidth: 2,
+                              outer: Color.orange.opacity(0.28), bgTop: Color(red: 0.12, green: 0.09, blue: 0.04),
+                              accent: .orange, seal: .orange)
+        default:
+            return FrameStyle(band: band ?? "Mythe", border: Color.purple.opacity(0.7), borderWidth: 2,
+                              outer: Color.yellow.opacity(0.3), bgTop: Color(red: 0.09, green: 0.06, blue: 0.12),
+                              accent: Color(red: 0.65, green: 0.55, blue: 0.98), seal: .yellow)
+        }
+    }
+
     var body: some View {
         let pct = min(1, max(0, (profile.progressPct ?? 0) / 100))
         let into = profile.xpIntoLevel
@@ -203,16 +362,31 @@ struct BqHudCard: View {
         }()
         let right = profile.xpToNext.map { "encore \($0)" } ?? "max"
         let master = profile.beerMaster == true
+        let f = frame
 
         Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(f.band.uppercased())
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(f.accent)
+                        .tracking(1.1)
+                        .lineLimit(1)
+                    Spacer()
+                    Text("Nv \(profile.level ?? 1)")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(f.accent)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .overlay(Capsule().stroke(f.border))
+                }
                 HStack(spacing: 10) {
                     Text(profile.displayIcon)
                         .font(.title2)
-                        .frame(width: 40, height: 40)
+                        .frame(width: 44, height: 44)
                         .background(Theme.fieldBg)
                         .clipShape(Circle())
-                        .overlay(Circle().stroke(master ? Color.yellow : Theme.accent))
+                        .overlay(Circle().stroke(f.seal, lineWidth: 2))
                     VStack(alignment: .leading, spacing: 2) {
                         if master {
                             Text(profile.prestige?.ribbon ?? "BEER MASTER")
@@ -227,34 +401,47 @@ struct BqHudCard: View {
                             Spacer()
                             Text("\(Int(profile.progressPct ?? 0))%")
                                 .font(.subheadline.weight(.heavy))
-                                .foregroundStyle(Color.yellow)
+                                .foregroundStyle(f.accent)
                         }
-                        Text(subline)
-                            .font(.caption)
-                            .foregroundStyle(Theme.muted)
-                            .lineLimit(1)
+                        if !subline.isEmpty {
+                            Text(subline)
+                                .font(.caption)
+                                .foregroundStyle(Theme.muted)
+                                .lineLimit(1)
+                        }
                     }
                 }
-                ProgressView(value: pct)
-                    .tint(master ? .yellow : Theme.accent)
+                ProgressView(value: pct).tint(f.accent)
                 HStack {
                     Text(mid).font(.caption.weight(.semibold)).foregroundStyle(Theme.text)
                     Spacer()
                     Text(right).font(.caption).foregroundStyle(Theme.muted)
                 }
             }
-            .padding(10)
-            .background(master ? Color(red: 0.47, green: 0.21, blue: 0.06).opacity(0.35) : Theme.card)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(master ? Color.yellow.opacity(0.55) : Theme.border)
+            .padding(11)
+            .background(
+                LinearGradient(colors: [f.bgTop, Theme.card.opacity(0.95)], startPoint: .top, endPoint: .bottom)
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(f.border, lineWidth: f.borderWidth)
+            )
+            .overlay(
+                Group {
+                    if let outer = f.outer {
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(outer, lineWidth: 3)
+                            .padding(-3)
+                    }
+                }
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(.plain)
     }
 
     private var subline: String {
-        var bits = ["Nv \(profile.level ?? 1)"]
+        var bits: [String] = []
         if let n = profile.classInfo?.name { bits.append(n) }
         if profile.beerMaster != true, let b = profile.titleBand?.name { bits.append(b) }
         return bits.joined(separator: " · ")
@@ -330,20 +517,60 @@ struct BadgeTileView: View {
         let tgt = max(1, b.target ?? 1)
         let prog = b.progress ?? 0
         let pct = min(1, Double(prog) / Double(tgt))
+        let rarity = (b.rarity ?? "common").lowercased()
+        let rarityColor: Color = {
+            switch rarity {
+            case "legendary": return .orange
+            case "epic": return .purple
+            case "rare": return Color(red: 0.38, green: 0.65, blue: 0.98)
+            default: return Theme.muted
+            }
+        }()
+        let border: Color = {
+            if earned { return rarityColor }
+            if prog > 0 { return Color.yellow.opacity(0.55) }
+            return Theme.border
+        }()
         VStack(spacing: 4) {
             Text(b.icon ?? "🏅").font(.title2)
-            Text(b.name ?? "—").font(.caption2.weight(.bold)).foregroundStyle(Theme.text).lineLimit(2)
-            Text(rarityLabelFr(b.rarity)).font(.system(size: 9)).foregroundStyle(Theme.muted)
-            Text(earned ? "✓ Obtenu" : "\(prog)/\(tgt)")
-                .font(.system(size: 10))
+            Text(b.name ?? "—")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+            Text(rarityLabelFr(b.rarity))
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(rarityColor)
+            Text(earned ? "✓ Obtenu" : "\(prog)/\(tgt) · \(Int(pct * 100))%")
+                .font(.system(size: 10, weight: earned ? .bold : .semibold))
                 .foregroundStyle(earned ? Color.green : Theme.muted)
+                .lineLimit(1)
             if !earned {
-                ProgressView(value: pct).tint(Color.purple)
+                ProgressView(value: pct)
+                    .tint(prog > 0 ? Color.yellow : rarityColor)
+                if let h = b.hint?
+                    .replacingOccurrences(of: "Objectif : ", with: "")
+                    .replacingOccurrences(of: "Objectif:", with: ""),
+                   !h.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Text(h)
+                        .font(.system(size: 9))
+                        .foregroundStyle(Theme.muted)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                }
             }
         }
         .padding(8)
         .frame(maxWidth: .infinity)
-        .background(Theme.card)
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(earned ? Color.purple : Theme.border))
+        .background(
+            LinearGradient(
+                colors: earned
+                    ? [rarityColor.opacity(0.18), Theme.card]
+                    : (prog > 0 ? [Color.yellow.opacity(0.08), Theme.card] : [Theme.card, Theme.card]),
+                startPoint: .top, endPoint: .bottom
+            )
+        )
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(border))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
