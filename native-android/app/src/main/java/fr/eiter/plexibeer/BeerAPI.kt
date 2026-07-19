@@ -369,6 +369,45 @@ class BeerAPI private constructor(context: Context) {
         return decoded
     }
 
+    /** Beerquest state — enabled=false si RPG off / non autorisé. */
+    suspend fun rpgMe(): RpgState = withContext(Dispatchers.IO) {
+        try {
+            val (body, code) = execute(
+                requestBuilder("api/rpg/me").get().build(),
+                allowUnauthorizedBody = true
+            )
+            if (code !in 200..299) return@withContext RpgState(enabled = false)
+            gson.fromJson(body, RpgState::class.java) ?: RpgState(enabled = false)
+        } catch (_: Exception) {
+            RpgState(enabled = false)
+        }
+    }
+
+    suspend fun rpgSetClass(classKey: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val json = gson.toJson(mapOf("class" to classKey))
+            val (body, code) = execute(
+                requestBuilder("api/rpg/class").post(json.toRequestBody(JSON)).build()
+            )
+            code in 200..299 && (gson.fromJson(body, OkResponse::class.java)?.ok == true)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    suspend fun rpgIntroSeen(): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val (_, code) = execute(
+                requestBuilder("api/rpg/intro-seen")
+                    .post("{}".toRequestBody(JSON))
+                    .build()
+            )
+            code in 200..299
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     suspend fun logout() {
         try {
             execute(requestBuilder("api/logout").post(ByteArray(0).toRequestBody()).build())
@@ -591,7 +630,7 @@ class BeerAPI private constructor(context: Context) {
         builder.addFormDataPart("rating", rating.toString())
         builder.addFormDataPart("flavors", gson.toJson(flavors))
         builder.addFormDataPart("hops", gson.toJson(hops))
-        builder.addFormDataPart("comment", comment.take(120))
+        builder.addFormDataPart("comment", comment.take(300))
         builder.addFormDataPart("location", loc)
         builder.addFormDataPart("untappd_bid", untappdBid)
         builder.addFormDataPart("force", if (force) "true" else "false")

@@ -378,20 +378,20 @@ struct BeerWizardView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("Commentaire (optionnel, 120 car.)")
+                Text("Commentaire (optionnel, 300 car.)")
                     .font(.system(size: Theme.Font.tagTitle, weight: .semibold))
                     .foregroundStyle(Theme.text)
                 TextField("Terrasse, avec elle, à refaire…", text: $comment, axis: .vertical)
                     .lineLimit(2...4)
                     .onChange(of: comment, perform: { v in
-                        if v.count > 120 { comment = String(v.prefix(120)) }
+                        if v.count > 300 { comment = String(v.prefix(300)) }
                     })
                     .padding(12)
                     .background(Theme.fieldBg)
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .foregroundStyle(Theme.text)
-                Text("\(comment.count)/120")
+                Text("\(comment.count)/300")
                     .font(.caption2)
                     .foregroundStyle(Theme.muted)
                     .frame(maxWidth: .infinity, alignment: .trailing)

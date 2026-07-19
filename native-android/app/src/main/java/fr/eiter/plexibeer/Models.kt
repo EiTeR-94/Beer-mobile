@@ -182,7 +182,9 @@ data class CreateCheckinResult(
     val id: Int? = null,
     val duplicate: Boolean? = null,
     val error: String? = null,
-    @SerializedName("previous_checkin") val previousCheckin: PreviousCheckin? = null
+    @SerializedName("previous_checkin") val previousCheckin: PreviousCheckin? = null,
+    /** Beerquest loot (null si RPG off / non autorisé) */
+    val rpg: RpgLoot? = null
 )
 
 data class PreviousCheckin(
@@ -237,7 +239,7 @@ enum class NetworkStatus(val label: String) {
 }
 
 enum class BeerSheet {
-    HISTORY, GALLERY, WISHLIST, GIFTS, PENDING, DETAIL, EDIT, ADMIN, PATCHNOTES
+    HISTORY, GALLERY, WISHLIST, GIFTS, PENDING, DETAIL, EDIT, ADMIN, PATCHNOTES, GRIMOIRE
 }
 
 data class ToastPayload(

@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum BeerSheet: String, Identifiable {
-    case history, gallery, wishlist, gifts, admin, patchnotes, pending
+    case history, gallery, wishlist, gifts, admin, patchnotes, pending, grimoire
     var id: String { rawValue }
 }
 
@@ -24,6 +24,14 @@ struct MainView: View {
                 NetworkStatusBar(status: app.networkStatus, pending: app.pendingCount, latency: app.lastEndpointLatency)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 4)
+            }
+            if app.rpgActive, let p = app.rpgState?.profile {
+                BqHudCard(profile: p) {
+                    Task { await app.refreshRpg() }
+                    sheet = .grimoire
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 6)
             }
             BeerStepNav(step: $app.wizardStep)
             BeerWizardView(step: $app.wizardStep)
@@ -58,6 +66,9 @@ struct MainView: View {
                 PatchnotesSheetView()
             case .pending:
                 PendingSheetView()
+                    .environmentObject(app)
+            case .grimoire:
+                GrimoireSheetView()
                     .environmentObject(app)
             }
         }
@@ -143,6 +154,12 @@ struct MainView: View {
         if app.isAdmin {
             buttons.append(HeaderButton(title: "Patch notes") { sheet = .patchnotes })
             buttons.append(HeaderButton(title: "Admin") { sheet = .admin })
+        }
+        if app.rpgActive {
+            buttons.append(HeaderButton(title: "Grimoire") {
+                Task { await app.refreshRpg() }
+                sheet = .grimoire
+            })
         }
         // Invités : historique perso uniquement (pas wishlist / cadeaux)
         if !app.isInvite {

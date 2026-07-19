@@ -391,9 +391,10 @@ struct CreateCheckinResult: Decodable {
     let duplicate: Bool?
     let error: String?
     let previousCheckin: PreviousCheckin?
+    let rpg: RpgLoot?
 
     enum CodingKeys: String, CodingKey {
-        case ok, id, duplicate, error
+        case ok, id, duplicate, error, rpg
         case previousCheckin = "previous_checkin"
     }
 }

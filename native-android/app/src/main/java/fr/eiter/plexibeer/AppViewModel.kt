@@ -64,6 +64,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var pendingDeletes by mutableStateOf<List<Int>>(emptyList())
         private set
 
+    /** Beerquest — null = pas encore chargé / off */
+    var rpgState by mutableStateOf<RpgState?>(null)
+        private set
+    var lastRpgLoot by mutableStateOf<RpgLoot?>(null)
+        private set
+
+    val rpgActive: Boolean
+        get() = rpgState?.enabled == true && rpgState?.ui == true && rpgState?.profile != null
+
     private var toastJob: Job? = null
     private var syncInProgress = false
     private var connectivityCallback: ConnectivityManager.NetworkCallback? = null
@@ -280,6 +289,73 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun refreshRpg() {
+        if (!isLoggedIn || networkStatus != NetworkStatus.ONLINE) return
+        viewModelScope.launch {
+            try {
+                val st = api.rpgMe()
+                rpgState = st
+            } catch (_: Exception) {
+                // keep previous state
+            }
+        }
+    }
+
+    fun handleRpgLoot(loot: RpgLoot?) {
+        if (loot == null) return
+        lastRpgLoot = loot
+        // Optimistic HUD update
+        val prev = rpgState
+        if (prev?.profile != null) {
+            rpgState = prev.copy(
+                profile = prev.profile.copy(
+                    level = loot.level,
+                    xp = loot.xp,
+                    title = loot.title ?: prev.profile.title,
+                    progressPct = loot.progressPct,
+                    xpToNext = loot.xpToNext,
+                    streakDays = loot.streakDays ?: prev.profile.streakDays
+                )
+            )
+        }
+        val bits = mutableListOf<String>()
+        if (loot.levelUp) bits.add("LEVEL UP → ${loot.level}")
+        if (loot.xpGained != 0) bits.add("+${loot.xpGained} XP")
+        loot.badgesEarned.firstOrNull()?.let { bits.add("${it.icon ?: "🏅"} ${it.name}") }
+        loot.questsCompleted.firstOrNull()?.let { bits.add("📜 ${it.title}") }
+        val msg = when {
+            loot.levelUp -> loot.phraseLevelUp ?: loot.phrase ?: "Niveau ${loot.level} !"
+            loot.xpGained > 0 -> loot.phrase ?: "Butin +${loot.xpGained} XP"
+            else -> loot.phrase ?: "Noté"
+        }
+        showToast(
+            msg,
+            if (loot.levelUp || loot.badgesEarned.isNotEmpty()) ToastPayload.Variant.SUCCESS
+            else ToastPayload.Variant.INFO,
+            detail = bits.joinToString(" · ").ifBlank { null },
+            label = "Beerquest",
+            durationMs = if (loot.levelUp) 5200 else 3800
+        )
+        refreshRpg()
+    }
+
+    fun equipRpgClass(key: String, onDone: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            val ok = try {
+                api.rpgSetClass(key)
+            } catch (_: Exception) {
+                false
+            }
+            if (ok) {
+                refreshRpg()
+                showToast("Classe équipée", ToastPayload.Variant.SUCCESS, label = "Beerquest")
+            } else {
+                showToast("Impossible d’équiper", ToastPayload.Variant.ERROR, label = "Beerquest")
+            }
+            onDone(ok)
+        }
+    }
+
     private fun applySession(
         userName: String?,
         admin: Boolean,
@@ -294,6 +370,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         isLoggedIn = loggedIn
         if (loggedIn && userName != null) {
             BeerSessionStore.save(getApplication(), userName, admin && !invite, invite)
+            refreshRpg()
+        } else {
+            rpgState = null
+            lastRpgLoot = null
         }
     }
 
@@ -643,6 +723,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     // path unknown until reload — prewarm list later
                     viewModelScope.launch { prewarmRecentPhotos() }
                 }
+                handleRpgLoot(result.rpg)
                 return "Enregistré ✓"
             }
             throw BeerAPI.ApiException(result.error ?: "Échec")

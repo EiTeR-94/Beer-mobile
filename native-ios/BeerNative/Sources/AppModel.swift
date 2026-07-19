@@ -39,6 +39,10 @@ final class AppModel: ObservableObject {
     @Published var serverVersion: String = ""
     @Published var wizardStep = 1
     @Published var wizardProduct: BeerProduct?
+    @Published var rpgState: RpgState?
+    @Published var lastRpgLoot: RpgLoot?
+
+    var rpgActive: Bool { rpgState?.active == true }
 
     let api = BeerAPI.shared
     let offline = OfflineQueue()
@@ -285,6 +289,10 @@ final class AppModel: ObservableObject {
             if isInvite {
                 api.enableInviteMode(true)
             }
+            Task { await refreshRpg() }
+        } else {
+            rpgState = nil
+            lastRpgLoot = nil
         }
     }
 
@@ -694,6 +702,7 @@ final class AppModel: ObservableObject {
             }
             if result.ok == true || result.id != nil {
                 hapticSuccess()
+                handleRpgLoot(result.rpg)
                 return "Enregistré ✓"
             }
             throw BeerAPIError.server(result.error ?? "Échec")
@@ -705,6 +714,69 @@ final class AppModel: ObservableObject {
                 return "Enregistré sur l'iPhone — sync au retour réseau"
             }
             throw error
+        }
+    }
+
+    func refreshRpg() async {
+        guard isLoggedIn, networkStatus == .online else { return }
+        do {
+            rpgState = try await api.rpgMe()
+        } catch {
+            // keep previous
+        }
+    }
+
+    func handleRpgLoot(_ loot: RpgLoot?) {
+        guard let loot else { return }
+        lastRpgLoot = loot
+        if var st = rpgState, var p = st.profile {
+            p.level = loot.level ?? p.level
+            p.xp = loot.xp ?? p.xp
+            p.title = loot.title ?? p.title
+            p.progressPct = loot.progressPct ?? p.progressPct
+            p.xpToNext = loot.xpToNext ?? p.xpToNext
+            if let s = loot.streakDays { p.streakDays = s }
+            st.profile = p
+            rpgState = st
+        }
+        var bits: [String] = []
+        if loot.levelUp == true { bits.append("LEVEL UP → \(loot.level ?? 0)") }
+        if let g = loot.xpGained, g != 0 { bits.append("+\(g) XP") }
+        if let b = loot.badgesEarned?.first {
+            bits.append("\(b.icon ?? "🏅") \(b.name ?? "Badge")")
+        }
+        if let q = loot.questsCompleted?.first {
+            bits.append("📜 \(q.title ?? "Quête")")
+        }
+        let msg: String
+        if loot.levelUp == true {
+            msg = loot.phraseLevelUp ?? loot.phrase ?? "Niveau \(loot.level ?? 0) !"
+        } else if (loot.xpGained ?? 0) > 0 {
+            msg = loot.phrase ?? "Butin +\(loot.xpGained ?? 0) XP"
+        } else {
+            msg = loot.phrase ?? "Noté"
+        }
+        showToast(
+            msg,
+            variant: (loot.levelUp == true || !(loot.badgesEarned ?? []).isEmpty) ? .success : .info,
+            detail: bits.isEmpty ? nil : bits.joined(separator: " · "),
+            label: "Beerquest",
+            durationMs: loot.levelUp == true ? 5200 : 3800
+        )
+        Task { await refreshRpg() }
+    }
+
+    func equipRpgClass(_ key: String) async {
+        do {
+            let ok = try await api.rpgSetClass(key)
+            if ok {
+                await refreshRpg()
+                showToast("Classe équipée", variant: .success, label: "Beerquest")
+            } else {
+                showToast("Impossible d’équiper", variant: .error, label: "Beerquest")
+            }
+        } catch {
+            showToast("Impossible d’équiper", variant: .error, label: "Beerquest")
         }
     }
 

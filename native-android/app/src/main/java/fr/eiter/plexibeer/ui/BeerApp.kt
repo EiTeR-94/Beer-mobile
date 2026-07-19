@@ -386,11 +386,25 @@ private fun MainScreen(vm: AppViewModel) {
                 }
             }
             Spacer(Modifier.height(8.dp))
+            // Beerquest HUD
+            vm.rpgState?.profile?.takeIf { vm.rpgActive }?.let { profile ->
+                BqHudBar(profile) {
+                    vm.refreshRpg()
+                    vm.openSheet(BeerSheet.GRIMOIRE)
+                }
+                Spacer(Modifier.height(8.dp))
+            }
             // 3-col button grid like iOS
             val buttons = buildList {
                 if (vm.isAdmin) {
                     add("Patch notes" to { vm.openSheet(BeerSheet.PATCHNOTES) })
                     add("Admin" to { vm.openSheet(BeerSheet.ADMIN) })
+                }
+                if (vm.rpgActive) {
+                    add("Grimoire" to {
+                        vm.refreshRpg()
+                        vm.openSheet(BeerSheet.GRIMOIRE)
+                    })
                 }
                 // Invités : historique perso uniquement (pas wishlist / cadeaux)
                 if (!vm.isInvite) {
@@ -493,6 +507,7 @@ private fun MainScreen(vm: AppViewModel) {
         BeerSheet.EDIT -> vm.editingCheckin?.let { CheckinEditSheet(vm, it) }
         BeerSheet.PATCHNOTES -> PatchnotesSheet(vm)
         BeerSheet.ADMIN -> AdminStubSheet(vm)
+        BeerSheet.GRIMOIRE -> GrimoireSheet(vm)
         null -> {}
     }
 }

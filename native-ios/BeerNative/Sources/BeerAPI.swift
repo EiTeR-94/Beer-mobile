@@ -482,6 +482,34 @@ final class BeerAPI {
         return decoded
     }
 
+    /// Beerquest state — enabled=false si RPG off.
+    func rpgMe() async throws -> RpgState {
+        let (data, http, _) = try await request(path: "/api/rpg/me", method: "GET", body: nil)
+        if http.statusCode == 401 { throw BeerAPIError.unauthorized }
+        if http.statusCode == 403 { throw BeerAPIError.forbidden }
+        guard http.statusCode >= 200 && http.statusCode < 300 else {
+            return RpgState(enabled: false)
+        }
+        return (try? JSONDecoder().decode(RpgState.self, from: data)) ?? RpgState(enabled: false)
+    }
+
+    func rpgSetClass(_ key: String) async throws -> Bool {
+        let body = try JSONSerialization.data(withJSONObject: ["class": key])
+        let (data, http, _) = try await request(
+            path: "/api/rpg/class",
+            method: "POST",
+            body: body,
+            contentType: "application/json"
+        )
+        if http.statusCode >= 200 && http.statusCode < 300 {
+            if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                return (obj["ok"] as? Bool) == true
+            }
+            return true
+        }
+        return false
+    }
+
     func logout() async {
         if !isInviteMode {
             _ = try? await request(path: "/api/logout", method: "POST", body: nil)
