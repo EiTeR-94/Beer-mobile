@@ -223,7 +223,7 @@ private struct AccountMenuOverlay: View {
             .frame(maxWidth: 320)
             .background(Theme.card)
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.border))
-            .clipShape(RoundedCornerShape(16))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
             .padding(.top, 56)
             .padding(.trailing, 12)
             .padding(.leading, 48)
