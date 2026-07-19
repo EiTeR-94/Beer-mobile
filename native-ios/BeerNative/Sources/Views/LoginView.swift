@@ -142,7 +142,7 @@ struct LoginView: View {
                                 BeerField(
                                     label: "Lien d'invitation",
                                     text: $inviteLink,
-                                    placeholder: "https://eiter.freeboxos.fr/beer/join/…"
+                                    placeholder: "https://eiter.freeboxos.fr/beer…/join/…"
                                 )
                                 .padding(.top, 10)
                             }
@@ -227,7 +227,7 @@ struct LoginView: View {
             return s
         }
         // Cherche une URL join dans un texte collé plus large
-        if let range = s.range(of: #"https?://[^\s]+/beer/join/[A-Za-z0-9_-]{24,}"#, options: .regularExpression) {
+        if let range = s.range(of: #"https?://[^\s]+/beer(?:-alpha)?/join/[A-Za-z0-9_-]{24,}"#, options: .regularExpression) {
             let url = String(s[range])
             if InviteSessionStore.parseInviteToken(url) != nil { return url }
         }

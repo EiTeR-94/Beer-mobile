@@ -7,6 +7,9 @@ object ServerSettings {
     /** Fallback 4G si AAAA Freebox casse le TLS (IPv4 + SNI host). */
     const val WAN_IPV4_API_BASE = "https://$WAN_IPV4/beer/"
     const val LAN_API_BASE = "https://192.168.1.50:8444/beer/"
+    /** Beerquest alpha (clone isolé) — invites IPA/APK */
+    const val ALPHA_API_BASE_STRING = "https://$CANONICAL_HOST/beer-alpha/"
+    const val ALPHA_WAN_IPV4_API_BASE = "https://$WAN_IPV4/beer-alpha/"
     const val LAN_PROBE_TIMEOUT_SEC = 15L
 
     @Volatile
@@ -24,12 +27,42 @@ object ServerSettings {
 
     val candidateURLs: List<String>
         get() = if (inviteMode) {
-            listOf(API_BASE_STRING, WAN_IPV4_API_BASE)
+            // Prefer last successful runtime base (prod beer or beer-alpha)
+            val primary = runtimeBase?.takeIf { !isLanEndpoint(it) } ?: API_BASE_STRING
+            val alt = if (isAlphaBase(primary)) {
+                listOf(primary, ALPHA_WAN_IPV4_API_BASE)
+            } else {
+                listOf(primary, WAN_IPV4_API_BASE)
+            }
+            alt.distinct()
         } else {
             listOf(LAN_API_BASE, API_BASE_STRING)
         }
 
-    val inviteCandidateURLs: List<String> = listOf(API_BASE_STRING, WAN_IPV4_API_BASE)
+    val inviteCandidateURLs: List<String>
+        get() = listOf(API_BASE_STRING, WAN_IPV4_API_BASE, ALPHA_API_BASE_STRING, ALPHA_WAN_IPV4_API_BASE)
+
+    fun isAlphaBase(url: String): Boolean =
+        url.contains("/beer-alpha")
+
+    /**
+     * Déduit la base API depuis un lien d'invitation.
+     * https://host/beer-alpha/join/TOKEN → https://host/beer-alpha/
+     * https://host/beer/join/TOKEN → https://host/beer/
+     */
+    fun basesFromInviteLink(link: String): List<String> {
+        val s = link.trim()
+        val joinIdx = s.indexOf("/join/")
+        if (joinIdx < 0) return inviteCandidateURLs
+        val prefix = s.substring(0, joinIdx).trimEnd('/')
+        // prefix = https://host[/path]
+        val isAlpha = prefix.endsWith("/beer-alpha") || prefix.contains("/beer-alpha")
+        return if (isAlpha) {
+            listOf(ALPHA_API_BASE_STRING, ALPHA_WAN_IPV4_API_BASE)
+        } else {
+            listOf(API_BASE_STRING, WAN_IPV4_API_BASE)
+        }
+    }
 
     fun isLanEndpoint(url: String): Boolean = url.contains(":8444")
 
@@ -64,8 +97,12 @@ object ServerSettings {
     /** Origin without path: https://host:port */
     fun serverOrigin(fromBase: String = effectiveBase): String {
         val base = normalizeInput(fromBase).trimEnd('/')
-        // strip trailing /beer
-        return base.removeSuffix("/beer")
+        // strip trailing app root (/beer or /beer-alpha)
+        return when {
+            base.endsWith("/beer-alpha") -> base.removeSuffix("/beer-alpha")
+            base.endsWith("/beer") -> base.removeSuffix("/beer")
+            else -> base
+        }
     }
 
     /**
@@ -77,8 +114,13 @@ object ServerSettings {
         if (path.startsWith("http://") || path.startsWith("https://")) return path
         val origin = serverOrigin(base)
         val p = if (path.startsWith("/")) path else "/$path"
-        // server serves photos under /beer/photos/ or absolute /photos/
-        return if (p.startsWith("/beer/") || p.startsWith("/static/") || p.startsWith("/photos/")) {
+        // server serves photos under /beer/photos/, /beer-alpha/photos/ or absolute /photos/
+        return if (
+            p.startsWith("/beer/") ||
+            p.startsWith("/beer-alpha/") ||
+            p.startsWith("/static/") ||
+            p.startsWith("/photos/")
+        ) {
             origin + p
         } else if (p.startsWith("/")) {
             // relative to beer root often "photos/xxx"
@@ -94,6 +136,7 @@ object ServerSettings {
     fun giftPhotoPath(photoPath: String?): String? {
         if (photoPath.isNullOrBlank()) return null
         val name = photoPath.substringAfterLast('/')
-        return "/beer/photos/$name"
+        val root = if (isAlphaBase(effectiveBase)) "/beer-alpha" else "/beer"
+        return "$root/photos/$name"
     }
 }

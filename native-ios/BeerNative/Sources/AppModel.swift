@@ -512,7 +512,7 @@ final class AppModel: ObservableObject {
 
     func handleOpenURL(_ url: URL) async {
         let s = url.absoluteString
-        if s.contains("/beer/join") || url.scheme == "plexibeer" {
+        if s.contains("/beer/join") || s.contains("/beer-alpha/join") || url.scheme == "plexibeer" {
             pendingInviteLink = s
             // Auto-activate if already on login and not logged in
             if !isLoggedIn {

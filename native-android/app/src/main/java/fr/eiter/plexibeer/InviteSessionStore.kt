@@ -20,6 +20,8 @@ object InviteSessionStore {
     private const val KEY_LABEL = "label"
     private const val KEY_EXPIRES = "expires_at"
     private const val KEY_ACTIVE = "active"
+    /** Base API (beer/ ou beer-alpha/) pour rester sur le bon backend après restart. */
+    private const val KEY_API_BASE = "api_base"
 
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -57,23 +59,30 @@ object InviteSessionStore {
     fun expiresAt(context: Context): String? =
         prefs(context).getString(KEY_EXPIRES, null)
 
+    fun apiBase(context: Context): String? =
+        prefs(context).getString(KEY_API_BASE, null)?.takeIf { it.isNotBlank() }
+
     fun save(
         context: Context,
         accessToken: String,
         user: String,
         label: String?,
         expiresAt: String?,
-        deviceId: String
+        deviceId: String,
+        apiBase: String? = null
     ) {
-        prefs(context).edit()
+        val ed = prefs(context).edit()
             .putBoolean(KEY_ACTIVE, true)
             .putString(KEY_TOKEN, accessToken)
             .putString(KEY_USER, user)
             .putString(KEY_LABEL, label)
             .putString(KEY_EXPIRES, expiresAt)
             .putString(KEY_DEVICE, deviceId)
-            .apply()
-        Log.i(TAG, "invite session saved user=$user")
+        if (!apiBase.isNullOrBlank()) {
+            ed.putString(KEY_API_BASE, ServerSettings.normalizeInput(apiBase))
+        }
+        ed.apply()
+        Log.i(TAG, "invite session saved user=$user base=${apiBase ?: "?"}")
     }
 
     fun clear(context: Context) {

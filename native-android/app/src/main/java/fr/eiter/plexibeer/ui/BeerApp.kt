@@ -81,7 +81,7 @@ private fun readInviteFromClipboard(context: Context): String? {
         if (raw.isEmpty()) return null
         if (InviteSessionStore.parseInviteToken(raw) != null) return raw
         // Cherche une URL join dans un texte plus large
-        val re = Regex("""https?://[^\s]+/beer/join/[A-Za-z0-9_-]{24,}""")
+        val re = Regex("""https?://[^\s]+/beer(?:-alpha)?/join/[A-Za-z0-9_-]{24,}""")
         val m = re.find(raw)?.value
         if (m != null && InviteSessionStore.parseInviteToken(m) != null) m else null
     } catch (_: Exception) {

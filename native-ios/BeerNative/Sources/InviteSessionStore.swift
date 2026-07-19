@@ -10,6 +10,8 @@ enum InviteSessionStore {
     private static let keyLabel = "label"
     private static let keyExpires = "expires_at"
     private static let keyActive = "active"
+    /// Base API (beer/ ou beer-alpha/) pour rester sur le bon backend après restart.
+    private static let keyApiBase = "api_base"
 
     private static let ud = UserDefaults.standard
 
@@ -59,12 +61,35 @@ enum InviteSessionStore {
         set { ud.set(newValue, forKey: keyExpires) }
     }
 
-    static func save(accessToken: String, user: String, label: String?, expiresAt: String?, deviceId: String) {
+    static var apiBase: String? {
+        get {
+            guard let raw = ud.string(forKey: keyApiBase)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !raw.isEmpty else { return nil }
+            return raw
+        }
+        set {
+            if let v = newValue?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty {
+                ud.set(ServerSettings.normalizeInput(v), forKey: keyApiBase)
+            } else {
+                ud.removeObject(forKey: keyApiBase)
+            }
+        }
+    }
+
+    static func save(
+        accessToken: String,
+        user: String,
+        label: String?,
+        expiresAt: String?,
+        deviceId: String,
+        apiBase: String? = nil
+    ) {
         self.accessToken = accessToken
         keychainSet(keyDevice, deviceId)
         username = user
         self.label = label
         self.expiresAt = expiresAt
+        if let apiBase { self.apiBase = apiBase }
         ud.set(true, forKey: keyActive)
     }
 
@@ -75,6 +100,7 @@ enum InviteSessionStore {
         username = nil
         label = nil
         expiresAt = nil
+        apiBase = nil
         ud.set(false, forKey: keyActive)
         if let kept { keychainSet(keyDevice, kept) }
     }
@@ -86,6 +112,7 @@ enum InviteSessionStore {
         username = nil
         label = nil
         expiresAt = nil
+        apiBase = nil
         ud.set(false, forKey: keyActive)
         ud.removeObject(forKey: keyUser)
         ud.removeObject(forKey: keyLabel)

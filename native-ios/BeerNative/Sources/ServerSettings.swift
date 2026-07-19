@@ -8,6 +8,9 @@ enum ServerSettings {
     /// Fallback 4G si AAAA Freebox casse le TLS (IPv4 + SNI host).
     static let wanIPv4ApiBaseString = "https://\(wanIPv4)/beer/"
     static let lanApiBaseString = "https://192.168.1.50:8444/beer/"
+    /// Beerquest alpha (clone isolé) — invites IPA/APK
+    static let alphaApiBaseString = "https://\(canonicalHost)/beer-alpha/"
+    static let alphaWanIPv4ApiBaseString = "https://\(wanIPv4)/beer-alpha/"
     static let lanProbeTimeoutSec: TimeInterval = 15
 
     static var apiBase: URL { URL(string: apiBaseString)! }
@@ -32,8 +35,11 @@ enum ServerSettings {
     /// Comme Android candidateURLs (+ skip LAN en 5G).
     static var candidateURLs: [String] {
         if inviteMode {
-            // Android : FQDN puis WAN IPv4 — transport force IPv4+SNI dans les deux cas
-            return [apiBaseString, wanIPv4ApiBaseString]
+            let primary = (runtimeBase.flatMap { isLanEndpoint($0) ? nil : $0 }) ?? apiBaseString
+            if isAlphaBase(primary) {
+                return [primary, alphaWanIPv4ApiBaseString]
+            }
+            return [primary, wanIPv4ApiBaseString]
         }
         if preferWanOnly {
             return [apiBaseString, wanIPv4ApiBaseString]
@@ -41,7 +47,26 @@ enum ServerSettings {
         return [lanApiBaseString, apiBaseString]
     }
 
-    static let inviteCandidateURLs: [String] = [apiBaseString, wanIPv4ApiBaseString]
+    static var inviteCandidateURLs: [String] {
+        [apiBaseString, wanIPv4ApiBaseString, alphaApiBaseString, alphaWanIPv4ApiBaseString]
+    }
+
+    static func isAlphaBase(_ url: String) -> Bool {
+        url.contains("/beer-alpha")
+    }
+
+    /// Déduit les bases API depuis un lien d'invitation (prod beer vs beer-alpha).
+    static func basesFromInviteLink(_ link: String) -> [String] {
+        let s = link.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let range = s.range(of: "/join/") else {
+            return inviteCandidateURLs
+        }
+        let prefix = String(s[..<range.lowerBound])
+        if prefix.contains("/beer-alpha") {
+            return [alphaApiBaseString, alphaWanIPv4ApiBaseString]
+        }
+        return [apiBaseString, wanIPv4ApiBaseString]
+    }
 
     static func isLanEndpoint(_ url: String) -> Bool {
         url.contains(":8444")
@@ -78,7 +103,7 @@ enum ServerSettings {
         if path.hasPrefix("http") { return URL(string: path) }
         let origin = serverOrigin(from: base)
         let p = path.hasPrefix("/") ? path : "/\(path)"
-        if p.hasPrefix("/beer/") || p.hasPrefix("/static/") || p.hasPrefix("/photos/") {
+        if p.hasPrefix("/beer/") || p.hasPrefix("/beer-alpha/") || p.hasPrefix("/static/") || p.hasPrefix("/photos/") {
             return URL(string: origin + p)
         }
         let root = normalizeInput(base.absoluteString)

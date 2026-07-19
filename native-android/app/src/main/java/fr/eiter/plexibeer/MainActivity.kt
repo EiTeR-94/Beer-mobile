@@ -39,7 +39,7 @@ class MainActivity : ComponentActivity() {
 
     private fun handleInviteIntent(intent: Intent?) {
         val data = intent?.data?.toString() ?: return
-        if (data.contains("/beer/join")) {
+        if (data.contains("/beer/join") || data.contains("/beer-alpha/join")) {
             vm.offerInviteLink(data)
         }
     }

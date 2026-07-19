@@ -92,7 +92,10 @@ struct GiftsSheetView: View {
 
     private func giftCard(_ g: GiftIdea) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            BeerImage(path: g.photoPath.map { "/beer/photos/\(($0 as NSString).lastPathComponent)" })
+            BeerImage(path: g.photoPath.map {
+                let root = ServerSettings.isAlphaBase(ServerSettings.effectiveBase) ? "/beer-alpha" : "/beer"
+                return "\(root)/photos/\(($0 as NSString).lastPathComponent)"
+            })
                 .frame(width: 88, height: 88)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))

@@ -83,7 +83,8 @@ final class BeerAPI {
     func enableInviteMode(_ enabled: Bool) {
         ServerSettings.inviteMode = enabled
         if enabled {
-            setBaseURL(ServerSettings.apiBaseString)
+            let saved = InviteSessionStore.apiBase ?? ServerSettings.apiBaseString
+            setBaseURL(saved)
         }
     }
 
@@ -384,12 +385,14 @@ final class BeerAPI {
         ])
         var lastError: Error?
 
-        for candidate in ServerSettings.inviteCandidateURLs {
+        // Beer prod vs Beerquest alpha : base déduite du lien
+        let candidates = ServerSettings.basesFromInviteLink(inviteLink)
+        for candidate in candidates {
             do {
                 setBaseURL(candidate)
                 enableInviteMode(true)
-                // URL logique toujours FQDN — le transport force IPv4 + SNI
-                var req = URLRequest(url: URL(string: "https://\(ServerSettings.canonicalHost)/beer/api/native/join")!)
+                // URL join = base + api/native/join (beer ou beer-alpha)
+                var req = URLRequest(url: absURL("api/native/join"))
                 req.httpMethod = "POST"
                 req.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
@@ -426,9 +429,11 @@ final class BeerAPI {
                     user: decoded.user ?? "invite",
                     label: decoded.label,
                     expiresAt: decoded.expiresAt,
-                    deviceId: decoded.deviceId ?? deviceId
+                    deviceId: decoded.deviceId ?? deviceId,
+                    apiBase: candidate
                 )
                 enableInviteMode(true)
+                setBaseURL(candidate)
                 return decoded
             } catch let e as BeerAPIError {
                 lastError = e

@@ -88,7 +88,8 @@ class BeerAPI private constructor(context: Context) {
     fun enableInviteMode(enabled: Boolean) {
         ServerSettings.inviteMode = enabled
         if (enabled) {
-            setBaseURL(ServerSettings.API_BASE_STRING)
+            val saved = InviteSessionStore.apiBase(appContext)
+            setBaseURL(saved ?: ServerSettings.API_BASE_STRING)
         }
     }
 
@@ -275,7 +276,9 @@ class BeerAPI private constructor(context: Context) {
         BeerSessionStore.clear(appContext)
 
         var lastError: Exception? = null
-        for (candidate in ServerSettings.inviteCandidateURLs) {
+        // Beer prod vs Beerquest alpha : base déduite du lien (sinon candidates connus)
+        val candidates = ServerSettings.basesFromInviteLink(inviteLink)
+        for (candidate in candidates) {
             try {
                 setBaseURL(candidate)
                 enableInviteMode(true)
@@ -326,10 +329,12 @@ class BeerAPI private constructor(context: Context) {
                     user = decoded.user ?: "invite",
                     label = decoded.label,
                     expiresAt = decoded.expiresAt,
-                    deviceId = boundDevice
+                    deviceId = boundDevice,
+                    apiBase = candidate
                 )
                 enableInviteMode(true)
-                // Garder l'endpoint qui a fonctionné
+                // Garder l'endpoint qui a fonctionné (beer ou beer-alpha)
+                setBaseURL(candidate)
                 return@withContext decoded
             } catch (e: Exception) {
                 lastError = e
