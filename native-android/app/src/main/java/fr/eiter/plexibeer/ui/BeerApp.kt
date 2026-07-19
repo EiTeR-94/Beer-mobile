@@ -23,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -357,159 +358,337 @@ private fun LoginScreen(vm: AppViewModel) {
 private fun MainScreen(vm: AppViewModel) {
     BackHandler(enabled = vm.sheet != null) { vm.closeSheet() }
 
-    Column(Modifier.fillMaxSize()) {
-        // Header
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                Column(Modifier.weight(1f)) {
-                    Text("Beer Log", style = MaterialTheme.typography.headlineSmall, color = BeerColors.text)
-                    Text(
-                        if (vm.serverVersion.isNotBlank()) "v${vm.serverVersion} · scan · photo · note"
-                        else "scan · photo · note",
-                        color = BeerColors.muted,
-                        fontSize = 12.sp
-                    )
-                }
-                val badge = when {
-                    vm.isInvite -> vm.inviteLabel?.let { "invité · $it" } ?: "invité"
-                    else -> vm.user
-                }
-                badge?.let { u ->
-                    Text(
-                        u,
-                        color = BeerColors.muted,
-                        fontSize = 11.sp,
-                        modifier = Modifier
-                            .border(1.dp, BeerColors.border, RoundedCornerShape(999.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            // Beerquest HUD
-            vm.rpgState?.profile?.takeIf { vm.rpgActive }?.let { profile ->
-                BqHudBar(profile) {
-                    vm.refreshRpg()
-                    vm.openSheet(BeerSheet.GRIMOIRE)
+    var showAccountMenu by remember { mutableStateOf(false) }
+    var showLogoutConfirm by remember { mutableStateOf(false) }
+    var showFeedback by remember { mutableStateOf(false) }
+
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            // Header compact — actions dans « Mon compte » (parité PWA)
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Beer Log", style = MaterialTheme.typography.headlineSmall, color = BeerColors.text)
+                        Text(
+                            if (vm.serverVersion.isNotBlank()) "v${vm.serverVersion} · scan · photo · note"
+                            else "scan · photo · note",
+                            color = BeerColors.muted,
+                            fontSize = 12.sp
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { showAccountMenu = true },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = BeerColors.text),
+                        border = BorderStroke(1.dp, BeerColors.border),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text("Mon compte", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    }
                 }
                 Spacer(Modifier.height(8.dp))
-            }
-            // 3-col button grid like iOS
-            val buttons = buildList {
-                if (vm.isAdmin) {
-                    add("Patch notes" to { vm.openSheet(BeerSheet.PATCHNOTES) })
-                    add("Admin" to { vm.openSheet(BeerSheet.ADMIN) })
-                }
-                if (vm.rpgActive) {
-                    add("Grimoire" to {
+                // Beerquest HUD (raccourci grimoire, comme PWA)
+                vm.rpgState?.profile?.takeIf { vm.rpgActive }?.let { profile ->
+                    BqHudBar(profile) {
                         vm.refreshRpg()
                         vm.openSheet(BeerSheet.GRIMOIRE)
-                    })
-                }
-                // Invités : historique perso uniquement (pas wishlist / cadeaux)
-                if (!vm.isInvite) {
-                    add("À boire" to { vm.openSheet(BeerSheet.WISHLIST) })
-                }
-                add("Historique" to { vm.openSheet(BeerSheet.HISTORY) })
-                if (!vm.isInvite) {
-                    add("Idées cadeaux" to { vm.openSheet(BeerSheet.GIFTS) })
-                }
-                // pendingCount is Compose state — live badge after offline enqueue
-                val pending = vm.pendingCount
-                if (pending > 0) {
-                    add("En attente ($pending)" to { vm.openSheet(BeerSheet.PENDING) })
-                }
-                // Déconnexion = bouton dédié hors grille (confirmation alerte, comme iOS)
-            }
-            buttons.chunked(3).forEach { row ->
-                Row(
-                    Modifier.fillMaxWidth().padding(bottom = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    row.forEach { (title, action) ->
-                        BeerGhostButton(title, action, Modifier.weight(1f))
                     }
-                    // pad incomplete rows
-                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                    Spacer(Modifier.height(8.dp))
                 }
             }
-            // Bouton déconnexion rouge + alerte confirmation (parité iOS 4.2.7)
-            var showLogoutConfirm by remember { mutableStateOf(false) }
-            OutlinedButton(
-                onClick = { showLogoutConfirm = true },
-                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = BeerColors.error),
-                border = BorderStroke(1.dp, BeerColors.error.copy(alpha = 0.55f)),
-                shape = RoundedCornerShape(10.dp)
+
+            if (vm.networkStatus != NetworkStatus.ONLINE || vm.pendingCount > 0) {
+                Box(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+                    NetworkStatusBar(vm.networkStatus, vm.pendingCount, vm.lastEndpointLatencyMs)
+                }
+                if (vm.networkStatus != NetworkStatus.ONLINE && vm.pendingCount > 0) {
+                    Text(
+                        "Mode offline — ${vm.pendingCount} en file, sync auto au retour réseau",
+                        color = BeerColors.muted,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            BeerStepNav(vm.wizardStep) { vm.wizardStep = it }
+
+            Box(Modifier.weight(1f)) {
+                BeerWizard(vm)
+            }
+        }
+
+        if (showAccountMenu) {
+            AccountMenuOverlay(
+                vm = vm,
+                onDismiss = { showAccountMenu = false },
+                onOpen = { sheet ->
+                    showAccountMenu = false
+                    when (sheet) {
+                        BeerSheet.GRIMOIRE -> {
+                            vm.refreshRpg()
+                            vm.openSheet(sheet)
+                        }
+                        else -> vm.openSheet(sheet)
+                    }
+                },
+                onFeedback = {
+                    showAccountMenu = false
+                    showFeedback = true
+                },
+                onLogout = {
+                    showAccountMenu = false
+                    showLogoutConfirm = true
+                }
+            )
+        }
+
+        if (showFeedback) {
+            FeedbackDialog(
+                onDismiss = { showFeedback = false },
+                onSend = { msg, cat ->
+                    vm.sendFeedback(msg, cat) { ok ->
+                        if (ok) showFeedback = false
+                    }
+                }
+            )
+        }
+
+        if (showLogoutConfirm) {
+            val invite = vm.isInvite
+            AlertDialog(
+                onDismissRequest = { showLogoutConfirm = false },
+                title = { Text("Se déconnecter ?") },
+                text = {
+                    Text(
+                        if (invite) {
+                            "Tu perds l'accès sur cet appareil. Il faudra un nouveau lien d'invitation pour revenir."
+                        } else {
+                            "Tu devras te reconnecter (Wi‑Fi maison ou VPN) pour accéder à Beer Log."
+                        }
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showLogoutConfirm = false
+                        vm.logout()
+                    }) {
+                        Text("Se déconnecter", color = BeerColors.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showLogoutConfirm = false }) {
+                        Text("Annuler")
+                    }
+                }
+            )
+        }
+
+        // Sheets as full-screen overlays
+        when (vm.sheet) {
+            BeerSheet.HISTORY -> HistorySheet(vm)
+            BeerSheet.GALLERY -> GallerySheet(vm)
+            BeerSheet.WISHLIST -> WishlistSheet(vm)
+            BeerSheet.GIFTS -> GiftsSheet(vm)
+            BeerSheet.PENDING -> PendingSheet(vm)
+            BeerSheet.DETAIL -> vm.selectedCheckin?.let { CheckinDetailSheet(vm, it) }
+            BeerSheet.EDIT -> vm.editingCheckin?.let { CheckinEditSheet(vm, it) }
+            BeerSheet.PATCHNOTES -> PatchnotesSheet(vm)
+            BeerSheet.ADMIN -> AdminStubSheet(vm)
+            BeerSheet.GRIMOIRE -> GrimoireSheet(vm)
+            null -> {}
+        }
+    }
+}
+
+@Composable
+private fun AccountMenuOverlay(
+    vm: AppViewModel,
+    onDismiss: () -> Unit,
+    onOpen: (BeerSheet) -> Unit,
+    onFeedback: () -> Unit,
+    onLogout: () -> Unit,
+) {
+    BackHandler(onBack = onDismiss)
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.45f))
+                .clickable(onClick = onDismiss)
+        )
+        Column(
+            Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 56.dp, end = 12.dp, start = 48.dp)
+                .widthIn(max = 320.dp)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .border(1.dp, BeerColors.border, RoundedCornerShape(16.dp))
+                .background(BeerColors.card)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 10.dp, vertical = 12.dp)
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.Top
             ) {
-                Text("Déconnexion", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-            }
-            if (showLogoutConfirm) {
-                val invite = vm.isInvite
-                AlertDialog(
-                    onDismissRequest = { showLogoutConfirm = false },
-                    title = { Text("Se déconnecter ?") },
-                    text = {
-                        Text(
-                            if (invite) {
-                                "Tu perds l'accès sur cet appareil. Il faudra un nouveau lien d'invitation pour revenir."
-                            } else {
-                                "Tu devras te reconnecter (Wi‑Fi maison ou VPN) pour accéder à Beer Log."
-                            }
-                        )
-                    },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            showLogoutConfirm = false
-                            vm.logout()
-                        }) {
-                            Text("Se déconnecter", color = BeerColors.error)
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showLogoutConfirm = false }) {
-                            Text("Annuler")
-                        }
-                    }
-                )
-            }
-        }
-
-        if (vm.networkStatus != NetworkStatus.ONLINE || vm.pendingCount > 0) {
-            Box(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
-                NetworkStatusBar(vm.networkStatus, vm.pendingCount, vm.lastEndpointLatencyMs)
-            }
-            if (vm.networkStatus != NetworkStatus.ONLINE && vm.pendingCount > 0) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Connecté",
+                        color = BeerColors.muted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        when {
+                            vm.isInvite -> vm.inviteLabel?.let { "invité · $it" } ?: "invité"
+                            else -> vm.user ?: "—"
+                        },
+                        color = BeerColors.text,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                }
                 Text(
-                    "Mode offline — ${vm.pendingCount} en file, sync auto au retour réseau",
+                    "×",
                     color = BeerColors.muted,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+                    fontSize = 20.sp,
+                    modifier = Modifier
+                        .clickable(onClick = onDismiss)
+                        .padding(4.dp)
                 )
             }
-        }
+            Spacer(Modifier.height(6.dp))
 
-        BeerStepNav(vm.wizardStep) { vm.wizardStep = it }
+            AccountSection("Journal")
+            AccountMenuItem("📜 Historique") { onOpen(BeerSheet.HISTORY) }
+            if (!vm.isInvite) {
+                AccountMenuItem("🍺 À boire") { onOpen(BeerSheet.WISHLIST) }
+                AccountMenuItem("🎁 Idées cadeaux") { onOpen(BeerSheet.GIFTS) }
+            }
+            if (vm.rpgActive) {
+                AccountMenuItem("📖 Grimoire") { onOpen(BeerSheet.GRIMOIRE) }
+            }
+            if (vm.pendingCount > 0) {
+                AccountMenuItem("⏳ En attente (${vm.pendingCount})") { onOpen(BeerSheet.PENDING) }
+            }
 
-        Box(Modifier.weight(1f)) {
-            BeerWizard(vm)
+            AccountSection("Parler à l’admin")
+            AccountMenuItem("💬 Un retour") { onFeedback() }
+
+            if (vm.isAdmin) {
+                AccountSection("Admin")
+                AccountMenuItem("⚙️ Administration") { onOpen(BeerSheet.ADMIN) }
+                AccountMenuItem("📝 Patch notes") { onOpen(BeerSheet.PATCHNOTES) }
+            }
+
+            AccountSection("Session")
+            AccountMenuItem("Déconnexion", danger = true) { onLogout() }
         }
     }
+}
 
-    // Sheets as full-screen overlays
-    when (vm.sheet) {
-        BeerSheet.HISTORY -> HistorySheet(vm)
-        BeerSheet.GALLERY -> GallerySheet(vm)
-        BeerSheet.WISHLIST -> WishlistSheet(vm)
-        BeerSheet.GIFTS -> GiftsSheet(vm)
-        BeerSheet.PENDING -> PendingSheet(vm)
-        BeerSheet.DETAIL -> vm.selectedCheckin?.let { CheckinDetailSheet(vm, it) }
-        BeerSheet.EDIT -> vm.editingCheckin?.let { CheckinEditSheet(vm, it) }
-        BeerSheet.PATCHNOTES -> PatchnotesSheet(vm)
-        BeerSheet.ADMIN -> AdminStubSheet(vm)
-        BeerSheet.GRIMOIRE -> GrimoireSheet(vm)
-        null -> {}
-    }
+@Composable
+private fun AccountSection(title: String) {
+    Text(
+        title,
+        color = BeerColors.muted,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(start = 6.dp, top = 10.dp, bottom = 4.dp)
+    )
+}
+
+@Composable
+private fun AccountMenuItem(label: String, danger: Boolean = false, onClick: () -> Unit) {
+    Text(
+        label,
+        color = if (danger) BeerColors.error else BeerColors.text,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 14.sp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 11.dp)
+    )
+}
+
+@Composable
+private fun FeedbackDialog(
+    onDismiss: () -> Unit,
+    onSend: (message: String, category: String) -> Unit,
+) {
+    var message by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf("general") }
+    var sending by remember { mutableStateOf(false) }
+    val categories = listOf(
+        "general" to "Un avis général",
+        "bug" to "Un bug",
+        "idea" to "Une idée",
+        "ux" to "L’interface",
+        "rpg" to "Le RPG / la progression",
+        "other" to "Autre chose",
+    )
+    AlertDialog(
+        onDismissRequest = { if (!sending) onDismiss() },
+        title = { Text("Feedback") },
+        text = {
+            Column {
+                Text(
+                    "Dis-nous ce qui va, ce qui coince ou une idée. Seul l’admin le lit.",
+                    color = BeerColors.muted,
+                    fontSize = 12.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                Text("C’est plutôt…", fontSize = 12.sp, color = BeerColors.muted)
+                categories.forEach { (key, label) ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { category = key }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = category == key,
+                            onClick = { category = key },
+                            colors = RadioButtonDefaults.colors(selectedColor = BeerColors.accent)
+                        )
+                        Text(label, fontSize = 13.sp, color = BeerColors.text)
+                    }
+                }
+                OutlinedTextField(
+                    value = message,
+                    onValueChange = { if (it.length <= 1200) message = it },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
+                    placeholder = { Text("Écris librement…") },
+                    maxLines = 6
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (message.trim().length < 3 || sending) return@TextButton
+                    sending = true
+                    onSend(message.trim(), category)
+                },
+                enabled = message.trim().length >= 3 && !sending
+            ) {
+                Text(if (sending) "Envoi…" else "Envoyer")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !sending) {
+                Text("Annuler")
+            }
+        }
+    )
 }
 
 // ───────────────────────── Wizard ─────────────────────────

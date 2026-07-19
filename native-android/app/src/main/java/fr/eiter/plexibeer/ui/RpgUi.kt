@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -288,13 +289,25 @@ private fun ColumnScope.GrimoireBadges(state: RpgState) {
         fontSize = 12.sp
     )
     Spacer(Modifier.height(8.dp))
+    // weight(1f) : occupe tout l’espace restant du grimoire et scrolle.
+    // (avant : height(420.dp) → ~2/3 d’écran puis fond vide, badges coupés)
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = Modifier.fillMaxWidth().height(420.dp)
+        contentPadding = PaddingValues(bottom = 28.dp),
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
     ) {
-        items(badges.sortedWith(compareBy({ it.earned }, { -(it.progress.toDouble() / (it.target.coerceAtLeast(1))) }))) { b ->
+        items(
+            badges.sortedWith(
+                compareBy(
+                    { it.earned },
+                    { -(it.progress.toDouble() / (it.target.coerceAtLeast(1))) }
+                )
+            )
+        ) { b ->
             BadgeTile(b)
         }
     }
@@ -467,6 +480,7 @@ private fun BadgeTile(b: RpgBadge) {
     val pct = (b.progress.toFloat() / tgt).coerceIn(0f, 1f)
     Column(
         Modifier
+            .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .border(
                 1.dp,
@@ -488,7 +502,8 @@ private fun BadgeTile(b: RpgBadge) {
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 2,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
         Text(rarityLabelFr(b.rarity), color = BeerColors.muted, fontSize = 9.sp)
         Text(
@@ -497,6 +512,7 @@ private fun BadgeTile(b: RpgBadge) {
             fontSize = 10.sp
         )
         if (!b.earned) {
+            Spacer(Modifier.height(4.dp))
             LinearProgressIndicator(
                 progress = { pct },
                 modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(999.dp)),

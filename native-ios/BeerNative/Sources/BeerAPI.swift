@@ -517,6 +517,40 @@ final class BeerAPI {
         clearAllAuth()
     }
 
+    /// Feedback joueur (parité PWA « Un retour »).
+    func sendFeedback(message: String, category: String = "general", appVersion: String = "") async -> (Bool, String?) {
+        var payload: [String: Any] = [
+            "message": message,
+            "category": category,
+            "client_info": "native-ios",
+            "page_path": "native/ios",
+        ]
+        if !appVersion.isEmpty {
+            payload["app_version"] = appVersion
+        }
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else {
+            return (false, "JSON invalide")
+        }
+        do {
+            let (data, http, _) = try await request(
+                path: "/api/feedback",
+                method: "POST",
+                body: body,
+                contentType: "application/json"
+            )
+            if (200..<300).contains(http.statusCode) {
+                return (true, nil)
+            }
+            if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let detail = obj["detail"] as? String {
+                return (false, detail)
+            }
+            return (false, "Erreur \(http.statusCode)")
+        } catch {
+            return (false, error.localizedDescription)
+        }
+    }
+
     func lookup(barcode: String) async throws -> LookupResponse {
         let body = try JSONEncoder().encode(["barcode": barcode])
         let (data, http, _) = try await request(

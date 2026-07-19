@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
@@ -521,6 +522,29 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * Déconnexion effective — après confirmation UI (comme iOS).
      * Pas de toast : l’alerte système gère l’avertissement invité.
      */
+    fun sendFeedback(message: String, category: String, onDone: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            val ver = serverVersion.ifBlank {
+                try {
+                    getApplication<Application>().packageManager
+                        .getPackageInfo(getApplication<Application>().packageName, 0)
+                        .versionName ?: ""
+                } catch (_: Exception) {
+                    ""
+                }
+            }
+            val (ok, err) = withContext(Dispatchers.IO) {
+                api.sendFeedback(message, category, ver)
+            }
+            if (ok) {
+                showToast("Merci ! Feedback envoyé.", ToastPayload.Variant.SUCCESS, label = "Feedback")
+            } else {
+                showToast(err ?: "Envoi impossible", ToastPayload.Variant.ERROR, label = "Feedback")
+            }
+            onDone(ok)
+        }
+    }
+
     fun logout() {
         viewModelScope.launch {
             val wasInvite = isInvite || InviteSessionStore.hasInviteSession(getApplication())

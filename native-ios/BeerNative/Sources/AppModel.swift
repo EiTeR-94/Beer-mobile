@@ -560,6 +560,19 @@ final class AppModel: ObservableObject {
         networkStatus = .online
     }
 
+    /// Feedback joueur (parité PWA).
+    @discardableResult
+    func sendFeedback(message: String, category: String) async -> Bool {
+        let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? serverVersion
+        let (ok, err) = await api.sendFeedback(message: message, category: category, appVersion: ver)
+        if ok {
+            showToast("Merci ! Feedback envoyé.", variant: .success, label: "Feedback")
+        } else {
+            showToast(err ?? "Envoi impossible", variant: .error, label: "Feedback")
+        }
+        return ok
+    }
+
     func showToast(
         _ message: String,
         variant: ToastPayload.Variant = .info,

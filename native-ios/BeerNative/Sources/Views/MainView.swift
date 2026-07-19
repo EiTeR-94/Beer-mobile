@@ -9,6 +9,8 @@ struct MainView: View {
     @EnvironmentObject private var app: AppModel
     @State private var sheet: BeerSheet?
     @State private var showLogoutConfirm = false
+    @State private var showAccountMenu = false
+    @State private var showFeedback = false
 
     private var logoutWarning: String {
         if app.isInvite || InviteSessionStore.hasInviteSession {
@@ -17,26 +19,62 @@ struct MainView: View {
         return "Tu devras te reconnecter (Wi‑Fi maison ou VPN) pour accéder à Beer Log."
     }
 
-    var body: some View {
-        VStack(spacing: 0) {
-            header
-            if app.isLoggedIn, app.networkStatus != .online || app.pendingCount > 0 {
-                NetworkStatusBar(status: app.networkStatus, pending: app.pendingCount, latency: app.lastEndpointLatency)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 4)
-            }
-            if app.rpgActive, let p = app.rpgState?.profile {
-                BqHudCard(profile: p) {
-                    Task { await app.refreshRpg() }
-                    sheet = .grimoire
-                }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 6)
-            }
-            BeerStepNav(step: $app.wizardStep)
-            BeerWizardView(step: $app.wizardStep)
+    private var connectedLabel: String {
+        if app.isInvite {
+            if let label = app.inviteLabel, !label.isEmpty { return "invité · \(label)" }
+            return "invité"
         }
-        .background(Theme.bg)
+        return app.user ?? "—"
+    }
+
+    var body: some View {
+        ZStack {
+            VStack(spacing: 0) {
+                header
+                if app.isLoggedIn, app.networkStatus != .online || app.pendingCount > 0 {
+                    NetworkStatusBar(status: app.networkStatus, pending: app.pendingCount, latency: app.lastEndpointLatency)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 4)
+                }
+                if app.rpgActive, let p = app.rpgState?.profile {
+                    BqHudCard(profile: p) {
+                        Task { await app.refreshRpg() }
+                        sheet = .grimoire
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 6)
+                }
+                BeerStepNav(step: $app.wizardStep)
+                BeerWizardView(step: $app.wizardStep)
+            }
+            .background(Theme.bg)
+
+            if showAccountMenu {
+                AccountMenuOverlay(
+                    connectedLabel: connectedLabel,
+                    isInvite: app.isInvite,
+                    isAdmin: app.isAdmin,
+                    rpgActive: app.rpgActive,
+                    pendingCount: app.pendingCount,
+                    onDismiss: { showAccountMenu = false },
+                    onOpen: { s in
+                        showAccountMenu = false
+                        if s == .grimoire {
+                            Task { await app.refreshRpg() }
+                        }
+                        sheet = s
+                    },
+                    onFeedback: {
+                        showAccountMenu = false
+                        showFeedback = true
+                    },
+                    onLogout: {
+                        showAccountMenu = false
+                        showLogoutConfirm = true
+                    }
+                )
+            }
+        }
         // confirmationDialog AVANT fullScreenCover — sinon l'alerte ne sort pas (bug SwiftUI)
         .confirmationDialog(
             "Se déconnecter ?",
@@ -49,6 +87,11 @@ struct MainView: View {
             Button("Annuler", role: .cancel) {}
         } message: {
             Text(logoutWarning)
+        }
+        .sheet(isPresented: $showFeedback) {
+            FeedbackSheetView()
+                .environmentObject(app)
+                .preferredColorScheme(.dark)
         }
         .fullScreenCover(item: $sheet) { s in
             switch s {
@@ -75,67 +118,27 @@ struct MainView: View {
         .environmentObject(app)
     }
 
-    /// Titre + boutons en grille (évite le wrap brouillon du FlowLayout sur iPhone).
+    /// Titre + bouton Mon compte (parité PWA).
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 8) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Beer Log")
-                        .font(.system(size: Theme.Font.h1, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                    Text(app.serverVersion.isEmpty ? "scan · photo · note" : "v\(app.serverVersion) · scan · photo · note")
-                        .font(.system(size: Theme.Font.sub))
-                        .foregroundStyle(Theme.muted)
-                }
-                Spacer(minLength: 4)
-                let badge: String? = {
-                    if app.isInvite {
-                        if let label = app.inviteLabel, !label.isEmpty { return "invité · \(label)" }
-                        return "invité"
-                    }
-                    return app.user
-                }()
-                if let badge {
-                    Text(badge)
-                        .font(.system(size: Theme.Font.pill))
-                        .foregroundStyle(Theme.muted)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .overlay(Capsule().stroke(Theme.border))
-                }
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Beer Log")
+                    .font(.system(size: Theme.Font.h1, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                Text(app.serverVersion.isEmpty ? "scan · photo · note" : "v\(app.serverVersion) · scan · photo · note")
+                    .font(.system(size: Theme.Font.sub))
+                    .foregroundStyle(Theme.muted)
             }
-
-            LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3),
-                spacing: 6
-            ) {
-                ForEach(headerButtons, id: \.title) { btn in
-                    Button(action: btn.action) {
-                        Text(btn.title)
-                            .font(.system(size: Theme.Font.ghost, weight: .semibold))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(Color.clear)
-                            .foregroundStyle(Theme.text)
-                            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.btn).stroke(Theme.border))
-                    }
-                }
-                // Bouton dédié (hors ForEach) pour que le binding @State marche à coup sûr
-                Button {
-                    showLogoutConfirm = true
-                } label: {
-                    Text("Déconnexion")
-                        .font(.system(size: Theme.Font.ghost, weight: .semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(Color.clear)
-                        .foregroundStyle(Theme.error)
-                        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.btn).stroke(Theme.error.opacity(0.55)))
-                }
+            Spacer(minLength: 4)
+            Button {
+                showAccountMenu = true
+            } label: {
+                Text("Mon compte")
+                    .font(.system(size: Theme.Font.ghost, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.btn).stroke(Theme.border))
             }
         }
         .padding(.horizontal, 16)
@@ -143,37 +146,170 @@ struct MainView: View {
         .padding(.bottom, 14)
         .background(Theme.bg)
     }
+}
 
-    private struct HeaderButton {
-        let title: String
-        let action: () -> Void
+// MARK: - Mon compte (parité PWA)
+
+private struct AccountMenuOverlay: View {
+    let connectedLabel: String
+    let isInvite: Bool
+    let isAdmin: Bool
+    let rpgActive: Bool
+    let pendingCount: Int
+    let onDismiss: () -> Void
+    let onOpen: (BeerSheet) -> Void
+    let onFeedback: () -> Void
+    let onLogout: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+                .onTapGesture { onDismiss() }
+
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Connecté")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.muted)
+                        Text(connectedLabel)
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(Theme.text)
+                    }
+                    Spacer()
+                    Button(action: onDismiss) {
+                        Text("×")
+                            .font(.system(size: 22, weight: .medium))
+                            .foregroundStyle(Theme.muted)
+                            .padding(4)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        section("Journal")
+                        item("📜 Historique") { onOpen(.history) }
+                        if !isInvite {
+                            item("🍺 À boire") { onOpen(.wishlist) }
+                            item("🎁 Idées cadeaux") { onOpen(.gifts) }
+                        }
+                        if rpgActive {
+                            item("📖 Grimoire") { onOpen(.grimoire) }
+                        }
+                        if pendingCount > 0 {
+                            item("⏳ En attente (\(pendingCount))") { onOpen(.pending) }
+                        }
+
+                        section("Parler à l’admin")
+                        item("💬 Un retour") { onFeedback() }
+
+                        if isAdmin {
+                            section("Admin")
+                            item("⚙️ Administration") { onOpen(.admin) }
+                            item("📝 Patch notes") { onOpen(.patchnotes) }
+                        }
+
+                        section("Session")
+                        item("Déconnexion", danger: true) { onLogout() }
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.bottom, 12)
+                }
+            }
+            .frame(maxWidth: 320)
+            .background(Theme.card)
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.border))
+            .clipShape(RoundedCornerShape(16))
+            .padding(.top, 56)
+            .padding(.trailing, 12)
+            .padding(.leading, 48)
+        }
     }
 
-    private var headerButtons: [HeaderButton] {
-        var buttons: [HeaderButton] = []
-        if app.isAdmin {
-            buttons.append(HeaderButton(title: "Patch notes") { sheet = .patchnotes })
-            buttons.append(HeaderButton(title: "Admin") { sheet = .admin })
+    private func section(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .bold))
+            .foregroundStyle(Theme.muted)
+            .padding(.horizontal, 10)
+            .padding(.top, 10)
+            .padding(.bottom, 4)
+    }
+
+    private func item(_ title: String, danger: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(danger ? Theme.error : Theme.text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 11)
         }
-        if app.rpgActive {
-            buttons.append(HeaderButton(title: "Grimoire") {
-                Task { await app.refreshRpg() }
-                sheet = .grimoire
-            })
+        .buttonStyle(.plain)
+    }
+}
+
+private struct FeedbackSheetView: View {
+    @EnvironmentObject private var app: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var message = ""
+    @State private var category = "general"
+    @State private var sending = false
+
+    private let categories: [(String, String)] = [
+        ("general", "Un avis général"),
+        ("bug", "Un bug"),
+        ("idea", "Une idée"),
+        ("ux", "L’interface"),
+        ("rpg", "Le RPG / la progression"),
+        ("other", "Autre chose"),
+    ]
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section {
+                    Text("Dis-nous ce qui va, ce qui coince ou une idée. Seul l’admin le lit.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.muted)
+                }
+                Section("C’est plutôt…") {
+                    Picker("Catégorie", selection: $category) {
+                        ForEach(categories, id: \.0) { key, label in
+                            Text(label).tag(key)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                }
+                Section("Ton message") {
+                    TextEditor(text: $message)
+                        .frame(minHeight: 120)
+                }
+            }
+            .navigationTitle("Feedback")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Annuler") { dismiss() }
+                        .disabled(sending)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(sending ? "Envoi…" : "Envoyer") {
+                        Task {
+                            sending = true
+                            let ok = await app.sendFeedback(message: message.trimmingCharacters(in: .whitespacesAndNewlines), category: category)
+                            sending = false
+                            if ok { dismiss() }
+                        }
+                    }
+                    .disabled(sending || message.trimmingCharacters(in: .whitespacesAndNewlines).count < 3)
+                }
+            }
         }
-        // Invités : historique perso uniquement (pas wishlist / cadeaux)
-        if !app.isInvite {
-            buttons.append(HeaderButton(title: "À boire") { sheet = .wishlist })
-        }
-        buttons.append(HeaderButton(title: "Historique") { sheet = .history })
-        if !app.isInvite {
-            buttons.append(HeaderButton(title: "Idées cadeaux") { sheet = .gifts })
-        }
-        if app.pendingCount > 0 {
-            buttons.append(HeaderButton(title: "En attente (\(app.pendingCount))") { sheet = .pending })
-        }
-        // Déconnexion = bouton dédié dans le grid (pas ici)
-        return buttons
     }
 }
 
