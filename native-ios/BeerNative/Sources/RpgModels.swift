@@ -331,6 +331,79 @@ struct RpgAdminBadgeActionResponse: Decodable {
     var player: RpgAdminPlayerDetail?
 }
 
+/// Manifest portail `/mobile/beer/versions.json` — versions natives publiées.
+struct MobileVersionsManifest: Decodable {
+    var ios: String?
+    var iosBuild: String?
+    var android: String?
+    var androidBuild: String?
+    var webapp: String?
+    var updatedAt: String?
+    var portalUrl: String?
+
+    enum CodingKeys: String, CodingKey {
+        case ios, android, webapp
+        case iosBuild = "ios_build"
+        case androidBuild = "android_build"
+        case updatedAt = "updated_at"
+        case portalUrl = "portal_url"
+    }
+}
+
+struct AdminFeedbackStats: Decodable {
+    var total: Int?
+    var unread: Int?
+}
+
+struct AdminFeedbackListResponse: Decodable {
+    var items: [AdminFeedbackItem]?
+    var stats: AdminFeedbackStats?
+}
+
+struct AdminFeedbackItem: Decodable, Identifiable {
+    var id: Int?
+    var message: String?
+    var category: String?
+    var username: String?
+    var adminRead: Bool?
+    var createdAt: String?
+    enum CodingKeys: String, CodingKey {
+        case id, message, category, username
+        case adminRead = "admin_read"
+        case createdAt = "created_at"
+    }
+}
+
+/// Compare versions "4.4.7" style. -1 si a<b, 0 égal, 1 si a>b.
+func beerVersionCompare(_ a: String, _ b: String) -> Int {
+    func extract(_ s: String) -> [Int] {
+        // digits and dots only, first sequence
+        var buf = ""
+        var started = false
+        for ch in s {
+            if ch.isNumber {
+                buf.append(ch)
+                started = true
+            } else if ch == "." && started {
+                buf.append(ch)
+            } else if started {
+                break
+            }
+        }
+        return buf.split(separator: ".").compactMap { Int($0) }
+    }
+    let pa = extract(a)
+    let pb = extract(b)
+    let n = max(pa.count, pb.count)
+    for i in 0..<n {
+        let x = i < pa.count ? pa[i] : 0
+        let y = i < pb.count ? pb[i] : 0
+        if x < y { return -1 }
+        if x > y { return 1 }
+    }
+    return 0
+}
+
 func rarityLabelFr(_ r: String?) -> String {
     switch (r ?? "common").lowercased() {
     case "legendary": return "Légendaire"

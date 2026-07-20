@@ -5,6 +5,9 @@ enum ServerSettings {
     static let canonicalHost = "eiter.freeboxos.fr"
     static let wanIPv4 = "82.64.151.113"
     static let apiBaseString = "https://\(canonicalHost)/beer/"
+    /// Portail DL IPA/APK + versions.json
+    static let portalURLString = "https://\(canonicalHost)/mobile/beer/"
+    static let versionsURLString = "https://\(canonicalHost)/mobile/beer/versions.json"
     /// Fallback 4G si AAAA Freebox casse le TLS (IPv4 + SNI host).
     static let wanIPv4ApiBaseString = "https://\(wanIPv4)/beer/"
     static let lanApiBaseString = "https://192.168.1.50:8444/beer/"

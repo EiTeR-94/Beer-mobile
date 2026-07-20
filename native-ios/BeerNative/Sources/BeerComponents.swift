@@ -690,33 +690,63 @@ struct NetworkStatusBar: View {
         }
     }
 
+    private var title: String {
+        switch status {
+        case .online: return "En ligne"
+        case .serverUnreachable: return "Serveur injoignable"
+        case .offline: return "Mode hors ligne"
+        }
+    }
+
+    private var reassurance: String {
+        switch status {
+        case .online:
+            return pending > 0 ? "sync de la file en cours…" : "tout est synchronisé"
+        case .serverUnreachable:
+            return pending > 0
+                ? "tes \(pending) note(s) sont en sécurité sur l’iPhone — sync auto au retour"
+                : "cache local OK — réessaie dans un instant"
+        case .offline:
+            return pending > 0
+                ? "tes \(pending) note(s) restent sur l’iPhone — sync dès que le réseau revient"
+                : "tu peux toujours scanner / noter — envoi plus tard"
+        }
+    }
+
     var body: some View {
-        HStack(spacing: 6) {
-            Circle().fill(tint).frame(width: 6, height: 6)
-            Text(status.label)
-                .font(.system(size: 11, weight: .semibold))
-            if pending > 0 {
-                Text("· \(pending) en attente")
-                    .font(.system(size: 11, weight: .medium))
-            }
-            if let lat = latency {
-                Text(String(format: "· %.0fms", lat * 1000))
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.muted)
-            }
-            if status != .online {
-                Text("· cache local")
+        HStack(alignment: .top, spacing: 8) {
+            Circle()
+                .fill(tint)
+                .frame(width: 8, height: 8)
+                .padding(.top, 3)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .bold))
+                    if pending > 0 {
+                        Text("· \(pending) en file")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    if status == .online, let lat = latency {
+                        Text(String(format: "· %.0fms", lat * 1000))
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.muted)
+                    }
+                }
+                Text(reassurance)
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            Spacer(minLength: 0)
         }
         .foregroundStyle(tint)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(tint.opacity(0.1))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(tint.opacity(0.28)))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(tint.opacity(0.28)))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 

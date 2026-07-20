@@ -2,6 +2,7 @@ import Foundation
 import Network
 import Security
 import UIKit
+import AudioToolbox
 import LocalAuthentication  // Theme 4: biometric support for sensitive actions
 import os  // Priority 6: structured logging
 import Darwin  // for getifaddrs, NI_MAXHOST in getCurrentIPAddress
@@ -41,14 +42,36 @@ final class AppModel: ObservableObject {
     @Published var wizardProduct: BeerProduct?
     @Published var rpgState: RpgState?
     @Published var lastRpgLoot: RpgLoot?
+    /// Résumé butin post-check-in (sheet joueur).
+    @Published var lootSummary: RpgLoot?
     /// Célébration en cours (level-up / badge) — une à la fois.
     @Published var rpgCelebration: RpgCelebration?
     /// Intro Beerquest 1ʳᵉ visite.
     @Published var showRpgIntro = false
     /// Demande d’ouvrir le grimoire (depuis célébration badge).
     @Published var requestOpenGrimoire = false
+    /// Dernière version iOS publiée (portail versions.json).
+    @Published var latestIosVersion: String?
+    @Published var latestAndroidVersion: String?
+    @Published var versionsUpdatedAt: String?
 
     var rpgActive: Bool { rpgState?.active == true }
+
+    /// Version marketing de l’IPA installée (ex. 4.4.8).
+    var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+    }
+    var appBuild: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+    }
+    /// True si une version iOS plus récente est publiée sur le portail.
+    var needsAppUpdate: Bool {
+        guard let latest = latestIosVersion, !latest.isEmpty, appVersion != "?" else { return false }
+        return beerVersionCompare(appVersion, latest) < 0
+    }
+    var portalURL: URL {
+        URL(string: ServerSettings.portalURLString) ?? URL(string: "https://eiter.freeboxos.fr/mobile/beer/")!
+    }
 
     private var celebQueue: [RpgCelebration] = []
     private var celebBusy = false
@@ -791,6 +814,28 @@ final class AppModel: ObservableObject {
             st.profile = p
             rpgState = st
         }
+
+        let hasMeaningful =
+            loot.levelUp == true
+            || (loot.xpGained ?? 0) != 0
+            || !(loot.badgesEarned ?? []).isEmpty
+            || !(loot.questsCompleted ?? []).isEmpty
+
+        // Haptique + son systeme léger (pas de fichier audio custom)
+        if loot.levelUp == true {
+            hapticSuccess()
+            // "SMS received" style — plus marqué pour level-up
+            AudioServicesPlaySystemSound(1025)
+        } else if hasMeaningful {
+            hapticImpact(style: .medium)
+            AudioServicesPlaySystemSound(1057)
+        }
+
+        // Résumé butin (sheet) si XP / level / badge / quête
+        if hasMeaningful {
+            lootSummary = loot
+        }
+
         var bits: [String] = []
         if loot.levelUp == true { bits.append("LEVEL UP → \(loot.level ?? 0)") }
         if let g = loot.xpGained, g != 0 { bits.append("+\(g) XP") }
@@ -809,16 +854,32 @@ final class AppModel: ObservableObject {
         } else {
             msg = loot.phrase ?? "Noté"
         }
-        // Toast court si modales arrivent juste après (évite superposition longue)
+        // Toast court — le détail est dans le résumé butin
         showToast(
             msg,
             variant: hasCeleb ? .success : .info,
             detail: bits.isEmpty ? nil : bits.joined(separator: " · "),
             label: "Beerquest",
-            durationMs: hasCeleb ? 2200 : 3800
+            durationMs: hasCeleb ? 2000 : 3200
         )
         enqueueCelebrations(from: loot)
         Task { await refreshRpg() }
+    }
+
+    func dismissLootSummary() {
+        lootSummary = nil
+    }
+
+    /// Charge versions.json du portail (non bloquant).
+    func refreshMobileVersions() async {
+        guard let m = await api.fetchMobileVersions() else { return }
+        latestIosVersion = m.ios
+        latestAndroidVersion = m.android
+        versionsUpdatedAt = m.updatedAt
+        // Si le manifest a une webapp et qu'on n'a pas encore serverVersion
+        if serverVersion.isEmpty, let w = m.webapp, !w.isEmpty {
+            serverVersion = w
+        }
     }
 
     private func enqueueCelebrations(from loot: RpgLoot) {
@@ -877,6 +938,7 @@ final class AppModel: ObservableObject {
     func clearRpgUiState() {
         rpgState = nil
         lastRpgLoot = nil
+        lootSummary = nil
         rpgCelebration = nil
         showRpgIntro = false
         celebQueue.removeAll()

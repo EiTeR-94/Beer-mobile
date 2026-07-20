@@ -30,6 +30,9 @@ struct AdminSheetView: View {
     @State private var inviteToRevoke: InviteItem?
     @State private var inviteCheckinsTarget: InviteItem?
     @State private var showSettings = false
+    @State private var feedbackUnread: Int = 0
+    @State private var rpgPlayersCount: Int = 0
+    @State private var rpgWithProfile: Int = 0
 
     private let validityOptions: [(String, String)] = [
         ("24h", "24 heures"), ("48h", "48 heures"), ("7d", "7 jours"),
@@ -45,6 +48,8 @@ struct AdminSheetView: View {
             VStack(alignment: .leading, spacing: 12) {
                 if let errorMessage { Text(errorMessage).font(.footnote).foregroundStyle(Theme.error) }
                 if let message { Text(message).font(.footnote).foregroundStyle(Theme.ok) }
+
+                adminDashboard
 
                 BeerAdminSub(title: "Nouveau compte")
                 BeerAdminCard {
@@ -366,6 +371,124 @@ struct AdminSheetView: View {
         app.showToast("Lien copié", variant: .success, durationMs: 2800)
     }
 
+    // MARK: - Dashboard
+
+    private var adminDashboard: some View {
+        let activeInvites = invites.filter { $0.active == true || ($0.redeemedAt != nil && $0.revokedAt == nil) }.count
+        let totalCheckins = users.reduce(0) { $0 + $1.checkins }
+        let appV = app.appVersion
+        let webV = app.serverVersion.isEmpty ? "—" : app.serverVersion
+        let latest = app.latestIosVersion
+        let outdated = app.needsAppUpdate
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("📊 Tableau de bord")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Theme.muted)
+                Spacer()
+                Text("Beer Quest")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(Theme.accent)
+            }
+
+            // Versions webapp vs IPA
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Versions")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                HStack(spacing: 8) {
+                    versionPill(title: "Webapp", value: webV, tone: .web)
+                    versionPill(title: "Cette IPA", value: "\(appV) (\(app.appBuild))", tone: outdated ? .warn : .ok)
+                    if let latest, !latest.isEmpty {
+                        versionPill(title: "Dernière IPA", value: latest, tone: .info)
+                    }
+                }
+                if outdated {
+                    Link(destination: app.portalURL) {
+                        HStack(spacing: 6) {
+                            Text("⬆️")
+                            Text("IPA ancienne — télécharger la dernière ici")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Theme.accent)
+                            Spacer()
+                            Text("→")
+                                .foregroundStyle(Theme.accent)
+                        }
+                        .padding(10)
+                        .background(Theme.accent.opacity(0.1))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.accent.opacity(0.35)))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+            }
+            .padding(12)
+            .background(Theme.card)
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.border))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+
+            // Stats grid
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                dashTile("👥", "\(users.count)", "Comptes")
+                dashTile("✉️", "\(activeInvites)", "Invités actifs")
+                dashTile("🍺", "\(totalCheckins)", "Check-ins")
+                dashTile("⚔", "\(rpgWithProfile)", "RPG profils")
+                dashTile("💬", "\(feedbackUnread)", "Feedback")
+                dashTile("🏅", "\(rpgPlayersCount)", "Joueurs RPG")
+            }
+        }
+        .padding(.bottom, 4)
+    }
+
+    private enum VersionTone { case web, ok, warn, info }
+
+    private func versionPill(title: String, value: String, tone: VersionTone) -> some View {
+        let border: Color = {
+            switch tone {
+            case .web: return Color(red: 0.38, green: 0.65, blue: 0.98).opacity(0.45)
+            case .ok: return Color.green.opacity(0.45)
+            case .warn: return Theme.accent.opacity(0.55)
+            case .info: return Theme.border
+            }
+        }()
+        let fg: Color = {
+            switch tone {
+            case .web: return Color(red: 0.38, green: 0.65, blue: 0.98)
+            case .ok: return Color.green
+            case .warn: return Theme.accent
+            case .info: return Theme.muted
+            }
+        }()
+        return VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(fg)
+            Text(value)
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(Theme.fieldBg.opacity(0.7))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(border))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func dashTile(_ ico: String, _ v: String, _ l: String) -> some View {
+        VStack(spacing: 3) {
+            Text(ico).font(.system(size: 14))
+            Text(v).font(.system(size: 15, weight: .bold)).foregroundStyle(Theme.text)
+            Text(l).font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.muted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(Theme.card)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.border))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
     private func reload() async {
         var fromCache = false
 
@@ -391,6 +514,19 @@ struct AdminSheetView: View {
         } else if referentials == nil, let cached = app.cache.load(ReferentialsResponse.self, name: CacheKey.adminReferentials) {
             referentials = cached
             fromCache = true
+        }
+
+        // Dashboard extras (best-effort, ne casse pas l’admin si offline)
+        if let stats = await app.api.adminFeedbackStats() {
+            feedbackUnread = stats.unread ?? 0
+        }
+        if let players = try? await app.api.adminRpgPlayers() {
+            rpgPlayersCount = players.count
+            rpgWithProfile = players.filter { $0.hasProfile == true || ($0.xp ?? 0) > 0 || ($0.level ?? 1) > 1 }.count
+        }
+        await app.refreshMobileVersions()
+        if app.serverVersion.isEmpty {
+            app.serverVersion = (try? await app.api.version()) ?? app.serverVersion
         }
 
         if fromCache {

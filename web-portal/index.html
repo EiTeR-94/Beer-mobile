@@ -20,10 +20,21 @@
       padding: 1.25rem;
     }
     .shell { width: 100%; max-width: 420px; }
-    .brand { text-align: center; margin-bottom: 1.25rem; }
+    .brand { text-align: center; margin-bottom: 1.1rem; }
     .brand .ico { font-size: 2.5rem; line-height: 1; margin-bottom: .35rem; }
     .brand h1 { margin: 0; font-size: 1.45rem; font-weight: 800; letter-spacing: -.02em; }
     .brand p { margin: .35rem 0 0; color: var(--muted); font-size: .88rem; line-height: 1.4; }
+    .versions {
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .45rem;
+      margin-bottom: .9rem;
+    }
+    .vchip {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: .55rem .45rem; text-align: center;
+    }
+    .vchip .k { display: block; font-size: .65rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+    .vchip .v { display: block; margin-top: .2rem; font-size: .82rem; font-weight: 800; color: var(--text); }
+    .vchip .b { display: block; margin-top: .1rem; font-size: .65rem; color: var(--muted); }
     .card {
       background: var(--card); border: 1px solid var(--border);
       border-radius: 16px; padding: 1rem; margin-bottom: .75rem;
@@ -42,6 +53,7 @@
     .hint { margin-top: .55rem; font-size: .72rem; color: var(--muted); line-height: 1.35; }
     .foot { text-align: center; margin-top: 1rem; font-size: .72rem; color: var(--muted); }
     .foot a { color: var(--accent); }
+    .updated { text-align: center; font-size: .68rem; color: var(--muted); margin-bottom: .75rem; }
   </style>
 </head>
 <body>
@@ -51,9 +63,17 @@
       <h1>Beer Quest</h1>
       <p>Choisis ta plateforme pour télécharger l’app native.</p>
     </div>
+
+    <div class="versions" id="versions" aria-live="polite">
+      <div class="vchip"><span class="k">IPA</span><span class="v" id="v-ios">…</span><span class="b" id="b-ios"></span></div>
+      <div class="vchip"><span class="k">APK</span><span class="v" id="v-and">…</span><span class="b" id="b-and"></span></div>
+      <div class="vchip"><span class="k">Webapp</span><span class="v" id="v-web">…</span><span class="b" id="b-web"></span></div>
+    </div>
+    <p class="updated" id="updated"></p>
+
     <section class="card">
       <h2>🍎 iPhone · iPad</h2>
-      <p class="meta">Fichier <strong>BeerOff.ipa</strong> — installation sideload (AltStore, Sideloadly, TrollStore…).</p>
+      <p class="meta">Fichier <strong>BeerOff.ipa</strong> — installation sideload (AltStore, Sideloadly…).</p>
       <a class="btn btn-ios" href="/mobile/beer/beeroff.ipa" download="BeerOff.ipa">Télécharger l’IPA</a>
       <p class="hint">Après install : Wi‑Fi maison / VPN pour les comptes, ou lien d’invitation pour les invités 4G/5G.</p>
     </section>
@@ -65,5 +85,22 @@
     </section>
     <p class="foot">Plexi · <a href="/beer/">webapp Beer Quest</a></p>
   </main>
+  <script>
+    fetch("/mobile/beer/versions.json?_=" + Date.now(), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (v) {
+        if (!v) return;
+        document.getElementById("v-ios").textContent = v.ios || "?";
+        document.getElementById("b-ios").textContent = v.ios_build ? "build " + v.ios_build : "";
+        document.getElementById("v-and").textContent = v.android || "?";
+        document.getElementById("b-and").textContent = v.android_build ? "build " + v.android_build : "";
+        document.getElementById("v-web").textContent = v.webapp || "?";
+        document.getElementById("b-web").textContent = "serveur";
+        if (v.updated_at) {
+          document.getElementById("updated").textContent = "Manifeste : " + v.updated_at;
+        }
+      })
+      .catch(function () {});
+  </script>
 </body>
 </html>
