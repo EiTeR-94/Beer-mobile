@@ -406,33 +406,89 @@ private fun ColumnScope.GrimoireHome(state: RpgState, onBadge: (RpgBadge) -> Uni
         Spacer(Modifier.height(12.dp))
         XpHeroBar(p)
         Spacer(Modifier.height(14.dp))
-        SectionTitle("📜 Quêtes en cours")
-        val active = state.quests?.active.orEmpty().take(3)
-        if (active.isEmpty()) {
-            Text(
-                "Aucune quête active — le tavernier en prépare pour demain.",
-                color = BeerColors.muted,
-                fontSize = 12.sp
-            )
-        } else {
-            active.forEach { QuestCard(it) }
+        // Cartes encadrées (parité iOS sectionCard)
+        SectionCard(
+            title = "Quêtes en cours",
+            ico = "📜",
+            count = state.quests?.active?.size?.takeIf { it > 0 }
+        ) {
+            val active = state.quests?.active.orEmpty().take(3)
+            if (active.isEmpty()) {
+                Text(
+                    "Aucune quête active — le tavernier en prépare pour demain.",
+                    color = BeerColors.muted,
+                    fontSize = 12.sp
+                )
+            } else {
+                active.forEach { QuestCard(it) }
+            }
         }
         val next = state.nextBadges
         if (next.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
-            SectionTitle("🏅 Prochains badges")
-            next.forEach {
-                Box(Modifier.clickable { onBadge(it) }) {
-                    BadgeProgressRow(it)
+            SectionCard(title = "Prochains badges", ico = "🏅", count = next.size) {
+                next.forEach {
+                    Box(Modifier.clickable { onBadge(it) }) {
+                        BadgeProgressRow(it)
+                    }
                 }
             }
         }
-        state.phrase?.takeIf { it.isNotBlank() }?.let {
-            Spacer(Modifier.height(12.dp))
-            SectionTitle("🗣️ Le tavernier")
-            Text(it, color = BeerColors.muted, fontSize = 13.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+        Spacer(Modifier.height(12.dp))
+        SectionCard(title = "Le tavernier", ico = "🗣️", count = null) {
+            Text(
+                state.phrase?.takeIf { it.isNotBlank() } ?: "…",
+                color = BeerColors.muted,
+                fontSize = 13.sp,
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+            )
         }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+/** Encadrement section grimoire (parité iOS sectionCard). */
+@Composable
+private fun SectionCard(
+    title: String,
+    ico: String,
+    count: Int?,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .border(1.dp, BeerColors.border, RoundedCornerShape(14.dp))
+            .background(BeerColors.card)
+            .padding(12.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "$ico $title",
+                color = BeerColors.text,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                modifier = Modifier.weight(1f)
+            )
+            count?.let { n ->
+                Text(
+                    "$n",
+                    color = BeerColors.muted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(BeerColors.fieldBg)
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        content()
     }
 }
 
