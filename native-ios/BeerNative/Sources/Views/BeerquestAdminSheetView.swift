@@ -78,9 +78,7 @@ struct BeerquestAdminSheetView: View {
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
             }
-            Button("Fermer") { dismiss() }
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Theme.muted)
+            BeerGhostButton("Fermer") { dismiss() }
         }
         .padding(.horizontal, 14)
         .padding(.top, 10)
@@ -269,6 +267,8 @@ private struct RpgAdminPlayerDetailView: View {
     @State private var error: String?
 
     @State private var xpText = "0"
+    @State private var levelText = "1"
+    @State private var initialLevel = 1
     @State private var streakText = "0"
     @State private var titleText = ""
     @State private var classKey = "none"
@@ -442,7 +442,11 @@ private struct RpgAdminPlayerDetailView: View {
     private var editSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionTitle("📜 Éditer le profil")
-            labeledField("XP (absolu → niveau auto)", text: $xpText, keyboard: .numberPad)
+            labeledField("Niveau (1–31)", text: $levelText, keyboard: .numberPad)
+            Text("Changer le niveau place l’XP au début du palier. Ou édite seulement l’XP ci-dessous.")
+                .font(.caption2)
+                .foregroundStyle(Theme.muted)
+            labeledField("XP (absolu)", text: $xpText, keyboard: .numberPad)
             labeledField("Streak (jours)", text: $streakText, keyboard: .numberPad)
             labeledField("Titre", text: $titleText, keyboard: .default)
 
@@ -761,6 +765,9 @@ private struct RpgAdminPlayerDetailView: View {
         detail = d
         let p = d.player
         xpText = "\(p?.xp ?? 0)"
+        let lvl = p?.level ?? 1
+        levelText = "\(lvl)"
+        initialLevel = lvl
         streakText = "\(p?.streakDays ?? 0)"
         titleText = p?.title ?? ""
         classKey = p?.classKey ?? "none"
@@ -784,14 +791,20 @@ private struct RpgAdminPlayerDetailView: View {
         busy = true
         error = nil
         defer { busy = false }
-        let payload: [String: Any] = [
-            "xp": Int(xpText) ?? 0,
+        var payload: [String: Any] = [
             "streak_days": Int(streakText) ?? 0,
             "title": titleText,
             "class": classKey,
             "intro_seen": introSeen,
             "suspicion_score": Int(suspicionText) ?? 0,
         ]
+        let newLevel = max(1, min(31, Int(levelText) ?? initialLevel))
+        if newLevel != initialLevel {
+            // Priorité niveau → XP début de palier côté API
+            payload["level"] = newLevel
+        } else {
+            payload["xp"] = max(0, Int(xpText) ?? 0)
+        }
         do {
             applyDetail(try await app.api.adminRpgPatchPlayer(username, payload: payload))
             app.showToast("Parchemin enregistré", variant: .success, label: "Beerquest", durationMs: 2600)

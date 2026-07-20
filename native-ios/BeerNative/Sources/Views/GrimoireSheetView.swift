@@ -19,23 +19,24 @@ struct GrimoireSheetView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 // En-tête type web : Grimoire + sous-titre taverne
-                HStack(alignment: .top) {
+                HStack(alignment: .center, spacing: 8) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Grimoire")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.system(size: Theme.Font.h1, weight: .bold))
                             .foregroundStyle(Theme.text)
                         Text("Beerquest · taverne personnelle")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Theme.muted)
                     }
-                    Spacer()
-                    Button("Fermer") { dismiss() }
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Theme.muted)
+                    Spacer(minLength: 4)
+                    BeerGhostButton("Fermer") { dismiss() }
                 }
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 16)
                 .padding(.top, 8)
-                .padding(.bottom, 10)
+                .padding(.bottom, 6)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(Theme.border).frame(height: 1)
+                }
 
                 // Onglets type .bq-tabs (icône + label, grille 4)
                 HStack(spacing: 6) {
@@ -859,119 +860,113 @@ private struct ClassCardView: View {
     }
 
     var body: some View {
-        Button(action: onEquip) {
-            HStack(alignment: .top, spacing: 10) {
-                // Indicateur radio RPG
-                ZStack {
-                    Circle()
-                        .fill(equipped ? Theme.accent.opacity(0.2) : Theme.fieldBg)
-                        .frame(width: 24, height: 24)
-                    Circle()
-                        .stroke(equipped ? Theme.accent : Theme.border, lineWidth: equipped ? 2.5 : 1.5)
-                        .frame(width: 24, height: 24)
-                    if equipped {
-                        Circle()
-                            .fill(Theme.accent)
-                            .frame(width: 12, height: 12)
-                    }
-                }
-                .padding(.top, 2)
-
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack {
-                        Text("\(c.icon ?? "🍺") \(c.name ?? c.key ?? "—")")
-                            .font(.system(size: 15, weight: .heavy))
-                            .foregroundStyle(Theme.text)
-                        Spacer()
-                        if equipped {
-                            Text("ÉQUIPÉE")
-                                .font(.system(size: 10, weight: .heavy))
-                                .foregroundStyle(Color(red: 0.07, green: 0.07, blue: 0.07))
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 4)
-                                .background(
-                                    LinearGradient(colors: [Theme.accent, Color.orange], startPoint: .leading, endPoint: .trailing)
-                                )
-                                .clipShape(Capsule())
-                        }
-                    }
-                    if let b = c.blurb, !b.isEmpty {
-                        Text(b)
-                            .font(.caption)
-                            .foregroundStyle(Theme.muted)
-                    }
-                    // Détails toujours visibles sur la classe équipée ; condensés ailleurs
-                    if equipped {
-                        (Text("QUAND ").font(.system(size: 9, weight: .heavy)).foregroundColor(Color(red: 0.38, green: 0.65, blue: 0.98))
-                         + Text(when + " → ").font(.system(size: 11)).foregroundColor(Theme.muted)
-                         + Text("+2 XP").font(.system(size: 11, weight: .bold)).foregroundColor(Theme.text))
-                        (Text("EN PLUS ").font(.system(size: 9, weight: .heavy)).foregroundColor(Color(red: 0.38, green: 0.65, blue: 0.98))
-                         + Text(special).font(.system(size: 11)).foregroundColor(Theme.muted))
-                        Text("Spécialité en cours · \(habit)")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(Color.green)
-                    } else {
-                        Text(recommended ? "Suggérée pour toi · \(habit)" : "Touche pour équiper · \(habit)")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(recommended ? Color(red: 0.38, green: 0.65, blue: 0.98) : Theme.muted)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                VStack(spacing: 2) {
-                    Text("HABITUDE")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(Theme.muted)
-                    Text("\(aff)%")
-                        .font(.system(size: 17, weight: .heavy))
-                        .foregroundStyle(equipped ? Theme.accent : Theme.text)
-                }
-                .frame(width: 66)
-                .padding(8)
-                .background(equipped ? Theme.accent.opacity(0.15) : Theme.fieldBg)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(equipped ? Theme.accent : Theme.border, lineWidth: equipped ? 1.5 : 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+        // Important : ne PAS utiliser Button.disabled(equipped) — iOS applique un filtre gris semi-transparent.
+        Group {
+            if equipped {
+                cardContent
+            } else {
+                Button(action: onEquip) { cardContent }
+                    .buttonStyle(.plain)
             }
-            .padding(13)
-            // Équipée = fond 100 % opaque ; autres = carte solide mais plus discrète (pas de fade sur l’équipée)
-            .background(
-                Group {
-                    if equipped {
-                        // Opaque plein — pas de translucidité
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.22, green: 0.15, blue: 0.06),
-                                Theme.card,
-                                Color(red: 0.14, green: 0.12, blue: 0.08),
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    } else {
-                        Theme.card
-                    }
-                }
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(
-                        equipped ? Theme.accent
-                            : (recommended ? Color(red: 0.38, green: 0.65, blue: 0.98).opacity(0.5) : Theme.border),
-                        lineWidth: equipped ? 2.5 : 1
-                    )
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            // Jamais d’opacity sur la carte équipée
-            .opacity(1)
-            .shadow(color: equipped ? Theme.accent.opacity(0.35) : .clear, radius: 10, y: 3)
         }
-        .buttonStyle(.plain)
-        .disabled(equipped)
         .padding(.bottom, 6)
         .accessibilityLabel(equipped ? "\(c.name ?? "") équipée" : "Équiper \(c.name ?? "")")
+    }
+
+    private var cardContent: some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text("\(c.icon ?? "🍺") \(c.name ?? c.key ?? "—")")
+                        .font(.system(size: 15, weight: .heavy))
+                        .foregroundStyle(Theme.text)
+                    Spacer()
+                    if equipped {
+                        Text("Équipée")
+                            .font(.system(size: 10, weight: .heavy))
+                            .foregroundStyle(Color(red: 0.07, green: 0.07, blue: 0.07))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Theme.accent)
+                            .clipShape(Capsule())
+                    } else if recommended {
+                        Text("Celle que tu joues le plus")
+                            .font(.system(size: 10, weight: .heavy))
+                            .foregroundStyle(Color(red: 0.38, green: 0.65, blue: 0.98))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color(red: 0.38, green: 0.65, blue: 0.98).opacity(0.15))
+                            .overlay(Capsule().stroke(Color(red: 0.38, green: 0.65, blue: 0.98).opacity(0.4)))
+                            .clipShape(Capsule())
+                    } else {
+                        Text("Toucher pour équiper")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.muted)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .overlay(Capsule().stroke(style: StrokeStyle(lineWidth: 1, dash: [3])))
+                    }
+                }
+                if let b = c.blurb, !b.isEmpty {
+                    Text(b)
+                        .font(.caption)
+                        .foregroundStyle(Theme.muted)
+                }
+                (Text("Quand ").font(.system(size: 9, weight: .heavy)).foregroundColor(Color(red: 0.38, green: 0.65, blue: 0.98))
+                 + Text(when + " → ").font(.system(size: 11)).foregroundColor(Theme.muted)
+                 + Text("+2 XP").font(.system(size: 11, weight: .bold)).foregroundColor(Theme.text))
+                (Text("En plus ").font(.system(size: 9, weight: .heavy)).foregroundColor(Color(red: 0.38, green: 0.65, blue: 0.98))
+                 + Text(special).font(.system(size: 11)).foregroundColor(Theme.muted))
+                Text((equipped ? "Active · " : "Si tu l’équipes · ") + habit + " si la bière colle")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(equipped ? Color.green : Theme.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Bloc habitude (parité web .bq-class-profile)
+            VStack(spacing: 3) {
+                Text("Habitude")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Theme.muted)
+                    .textCase(.uppercase)
+                Text("\(aff)%")
+                    .font(.system(size: 16, weight: .heavy))
+                    .foregroundStyle(Theme.text)
+                Text(habit)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Theme.muted)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+            .frame(width: 72)
+            .padding(8)
+            .background(Theme.fieldBg)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [4]))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .padding(12)
+        .background(equipped ? Theme.card : Theme.card) // même fond opaque
+        .background(
+            // Teinte or opaque (pas de mix alpha sur le conteneur)
+            equipped
+                ? Color(red: 0.95, green: 0.62, blue: 0.04).opacity(0.14)
+                : Color.clear
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(
+                    equipped ? Theme.accent
+                        : (recommended ? Color(red: 0.38, green: 0.65, blue: 0.98).opacity(0.45) : Theme.border),
+                    lineWidth: equipped ? 2 : 1
+                )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        // Seules les classes NON équipées sont un peu atténuées (comme webapp .is-available)
+        .opacity(equipped ? 1.0 : 0.82)
+        .shadow(color: equipped ? Theme.accent.opacity(0.2) : .clear, radius: 8, y: 2)
     }
 }
 
