@@ -864,8 +864,11 @@ private struct ClassCardView: View {
                 // Indicateur radio RPG
                 ZStack {
                     Circle()
-                        .stroke(equipped ? Theme.accent : Theme.border, lineWidth: 2)
-                        .frame(width: 22, height: 22)
+                        .fill(equipped ? Theme.accent.opacity(0.2) : Theme.fieldBg)
+                        .frame(width: 24, height: 24)
+                    Circle()
+                        .stroke(equipped ? Theme.accent : Theme.border, lineWidth: equipped ? 2.5 : 1.5)
+                        .frame(width: 24, height: 24)
                     if equipped {
                         Circle()
                             .fill(Theme.accent)
@@ -881,30 +884,37 @@ private struct ClassCardView: View {
                             .foregroundStyle(Theme.text)
                         Spacer()
                         if equipped {
-                            Text("ACTIVE")
+                            Text("ÉQUIPÉE")
                                 .font(.system(size: 10, weight: .heavy))
                                 .foregroundStyle(Color(red: 0.07, green: 0.07, blue: 0.07))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Theme.accent)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 4)
+                                .background(
+                                    LinearGradient(colors: [Theme.accent, Color.orange], startPoint: .leading, endPoint: .trailing)
+                                )
                                 .clipShape(Capsule())
                         }
                     }
                     if let b = c.blurb, !b.isEmpty {
                         Text(b)
                             .font(.caption)
-                            .foregroundStyle(equipped ? Theme.muted : Theme.muted.opacity(0.75))
+                            .foregroundStyle(Theme.muted)
                     }
-                    if equipped || recommended {
+                    // Détails toujours visibles sur la classe équipée ; condensés ailleurs
+                    if equipped {
                         (Text("QUAND ").font(.system(size: 9, weight: .heavy)).foregroundColor(Color(red: 0.38, green: 0.65, blue: 0.98))
                          + Text(when + " → ").font(.system(size: 11)).foregroundColor(Theme.muted)
                          + Text("+2 XP").font(.system(size: 11, weight: .bold)).foregroundColor(Theme.text))
                         (Text("EN PLUS ").font(.system(size: 9, weight: .heavy)).foregroundColor(Color(red: 0.38, green: 0.65, blue: 0.98))
                          + Text(special).font(.system(size: 11)).foregroundColor(Theme.muted))
+                        Text("Spécialité en cours · \(habit)")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Color.green)
+                    } else {
+                        Text(recommended ? "Suggérée pour toi · \(habit)" : "Touche pour équiper · \(habit)")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(recommended ? Color(red: 0.38, green: 0.65, blue: 0.98) : Theme.muted)
                     }
-                    Text(equipped ? "Spécialité en cours · \(habit)" : (recommended ? "Suggérée · \(habit)" : "Touche pour équiper · \(habit)"))
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(equipped ? Color.green : (recommended ? Color(red: 0.38, green: 0.65, blue: 0.98) : Theme.muted))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -913,35 +923,50 @@ private struct ClassCardView: View {
                         .font(.system(size: 8, weight: .bold))
                         .foregroundStyle(Theme.muted)
                     Text("\(aff)%")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 17, weight: .heavy))
                         .foregroundStyle(equipped ? Theme.accent : Theme.text)
                 }
-                .frame(width: 64)
-                .padding(6)
-                .background(equipped ? Theme.accent.opacity(0.12) : Theme.fieldBg.opacity(0.55))
+                .frame(width: 66)
+                .padding(8)
+                .background(equipped ? Theme.accent.opacity(0.15) : Theme.fieldBg)
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(equipped ? Theme.accent.opacity(0.5) : Theme.border.opacity(0.6))
+                        .stroke(equipped ? Theme.accent : Theme.border, lineWidth: equipped ? 1.5 : 1)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             }
-            .padding(12)
+            .padding(13)
+            // Équipée = fond 100 % opaque ; autres = carte solide mais plus discrète (pas de fade sur l’équipée)
             .background(
-                equipped
-                    ? LinearGradient(colors: [Theme.accent.opacity(0.22), Theme.card], startPoint: .leading, endPoint: .trailing)
-                    : LinearGradient(colors: [Theme.card.opacity(0.55), Theme.card.opacity(0.45)], startPoint: .top, endPoint: .bottom)
+                Group {
+                    if equipped {
+                        // Opaque plein — pas de translucidité
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.22, green: 0.15, blue: 0.06),
+                                Theme.card,
+                                Color(red: 0.14, green: 0.12, blue: 0.08),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    } else {
+                        Theme.card
+                    }
+                }
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 14)
                     .stroke(
                         equipped ? Theme.accent
-                            : (recommended ? Color(red: 0.38, green: 0.65, blue: 0.98).opacity(0.45) : Theme.border.opacity(0.55)),
-                        lineWidth: equipped ? 2 : 1
+                            : (recommended ? Color(red: 0.38, green: 0.65, blue: 0.98).opacity(0.5) : Theme.border),
+                        lineWidth: equipped ? 2.5 : 1
                     )
             )
             .clipShape(RoundedRectangle(cornerRadius: 14))
-            .opacity(equipped ? 1 : 0.72)
-            .shadow(color: equipped ? Theme.accent.opacity(0.25) : .clear, radius: 8, y: 2)
+            // Jamais d’opacity sur la carte équipée
+            .opacity(1)
+            .shadow(color: equipped ? Theme.accent.opacity(0.35) : .clear, radius: 10, y: 3)
         }
         .buttonStyle(.plain)
         .disabled(equipped)
