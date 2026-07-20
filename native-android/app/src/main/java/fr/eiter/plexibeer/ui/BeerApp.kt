@@ -9,12 +9,16 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -23,8 +27,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -35,6 +41,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
@@ -43,6 +51,7 @@ import coil.compose.AsyncImage
 import fr.eiter.plexibeer.*
 import fr.eiter.plexibeer.ui.theme.BeerColors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -546,6 +555,11 @@ private fun AccountMenuOverlay(
     onLogout: () -> Unit,
 ) {
     BackHandler(onBack = onDismiss)
+    val config = LocalConfiguration.current
+    // ~72 % de l’écran, laisse de l’air sous le header (parité iOS)
+    val maxPanelH = minOf(config.screenHeightDp * 0.72f, (config.screenHeightDp - 72).toFloat()).dp
+    val maxPanelW = minOf(320, config.screenWidthDp - 60).coerceAtLeast(240).dp
+
     Box(Modifier.fillMaxSize()) {
         Box(
             Modifier
@@ -556,9 +570,9 @@ private fun AccountMenuOverlay(
         Column(
             Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 56.dp, end = 12.dp, start = 48.dp)
-                .widthIn(max = 320.dp)
-                .fillMaxWidth()
+                .padding(top = 56.dp, end = 12.dp)
+                .width(maxPanelW)
+                .heightIn(max = maxPanelH)
                 .clip(RoundedCornerShape(16.dp))
                 .border(1.dp, BeerColors.border, RoundedCornerShape(16.dp))
                 .background(BeerColors.card)
@@ -749,7 +763,7 @@ private fun FeedbackReplyDialog(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FeedbackDialog(
     onDismiss: () -> Unit,
@@ -760,7 +774,9 @@ private fun FeedbackDialog(
     var sending by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scrollState = rememberScrollState()
+    val bringIntoView = remember { BringIntoViewRequester() }
+    val scope = rememberCoroutineScope()
     val categories = listOf(
         "general" to "Avis général",
         "bug" to "Bug",
@@ -775,145 +791,183 @@ private fun FeedbackDialog(
         keyboard?.hide()
     }
 
-    ModalBottomSheet(
+    // Dialog + imePadding (pas ModalBottomSheet) : le champ reste au-dessus du clavier
+    Dialog(
         onDismissRequest = {
             if (!sending) {
                 hideKeyboard()
                 onDismiss()
             }
         },
-        sheetState = sheetState,
-        containerColor = BeerColors.bg,
-        dragHandle = { BottomSheetDefaults.DragHandle(color = BeerColors.muted) },
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = true,
+            dismissOnBackPress = !sending,
+            dismissOnClickOutside = !sending,
+        ),
     ) {
-        Column(
+        Box(
             Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.45f))
+                .clickable(enabled = !sending) {
+                    hideKeyboard()
+                    onDismiss()
+                }
                 .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp)
+                .navigationBarsPadding()
+                .statusBarsPadding()
         ) {
-            Text("💬 Feedback", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "Dis-nous ce qui va, ce qui coince ou une idée. Seul l’admin le lit.",
-                color = BeerColors.muted,
-                fontSize = 12.sp
-            )
-            Spacer(Modifier.height(12.dp))
-            Text("C’est plutôt…", color = BeerColors.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
-            // Chips 3 colonnes (parité iOS)
-            categories.chunked(3).forEach { row ->
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                    .background(BeerColors.bg)
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() },
+                    ) { /* absorbe les taps pour ne pas fermer */ }
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 12.dp, bottom = 20.dp)
+            ) {
+                Box(
+                    Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .width(36.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(BeerColors.muted.copy(alpha = 0.45f))
+                )
+                Spacer(Modifier.height(12.dp))
+                Text("💬 Feedback", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Dis-nous ce qui va, ce qui coince ou une idée. Seul l’admin le lit.",
+                    color = BeerColors.muted,
+                    fontSize = 12.sp
+                )
+                Spacer(Modifier.height(12.dp))
+                Text("C’est plutôt…", color = BeerColors.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(6.dp))
+                categories.chunked(3).forEach { row ->
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        row.forEach { (key, label) ->
+                            val on = category == key
+                            Text(
+                                label,
+                                color = if (on) Color.Black else BeerColors.text,
+                                fontSize = 12.sp,
+                                fontWeight = if (on) FontWeight.Bold else FontWeight.SemiBold,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (on) BeerColors.accent else BeerColors.card)
+                                    .border(
+                                        1.dp,
+                                        if (on) BeerColors.accent else BeerColors.border,
+                                        RoundedCornerShape(10.dp)
+                                    )
+                                    .clickable {
+                                        category = key
+                                        hideKeyboard()
+                                    }
+                                    .padding(vertical = 8.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("Ton message", color = BeerColors.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                OutlinedTextField(
+                    value = message,
+                    onValueChange = { if (it.length <= 1200) message = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 100.dp, max = 160.dp)
+                        .bringIntoViewRequester(bringIntoView)
+                        .onFocusEvent { state ->
+                            if (state.isFocused) {
+                                scope.launch {
+                                    delay(280)
+                                    bringIntoView.bringIntoView()
+                                    scrollState.animateScrollTo(scrollState.maxValue)
+                                }
+                            }
+                        },
+                    placeholder = { Text("Écris librement…", color = BeerColors.muted) },
+                    maxLines = 6,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        imeAction = androidx.compose.ui.text.input.ImeAction.Done
+                    ),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                        onDone = { hideKeyboard() }
+                    ),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = BeerColors.text,
+                        unfocusedTextColor = BeerColors.text,
+                        focusedBorderColor = BeerColors.accent,
+                        unfocusedBorderColor = BeerColors.border,
+                        cursorColor = BeerColors.accent,
+                        focusedContainerColor = BeerColors.card,
+                        unfocusedContainerColor = BeerColors.card,
+                    )
+                )
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = { hideKeyboard() }) {
+                        Text("Masquer le clavier", color = BeerColors.accent, fontSize = 12.sp)
+                    }
+                    Text(
+                        "${message.length.coerceAtMost(1200)}/1200",
+                        color = BeerColors.muted,
+                        fontSize = 11.sp
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    row.forEach { (key, label) ->
-                        val on = category == key
+                    OutlinedButton(
+                        onClick = {
+                            hideKeyboard()
+                            if (!sending) onDismiss()
+                        },
+                        enabled = !sending,
+                        modifier = Modifier.weight(1f),
+                        border = BorderStroke(1.dp, BeerColors.border)
+                    ) {
+                        Text("Annuler", color = BeerColors.muted)
+                    }
+                    Button(
+                        onClick = {
+                            if (message.trim().length < 3 || sending) return@Button
+                            hideKeyboard()
+                            sending = true
+                            onSend(message.trim(), category)
+                        },
+                        enabled = message.trim().length >= 3 && !sending,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = BeerColors.accent)
+                    ) {
                         Text(
-                            label,
-                            color = if (on) Color.Black else BeerColors.text,
-                            fontSize = 12.sp,
-                            fontWeight = if (on) FontWeight.Bold else FontWeight.SemiBold,
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(
-                                    if (on) BeerColors.accent else BeerColors.card
-                                )
-                                .border(
-                                    1.dp,
-                                    if (on) BeerColors.accent else BeerColors.border,
-                                    RoundedCornerShape(10.dp)
-                                )
-                                .clickable {
-                                    category = key
-                                    hideKeyboard()
-                                }
-                                .padding(vertical = 8.dp),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            if (sending) "…" else "Envoyer",
+                            color = Color.Black,
+                            fontWeight = FontWeight.Bold
                         )
                     }
-                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
-                }
-                Spacer(Modifier.height(6.dp))
-            }
-            Spacer(Modifier.height(8.dp))
-            Text("Ton message", color = BeerColors.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(4.dp))
-            OutlinedTextField(
-                value = message,
-                onValueChange = { if (it.length <= 1200) message = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 100.dp, max = 160.dp),
-                placeholder = { Text("Écris librement…", color = BeerColors.muted) },
-                maxLines = 6,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                    imeAction = androidx.compose.ui.text.input.ImeAction.Done
-                ),
-                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                    onDone = { hideKeyboard() }
-                ),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = BeerColors.text,
-                    unfocusedTextColor = BeerColors.text,
-                    focusedBorderColor = BeerColors.accent,
-                    unfocusedBorderColor = BeerColors.border,
-                    cursorColor = BeerColors.accent,
-                    focusedContainerColor = BeerColors.card,
-                    unfocusedContainerColor = BeerColors.card,
-                )
-            )
-            Row(
-                Modifier.fillMaxWidth().padding(top = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(onClick = { hideKeyboard() }) {
-                    Text("Masquer le clavier", color = BeerColors.accent, fontSize = 12.sp)
-                }
-                Text(
-                    "${message.length.coerceAtMost(1200)}/1200",
-                    color = BeerColors.muted,
-                    fontSize = 11.sp
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                OutlinedButton(
-                    onClick = {
-                        hideKeyboard()
-                        if (!sending) onDismiss()
-                    },
-                    enabled = !sending,
-                    modifier = Modifier.weight(1f),
-                    border = BorderStroke(1.dp, BeerColors.border)
-                ) {
-                    Text("Annuler", color = BeerColors.muted)
-                }
-                Button(
-                    onClick = {
-                        if (message.trim().length < 3 || sending) return@Button
-                        hideKeyboard()
-                        sending = true
-                        onSend(message.trim(), category)
-                    },
-                    enabled = message.trim().length >= 3 && !sending,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = BeerColors.accent)
-                ) {
-                    Text(
-                        if (sending) "…" else "Envoyer",
-                        color = Color.Black,
-                        fontWeight = FontWeight.Bold
-                    )
                 }
             }
         }

@@ -370,74 +370,91 @@ private struct AccountMenuOverlay: View {
     let onLogout: () -> Void
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Color.black.opacity(0.45)
-                .ignoresSafeArea()
-                .onTapGesture { onDismiss() }
+        // GeometryReader : plafonne la hauteur à ~72 % de l’écran.
+        // fixedSize + maxHeight : le panneau épouse le contenu (s’arrête sous Déconnexion)
+        // et ne scrolle que si trop long (admin).
+        GeometryReader { geo in
+            let maxPanelH = min(geo.size.height * 0.72, geo.size.height - 72)
+            let maxPanelW = min(320.0, geo.size.width - 60)
 
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Connecté")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Theme.muted)
-                        Text(connectedLabel)
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(Theme.text)
+            ZStack(alignment: .topTrailing) {
+                Color.black.opacity(0.45)
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .ignoresSafeArea()
+                    .onTapGesture { onDismiss() }
+
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Connecté")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Theme.muted)
+                            Text(connectedLabel)
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(Theme.text)
+                        }
+                        Spacer(minLength: 8)
+                        Button(action: onDismiss) {
+                            Text("×")
+                                .font(.system(size: 22, weight: .medium))
+                                .foregroundStyle(Theme.muted)
+                                .padding(4)
+                        }
                     }
-                    Spacer()
-                    Button(action: onDismiss) {
-                        Text("×")
-                            .font(.system(size: 22, weight: .medium))
-                            .foregroundStyle(Theme.muted)
-                            .padding(4)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+
+                    ScrollView {
+                        menuItems
+                            .padding(.horizontal, 6)
+                            .padding(.bottom, 12)
                     }
+                    // Hauteur intrinsèque du contenu, plafonnée → pas de grand vide sous Déconnexion
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxHeight: max(120, maxPanelH - 56), alignment: .top)
                 }
-                .padding(.horizontal, 12)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
-
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
-                        section("Journal")
-                        item("📜 Historique") { onOpen(.history) }
-                        if !isInvite {
-                            item("🍺 À boire") { onOpen(.wishlist) }
-                            item("🎁 Idées cadeaux") { onOpen(.gifts) }
-                        }
-                        if rpgActive {
-                            item("📖 Grimoire") { onOpen(.grimoire) }
-                        }
-                        if pendingCount > 0 {
-                            item("⏳ En attente (\(pendingCount))") { onOpen(.pending) }
-                        }
-
-                        section("Parler à l’admin")
-                        item("💬 Un retour") { onFeedback() } // parité web — feedback taverne
-
-                        if isAdmin {
-                            section("Admin")
-                            item("⚙️ Administration") { onOpen(.admin) }
-                            if rpgActive {
-                                item("⚔ Beerquest") { onOpen(.rpgAdmin) }
-                            }
-                            item("📝 Patch notes") { onOpen(.patchnotes) }
-                        }
-
-                        section("Session")
-                        item("Déconnexion", danger: true) { onLogout() }
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.bottom, 12)
-                }
+                .frame(width: maxPanelW, alignment: .leading)
+                .background(Theme.card)
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.border))
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .padding(.top, 56)
+                .padding(.trailing, 12)
             }
-            .frame(maxWidth: 320)
-            .background(Theme.card)
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.border))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .padding(.top, 56)
-            .padding(.trailing, 12)
-            .padding(.leading, 48)
+        }
+        .ignoresSafeArea()
+    }
+
+    @ViewBuilder
+    private var menuItems: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            section("Journal")
+            item("📜 Historique") { onOpen(.history) }
+            if !isInvite {
+                item("🍺 À boire") { onOpen(.wishlist) }
+                item("🎁 Idées cadeaux") { onOpen(.gifts) }
+            }
+            if rpgActive {
+                item("📖 Grimoire") { onOpen(.grimoire) }
+            }
+            if pendingCount > 0 {
+                item("⏳ En attente (\(pendingCount))") { onOpen(.pending) }
+            }
+
+            section("Parler à l’admin")
+            item("💬 Un retour") { onFeedback() }
+
+            if isAdmin {
+                section("Admin")
+                item("⚙️ Administration") { onOpen(.admin) }
+                if rpgActive {
+                    item("⚔ Beerquest") { onOpen(.rpgAdmin) }
+                }
+                item("📝 Patch notes") { onOpen(.patchnotes) }
+            }
+
+            section("Session")
+            item("Déconnexion", danger: true) { onLogout() }
         }
     }
 
