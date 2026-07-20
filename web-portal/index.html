@@ -97,7 +97,9 @@
         document.getElementById("v-web").textContent = v.webapp || "?";
         document.getElementById("b-web").textContent = "serveur";
         if (v.updated_at) {
-          document.getElementById("updated").textContent = "Manifeste : " + v.updated_at;
+          // déjà en dd-MM-YYYY HH:mm (Europe/Paris) côté serveur
+          document.getElementById("updated").textContent =
+            "Dernière mise à jour du portail : " + v.updated_at;
         }
       })
       .catch(function () {});

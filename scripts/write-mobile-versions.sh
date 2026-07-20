@@ -42,18 +42,22 @@ fi
 WEBAPP="?"
 [[ -f "$WEBAPP_VER_FILE" ]] && WEBAPP=$(tr -d ' \n' < "$WEBAPP_VER_FILE")
 
-UPDATED=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+# Europe/Paris — format lisible pour le portail
+UPDATED=$(TZ=Europe/Paris date +"%d-%m-%Y %H:%M")
+UPDATED_ISO=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 TMP=$(mktemp)
-python3 - "$TMP" "$IOS_VER" "$IOS_BUILD" "$AND_VER" "$AND_BUILD" "$WEBAPP" "$UPDATED" <<'PY'
+python3 - "$TMP" "$IOS_VER" "$IOS_BUILD" "$AND_VER" "$AND_BUILD" "$WEBAPP" "$UPDATED" "$UPDATED_ISO" <<'PY'
 import json, sys
-path, ios, ib, andv, ab, web, updated = sys.argv[1:8]
+path, ios, ib, andv, ab, web, updated, updated_iso = sys.argv[1:9]
 doc = {
     "ios": ios,
     "ios_build": ib,
     "android": andv,
     "android_build": ab,
     "webapp": web,
+    # Affichage humain (portail) : dd-MM-YYYY HH:mm (Europe/Paris)
     "updated_at": updated,
+    "updated_at_iso": updated_iso,
     "portal_url": "https://eiter.freeboxos.fr/mobile/beer/",
 }
 with open(path, "w", encoding="utf-8") as f:
