@@ -18,8 +18,10 @@ struct BeerquestAdminSheetView: View {
     @State private var feedbackLoading = false
     @State private var feedbackError: String?
     @State private var feedbackUnreadOnly = false
+    @State private var feedbackStatusFilter = "" // "" | open | done | rejected
     @State private var feedbackToDelete: AdminFeedbackItem?
     @State private var feedbackBusyId: Int?
+    @State private var resolveTarget: FeedbackResolveTarget?
 
     private enum BqAdminTab: String, CaseIterable, Identifiable {
         case players, feedback
@@ -93,6 +95,16 @@ struct BeerquestAdminSheetView: View {
                 }
             } message: { item in
                 Text(String((item.message ?? "").prefix(120)))
+            }
+            .sheet(item: $resolveTarget) { target in
+                FeedbackResolveSheet(target: target) { reply in
+                    resolveTarget = nil
+                    Task { await resolveFeedback(id: target.id, status: target.status, reply: reply) }
+                } onCancel: {
+                    resolveTarget = nil
+                }
+                .preferredColorScheme(.dark)
+                .presentationDetents([.medium])
             }
         }
     }
@@ -200,7 +212,7 @@ struct BeerquestAdminSheetView: View {
     // MARK: - Feedback (parité webapp)
 
     private var feedbackToolbar: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Button {
                     Task { await loadFeedback() }
@@ -234,19 +246,38 @@ struct BeerquestAdminSheetView: View {
                 Spacer(minLength: 0)
             }
 
-            Toggle(isOn: $feedbackUnreadOnly) {
-                Text("Non lus seulement")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.muted)
+            // Case à cocher (comme la webapp)
+            Button {
+                feedbackUnreadOnly.toggle()
+                Task { await loadFeedback() }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: feedbackUnreadOnly ? "checkmark.square.fill" : "square")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(feedbackUnreadOnly ? Theme.accent : Theme.muted)
+                    Text("Non lus seulement")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Spacer(minLength: 0)
+                }
             }
+            .buttonStyle(.plain)
+
+            // Filtre statut
+            Picker("Statut", selection: $feedbackStatusFilter) {
+                Text("Tous les statuts").tag("")
+                Text("En cours").tag("open")
+                Text("Mis en place").tag("done")
+                Text("Refusés").tag("rejected")
+            }
+            .pickerStyle(.menu)
             .tint(Theme.accent)
-            .onChange(of: feedbackUnreadOnly) { _ in
+            .onChange(of: feedbackStatusFilter) { _ in
                 Task { await loadFeedback() }
             }
 
-            let total = feedbackStats?.total ?? feedbackItems.count
-            let unread = feedbackStats?.unread ?? 0
-            Text("\(unread) non lu(s) · \(total) au total")
+            let s = feedbackStats
+            Text("\(s?.unread ?? 0) non lu(s) · \(s?.open ?? 0) en cours · \(s?.done ?? 0) faits · \(s?.rejected ?? 0) refusés · \(s?.total ?? feedbackItems.count) total")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.muted)
         }
@@ -294,6 +325,12 @@ struct BeerquestAdminSheetView: View {
         if let v = f.appVersion, !v.isEmpty { line2.append("v\(v)") }
         if let lv = f.metaRpgLevel { line2.append(lv) }
         let busy = feedbackBusyId == f.id
+        let border: Color = {
+            if f.isDone { return Color.green.opacity(0.45) }
+            if f.isRejected { return Theme.error.opacity(0.45) }
+            if unread { return Theme.accent.opacity(0.45) }
+            return Theme.border
+        }()
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
@@ -302,12 +339,9 @@ struct BeerquestAdminSheetView: View {
                         Text(f.username ?? "—")
                             .font(.system(size: 15, weight: .bold))
                             .foregroundStyle(Theme.text)
-                        if f.isInvite == true {
-                            adminPill("invité", .invite)
-                        }
-                        if unread {
-                            adminPill("nouveau", .off)
-                        }
+                        if f.isInvite == true { adminPill("invité", .invite) }
+                        if unread { adminPill("nouveau", .off) }
+                        adminPill(f.displayStatus, f.isDone ? .on : (f.isRejected ? .off : .muted))
                     }
                     Text(f.displayCategory)
                         .font(.system(size: 11, weight: .bold))
@@ -321,6 +355,22 @@ struct BeerquestAdminSheetView: View {
                 .foregroundStyle(Theme.text)
                 .fixedSize(horizontal: false, vertical: true)
 
+            if let reply = f.adminReply, !reply.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Réponse")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Theme.muted)
+                    Text(reply)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.text)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.fieldBg.opacity(0.8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.accent.opacity(0.3)))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+
             if !line1.isEmpty {
                 Text(line1.joined(separator: " · "))
                     .font(.system(size: 11))
@@ -332,23 +382,84 @@ struct BeerquestAdminSheetView: View {
                     .foregroundStyle(Theme.muted)
             }
 
+            // Case à cocher « Lu »
+            Button {
+                Task { await toggleFeedbackRead(f) }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: (f.adminRead == true) ? "checkmark.square.fill" : "square")
+                        .foregroundStyle((f.adminRead == true) ? Theme.accent : Theme.muted)
+                    Text("Lu")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(busy)
+
             HStack(spacing: 8) {
-                if unread {
+                if f.isOpen {
                     Button {
-                        Task { await markFeedbackRead(f) }
+                        if let id = f.id {
+                            resolveTarget = FeedbackResolveTarget(
+                                id: id,
+                                status: "done",
+                                title: "Marquer comme mis en place",
+                                hint: "Le joueur verra ta note au prochain login.",
+                                requireReply: false,
+                                original: f.message ?? ""
+                            )
+                        }
                     } label: {
-                        Text(busy ? "…" : "Lu")
+                        Text("✓ Fait")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Color(red: 0.07, green: 0.07, blue: 0.07))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(Theme.accent)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+
+                    Button {
+                        if let id = f.id {
+                            resolveTarget = FeedbackResolveTarget(
+                                id: id,
+                                status: "rejected",
+                                title: "Refuser le feedback",
+                                hint: "Indique la raison (visible par le joueur).",
+                                requireReply: true,
+                                original: f.message ?? ""
+                            )
+                        }
+                    } label: {
+                        Text("✕ Refuser")
                             .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(Theme.text)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
-                            .background(Theme.fieldBg)
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                } else {
+                    Button {
+                        Task { await reopenFeedback(f) }
+                    } label: {
+                        Text("Rouvrir")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Theme.text)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
                             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
                 }
+
                 Button {
                     feedbackToDelete = f
                 } label: {
@@ -368,10 +479,7 @@ struct BeerquestAdminSheetView: View {
         }
         .padding(12)
         .background(Theme.card)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(unread ? Theme.accent.opacity(0.45) : Theme.border, lineWidth: unread ? 1.5 : 1)
-        )
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(border, lineWidth: unread || f.isDone || f.isRejected ? 1.5 : 1))
         .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
@@ -535,7 +643,11 @@ struct BeerquestAdminSheetView: View {
         feedbackLoading = true
         feedbackError = nil
         do {
-            let res = try await app.api.adminFeedbackList(limit: 80, unreadOnly: feedbackUnreadOnly)
+            let res = try await app.api.adminFeedbackList(
+                limit: 80,
+                unreadOnly: feedbackUnreadOnly,
+                status: feedbackStatusFilter.isEmpty ? nil : feedbackStatusFilter
+            )
             feedbackItems = res.items ?? []
             feedbackStats = res.stats
             let unread = res.stats?.unread ?? 0
@@ -550,14 +662,14 @@ struct BeerquestAdminSheetView: View {
         feedbackLoading = false
     }
 
-    private func markFeedbackRead(_ item: AdminFeedbackItem) async {
+    private func toggleFeedbackRead(_ item: AdminFeedbackItem) async {
         guard let id = item.id else { return }
         feedbackBusyId = id
         defer { feedbackBusyId = nil }
+        let next = item.adminRead != true
         do {
-            try await app.api.adminFeedbackMarkRead(id: id, read: true)
+            try await app.api.adminFeedbackMarkRead(id: id, read: next)
             await loadFeedback()
-            app.showToast("Marqué lu", variant: .success, durationMs: 2200)
         } catch {
             app.showToast(
                 (error as? LocalizedError)?.errorDescription ?? "Erreur",
@@ -572,6 +684,43 @@ struct BeerquestAdminSheetView: View {
             try await app.api.adminFeedbackReadAll()
             await loadFeedback()
             app.showToast("Tout marqué lu", variant: .success, durationMs: 2400)
+        } catch {
+            app.showToast(
+                (error as? LocalizedError)?.errorDescription ?? "Erreur",
+                variant: .error,
+                durationMs: 3200
+            )
+        }
+    }
+
+    private func resolveFeedback(id: Int, status: String, reply: String) async {
+        feedbackBusyId = id
+        defer { feedbackBusyId = nil }
+        do {
+            try await app.api.adminFeedbackResolve(id: id, status: status, reply: reply)
+            await loadFeedback()
+            app.showToast(
+                status == "rejected" ? "Refusé — joueur notifié" : "Mis en place — joueur notifié",
+                variant: .success,
+                durationMs: 2800
+            )
+        } catch {
+            app.showToast(
+                (error as? LocalizedError)?.errorDescription ?? "Erreur",
+                variant: .error,
+                durationMs: 3200
+            )
+        }
+    }
+
+    private func reopenFeedback(_ item: AdminFeedbackItem) async {
+        guard let id = item.id else { return }
+        feedbackBusyId = id
+        defer { feedbackBusyId = nil }
+        do {
+            try await app.api.adminFeedbackReopen(id: id)
+            await loadFeedback()
+            app.showToast("Feedback rouvert", variant: .success, durationMs: 2400)
         } catch {
             app.showToast(
                 (error as? LocalizedError)?.errorDescription ?? "Erreur",
@@ -602,6 +751,76 @@ struct BeerquestAdminSheetView: View {
 
 private struct UserKey: Identifiable {
     let id: String
+}
+
+private struct FeedbackResolveTarget: Identifiable {
+    let id: Int
+    let status: String
+    let title: String
+    let hint: String
+    let requireReply: Bool
+    let original: String
+}
+
+private struct FeedbackResolveSheet: View {
+    let target: FeedbackResolveTarget
+    let onSubmit: (String) -> Void
+    let onCancel: () -> Void
+    @State private var reply = ""
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(target.title)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                Text(target.hint)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.muted)
+                if !target.original.isEmpty {
+                    Text("« \(String(target.original.prefix(180)))\(target.original.count > 180 ? "…" : "") »")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.muted)
+                        .italic()
+                }
+                Text(target.requireReply ? "Raison (obligatoire)" : "Message pour le joueur (optionnel)")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Theme.muted)
+                TextEditor(text: $reply)
+                    .scrollContentBackground(.hidden)
+                    .foregroundStyle(Theme.text)
+                    .frame(minHeight: 90)
+                    .padding(8)
+                    .background(Theme.fieldBg)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.border))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                Spacer(minLength: 0)
+                HStack(spacing: 10) {
+                    Button("Annuler", action: onCancel)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.muted)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.border))
+                    Button {
+                        onSubmit(reply.trimmingCharacters(in: .whitespacesAndNewlines))
+                    } label: {
+                        Text("Envoyer")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Color(red: 0.07, green: 0.07, blue: 0.07))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 11)
+                            .background(LinearGradient(colors: [Theme.accent, Color.orange], startPoint: .leading, endPoint: .trailing))
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .disabled(target.requireReply && reply.trimmingCharacters(in: .whitespacesAndNewlines).count < 3)
+                    .opacity(target.requireReply && reply.trimmingCharacters(in: .whitespacesAndNewlines).count < 3 ? 0.5 : 1)
+                }
+            }
+            .padding(16)
+            .background(Theme.bg)
+        }
+    }
 }
 
 // MARK: - Détail joueur

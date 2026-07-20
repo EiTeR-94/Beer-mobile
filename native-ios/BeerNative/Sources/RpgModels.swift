@@ -353,11 +353,20 @@ struct MobileVersionsManifest: Decodable {
 struct AdminFeedbackStats: Decodable {
     var total: Int?
     var unread: Int?
+    var open: Int?
+    var done: Int?
+    var rejected: Int?
 }
 
 struct AdminFeedbackListResponse: Decodable {
     var items: [AdminFeedbackItem]?
     var stats: AdminFeedbackStats?
+}
+
+struct FeedbackRepliesResponse: Decodable {
+    var ok: Bool?
+    var items: [AdminFeedbackItem]?
+    var count: Int?
 }
 
 struct AdminFeedbackItem: Decodable, Identifiable {
@@ -376,9 +385,15 @@ struct AdminFeedbackItem: Decodable, Identifiable {
     var browser: String?
     var pagePath: String?
     var meta: [String: FlexibleJSON]?
+    var status: String?
+    var statusLabel: String?
+    var adminReply: String?
+    var resolvedAt: String?
+    var resolvedBy: String?
+    var userSeenReply: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case id, message, category, username, device, browser, meta
+        case id, message, category, username, device, browser, meta, status
         case categoryLabel = "category_label"
         case isInvite = "is_invite"
         case adminRead = "admin_read"
@@ -387,6 +402,11 @@ struct AdminFeedbackItem: Decodable, Identifiable {
         case appVersion = "app_version"
         case osName = "os_name"
         case pagePath = "page_path"
+        case statusLabel = "status_label"
+        case adminReply = "admin_reply"
+        case resolvedAt = "resolved_at"
+        case resolvedBy = "resolved_by"
+        case userSeenReply = "user_seen_reply"
     }
 
     /// Identifiant stable pour ForEach
@@ -397,6 +417,20 @@ struct AdminFeedbackItem: Decodable, Identifiable {
         if !lab.isEmpty { return lab }
         return category ?? "général"
     }
+
+    var displayStatus: String {
+        let lab = (statusLabel ?? "").trimmingCharacters(in: .whitespaces)
+        if !lab.isEmpty { return lab }
+        switch (status ?? "open").lowercased() {
+        case "done": return "Mis en place"
+        case "rejected": return "Refusé"
+        default: return "En cours"
+        }
+    }
+
+    var isOpen: Bool { (status ?? "open").lowercased() == "open" || status == nil || status?.isEmpty == true }
+    var isDone: Bool { (status ?? "").lowercased() == "done" }
+    var isRejected: Bool { (status ?? "").lowercased() == "rejected" }
 
     var deviceLine: String {
         [device, osName, browser]

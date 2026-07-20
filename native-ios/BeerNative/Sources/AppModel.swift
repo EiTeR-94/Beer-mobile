@@ -54,6 +54,14 @@ final class AppModel: ObservableObject {
     @Published var latestIosVersion: String?
     @Published var latestAndroidVersion: String?
     @Published var versionsUpdatedAt: String?
+    /// Réponses admin aux feedbacks non encore vues (popup au login).
+    @Published var pendingFeedbackReplies: [AdminFeedbackItem] = []
+    @Published var feedbackReplyIndex: Int = 0
+
+    var currentFeedbackReply: AdminFeedbackItem? {
+        guard feedbackReplyIndex >= 0, feedbackReplyIndex < pendingFeedbackReplies.count else { return nil }
+        return pendingFeedbackReplies[feedbackReplyIndex]
+    }
 
     var rpgActive: Bool { rpgState?.active == true }
 
@@ -322,9 +330,39 @@ final class AppModel: ObservableObject {
             if isInvite {
                 api.enableInviteMode(true)
             }
-            Task { await refreshRpg() }
+            Task {
+                await refreshRpg()
+                await checkFeedbackReplies()
+            }
         } else {
             clearRpgUiState()
+            pendingFeedbackReplies = []
+            feedbackReplyIndex = 0
+        }
+    }
+
+    /// Charge les réponses admin non vues (popup joueur).
+    func checkFeedbackReplies() async {
+        guard isLoggedIn else { return }
+        do {
+            let items = try await api.feedbackReplies(unseenOnly: true)
+            await MainActor.run {
+                pendingFeedbackReplies = items
+                feedbackReplyIndex = 0
+            }
+        } catch {
+            // silencieux — pas bloquant
+        }
+    }
+
+    func advanceFeedbackReply() {
+        if feedbackReplyIndex + 1 < pendingFeedbackReplies.count {
+            feedbackReplyIndex += 1
+        } else {
+            let ids = pendingFeedbackReplies.compactMap(\.id)
+            pendingFeedbackReplies = []
+            feedbackReplyIndex = 0
+            Task { await api.markFeedbackRepliesSeen(ids: ids) }
         }
     }
 

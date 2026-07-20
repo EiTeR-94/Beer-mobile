@@ -104,6 +104,21 @@ struct MainView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        .sheet(item: Binding(
+            get: { app.currentFeedbackReply.map { FeedbackReplyKey(item: $0) } },
+            set: { if $0 == nil { /* fermeture via bouton */ } }
+        )) { key in
+            FeedbackReplyPopup(
+                item: key.item,
+                index: app.feedbackReplyIndex,
+                total: app.pendingFeedbackReplies.count,
+                onNext: { app.advanceFeedbackReply() }
+            )
+            .preferredColorScheme(.dark)
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+            .interactiveDismissDisabled(true)
+        }
         .fullScreenCover(item: $sheet) { s in
             switch s {
             case .history:
@@ -606,6 +621,72 @@ private struct FeedbackSheetView: View {
                     KeyboardDismiss.endEditing()
                 }
             )
+        }
+    }
+}
+
+// MARK: - Popup réponse admin (feedback)
+
+private struct FeedbackReplyKey: Identifiable {
+    let item: AdminFeedbackItem
+    var id: Int { item.stableId }
+}
+
+private struct FeedbackReplyPopup: View {
+    let item: AdminFeedbackItem
+    let index: Int
+    let total: Int
+    let onNext: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(item.isRejected ? "Feedback refusé" : "Feedback mis en place")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Theme.text)
+
+                Text(item.displayStatus + (item.resolvedAt.map { " · \(BeerFormatters.formatDate($0))" } ?? ""))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(item.isRejected ? Theme.error : Theme.accent)
+
+                if let msg = item.message, !msg.isEmpty {
+                    Text("Tu avais écrit : « \(String(msg.prefix(220)))\(msg.count > 220 ? "…" : "") »")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.muted)
+                        .italic()
+                }
+
+                Text(item.adminReply ?? (item.isRejected ? "Ta demande n'a pas été retenue." : "Ta demande a été prise en compte."))
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.text)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.card)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.accent.opacity(0.35)))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                if total > 1 {
+                    Text("\(index + 1) / \(total)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Theme.muted)
+                }
+
+                Spacer(minLength: 0)
+
+                Button(action: onNext) {
+                    Text(index + 1 < total ? "Suivant" : "Compris")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color(red: 0.07, green: 0.07, blue: 0.07))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(LinearGradient(colors: [Theme.accent, Color.orange], startPoint: .leading, endPoint: .trailing))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(16)
+            .background(Theme.bg)
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
