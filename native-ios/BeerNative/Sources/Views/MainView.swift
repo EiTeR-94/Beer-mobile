@@ -92,6 +92,8 @@ struct MainView: View {
             FeedbackSheetView()
                 .environmentObject(app)
                 .preferredColorScheme(.dark)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .fullScreenCover(item: $sheet) { s in
             switch s {
@@ -265,157 +267,164 @@ private struct AccountMenuOverlay: View {
     }
 }
 
-/// Feedback parité webapp (dialog RPG sombre, pas de Form système).
+/// Feedback compact (demi-feuille) + clavier dismissible.
 private struct FeedbackSheetView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
+    @FocusState private var messageFocused: Bool
     @State private var message = ""
     @State private var category = "general"
     @State private var sending = false
 
     private let categories: [(String, String)] = [
-        ("general", "Un avis général"),
-        ("bug", "Un bug"),
-        ("idea", "Une idée"),
-        ("ux", "L’interface"),
-        ("rpg", "Le RPG / la progression"),
-        ("other", "Autre chose"),
+        ("general", "Avis général"),
+        ("bug", "Bug"),
+        ("idea", "Idée"),
+        ("ux", "Interface"),
+        ("rpg", "RPG"),
+        ("other", "Autre"),
     ]
 
     var body: some View {
-        ZStack {
-            Theme.bg.ignoresSafeArea()
-            VStack(spacing: 0) {
-                // Header RPG
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("💬 Feedback")
-                            .font(.system(size: 18, weight: .bold))
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Dis-nous ce qui va, ce qui coince ou une idée. Seul l’admin le lit.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.muted)
+
+                    // Catégories en chips (compact)
+                    Text("C’est plutôt…")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Theme.muted)
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                        ForEach(categories, id: \.0) { key, label in
+                            Button {
+                                category = key
+                                KeyboardDismiss.endEditing()
+                            } label: {
+                                Text(label)
+                                    .font(.system(size: 12, weight: category == key ? .bold : .semibold))
+                                    .foregroundStyle(category == key ? Color(red: 0.07, green: 0.07, blue: 0.07) : Theme.text)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                                    .background {
+                                        if category == key {
+                                            LinearGradient(colors: [Theme.accent, Color.orange], startPoint: .leading, endPoint: .trailing)
+                                        } else {
+                                            Theme.card
+                                        }
+                                    }
+                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(category == key ? Theme.accent : Theme.border))
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    Text("Ton message")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Theme.muted)
+                    ZStack(alignment: .topLeading) {
+                        if message.isEmpty && !messageFocused {
+                            Text("Écris librement…")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Theme.muted.opacity(0.7))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 10)
+                        }
+                        TextEditor(text: $message)
+                            .focused($messageFocused)
+                            .scrollContentBackground(.hidden)
                             .foregroundStyle(Theme.text)
-                        Text("Parchemin pour le tavernier")
-                            .font(.system(size: 12, weight: .medium))
+                            .frame(minHeight: 88, maxHeight: 120)
+                            .padding(6)
+                    }
+                    .background(Theme.fieldBg)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(messageFocused ? Theme.accent : Theme.border))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                    HStack {
+                        if messageFocused {
+                            Button("Masquer clavier") {
+                                messageFocused = false
+                                KeyboardDismiss.endEditing()
+                            }
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Theme.accent)
+                        }
+                        Spacer()
+                        Text("\(min(message.count, 1200))/1200")
+                            .font(.caption2)
                             .foregroundStyle(Theme.muted)
                     }
-                    Spacer()
-                    Button("Fermer") { dismiss() }
+
+                    HStack(spacing: 10) {
+                        Button("Annuler") {
+                            KeyboardDismiss.endEditing()
+                            dismiss()
+                        }
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Theme.muted)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.border))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
                         .disabled(sending)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Dis-nous ce qui va, ce qui coince ou une idée. Seul l’admin le lit.")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("C’est plutôt…")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(Theme.muted)
-                            VStack(spacing: 6) {
-                                ForEach(categories, id: \.0) { key, label in
-                                    Button {
-                                        category = key
-                                    } label: {
-                                        HStack {
-                                            Text(label)
-                                                .font(.system(size: 14, weight: category == key ? .bold : .semibold))
-                                                .foregroundStyle(category == key ? Color(red: 0.07, green: 0.07, blue: 0.07) : Theme.text)
-                                            Spacer()
-                                            if category == key {
-                                                Text("✓")
-                                                    .font(.system(size: 13, weight: .bold))
-                                                    .foregroundStyle(Color(red: 0.07, green: 0.07, blue: 0.07))
-                                            }
-                                        }
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 11)
-                                        .background {
-                                            if category == key {
-                                                LinearGradient(colors: [Theme.accent, Color.orange], startPoint: .leading, endPoint: .trailing)
-                                            } else {
-                                                Theme.card
-                                            }
-                                        }
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .stroke(category == key ? Theme.accent : Theme.border)
-                                        )
-                                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                                    }
-                                    .buttonStyle(.plain)
-                                }
+                        Button {
+                            Task {
+                                messageFocused = false
+                                KeyboardDismiss.endEditing()
+                                sending = true
+                                let msg = String(message.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1200))
+                                let ok = await app.sendFeedback(message: msg, category: category)
+                                sending = false
+                                if ok { dismiss() }
                             }
-                        }
-
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Ton message")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(Theme.muted)
-                            ZStack(alignment: .topLeading) {
-                                if message.isEmpty {
-                                    Text("Écris librement…")
-                                        .font(.system(size: 14))
-                                        .foregroundStyle(Theme.muted.opacity(0.7))
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 12)
-                                }
-                                TextEditor(text: $message)
-                                    .scrollContentBackground(.hidden)
-                                    .foregroundStyle(Theme.text)
-                                    .frame(minHeight: 130)
-                                    .padding(8)
-                            }
-                            .background(Theme.fieldBg)
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.border))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            Text("\(message.count)/1200")
-                                .font(.caption2)
-                                .foregroundStyle(Theme.muted)
-                                .frame(maxWidth: .infinity, alignment: .trailing)
-                        }
-
-                        HStack(spacing: 10) {
-                            Button("Annuler") { dismiss() }
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(Theme.muted)
+                        } label: {
+                            Text(sending ? "…" : "Envoyer")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(Color(red: 0.07, green: 0.07, blue: 0.07))
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.border))
+                                .padding(.vertical, 11)
+                                .background(LinearGradient(colors: [Theme.accent, Color.orange], startPoint: .leading, endPoint: .trailing))
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
-                                .disabled(sending)
-
-                            Button {
-                                Task {
-                                    sending = true
-                                    let msg = String(message.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1200))
-                                    let ok = await app.sendFeedback(message: msg, category: category)
-                                    sending = false
-                                    if ok { dismiss() }
-                                }
-                            } label: {
-                                Text(sending ? "Envoi…" : "Envoyer")
-                                    .font(.system(size: 15, weight: .bold))
-                                    .foregroundStyle(Color(red: 0.07, green: 0.07, blue: 0.07))
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 12)
-                                    .background(
-                                        LinearGradient(colors: [Theme.accent, Color.orange], startPoint: .leading, endPoint: .trailing)
-                                    )
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                            }
-                            .disabled(sending || message.trimmingCharacters(in: .whitespacesAndNewlines).count < 3)
-                            .opacity(message.trimmingCharacters(in: .whitespacesAndNewlines).count < 3 ? 0.5 : 1)
                         }
+                        .disabled(sending || message.trimmingCharacters(in: .whitespacesAndNewlines).count < 3)
+                        .opacity(message.trimmingCharacters(in: .whitespacesAndNewlines).count < 3 ? 0.5 : 1)
                     }
-                    .padding(16)
+                }
+                .padding(14)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .background(Theme.bg)
+            .navigationTitle("💬 Feedback")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Fermer") {
+                        messageFocused = false
+                        KeyboardDismiss.endEditing()
+                        dismiss()
+                    }
+                    .disabled(sending)
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("OK") {
+                        messageFocused = false
+                        KeyboardDismiss.endEditing()
+                    }
+                    .fontWeight(.semibold)
                 }
             }
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    messageFocused = false
+                    KeyboardDismiss.endEditing()
+                }
+            )
         }
     }
 }

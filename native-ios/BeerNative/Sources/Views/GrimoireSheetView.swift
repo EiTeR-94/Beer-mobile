@@ -341,6 +341,17 @@ struct GrimoireSheetView: View {
         let equipped = classes.first { $0.key == equippedKey }
         let others = classes.filter { $0.key != equippedKey }
         let styles = st.atlas?.styles ?? []
+        let equippedLabel: String = {
+            guard let eq = equipped else { return "" }
+            return "\(eq.icon ?? "🍺") \(eq.name ?? eq.key ?? "")"
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }()
+        let recLabel: String = {
+            guard let rk = recKey, rk != equippedKey,
+                  let rec = classes.first(where: { $0.key == rk }) else { return "" }
+            return "\(rec.icon ?? "🍺") \(rec.name ?? rk)"
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }()
 
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
@@ -356,25 +367,30 @@ struct GrimoireSheetView: View {
                         statTile("🏭", "\(st.atlas?.breweriesCount ?? 0)", "Brasseries")
                         statTile("📷", "\(st.atlas?.photos ?? 0)", "Photos")
                     }
-                    HStack(spacing: 6) {
-                        if let eq = equipped {
-                            Text("Équipée · \((eq.icon ?? "") + " " + (eq.name ?? eq.key ?? "")).trimmingCharacters(in: .whitespaces)")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(Theme.accent)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Theme.accent.opacity(0.14))
-                                .clipShape(Capsule())
-                        }
-                        if let rk = recKey, rk != equippedKey,
-                           let rec = classes.first(where: { $0.key == rk }) {
-                            Text("Plus jouée · \((rec.icon ?? "") + " " + (rec.name ?? rk)).trimmingCharacters(in: .whitespaces)")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Color(red: 0.38, green: 0.65, blue: 0.98))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color(red: 0.38, green: 0.65, blue: 0.98).opacity(0.12))
-                                .clipShape(Capsule())
+                    if !equippedLabel.isEmpty || !recLabel.isEmpty {
+                        HStack(spacing: 6) {
+                            if !equippedLabel.isEmpty {
+                                Text("Équipée · \(equippedLabel)")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(Theme.accent)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Theme.accent.opacity(0.14))
+                                    .clipShape(Capsule())
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                            }
+                            if !recLabel.isEmpty {
+                                Text("Plus jouée · \(recLabel)")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(Color(red: 0.38, green: 0.65, blue: 0.98))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color(red: 0.38, green: 0.65, blue: 0.98).opacity(0.12))
+                                    .clipShape(Capsule())
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                            }
                         }
                     }
                 }

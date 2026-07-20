@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1419" />
+  <title>Beer Log — téléchargement</title>
+  <style>
+    :root {
+      --bg: #0f1419; --card: #1a222c; --text: #f1f5f9; --muted: #94a3b8;
+      --accent: #f59e0b; --border: #2d3a4a; --ios: #60a5fa; --android: #34d399;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(245,158,11,.14), transparent), var(--bg);
+      color: var(--text);
+      display: flex; align-items: center; justify-content: center;
+      padding: 1.25rem;
+    }
+    .shell { width: 100%; max-width: 420px; }
+    .brand { text-align: center; margin-bottom: 1.25rem; }
+    .brand .ico { font-size: 2.5rem; line-height: 1; margin-bottom: .35rem; }
+    .brand h1 { margin: 0; font-size: 1.45rem; font-weight: 800; letter-spacing: -.02em; }
+    .brand p { margin: .35rem 0 0; color: var(--muted); font-size: .88rem; line-height: 1.4; }
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 16px; padding: 1rem; margin-bottom: .75rem;
+    }
+    .card h2 { margin: 0 0 .35rem; font-size: 1rem; font-weight: 700; }
+    .card .meta { margin: 0 0 .85rem; color: var(--muted); font-size: .78rem; line-height: 1.35; }
+    .btn {
+      display: flex; align-items: center; justify-content: center; gap: .45rem;
+      width: 100%; padding: .85rem 1rem; border-radius: 12px; border: none;
+      font: inherit; font-weight: 700; font-size: .95rem; text-decoration: none;
+      cursor: pointer; color: #111;
+    }
+    .btn:active { transform: scale(.98); }
+    .btn-ios { background: linear-gradient(180deg, #93c5fd, var(--ios)); }
+    .btn-android { background: linear-gradient(180deg, #6ee7b7, var(--android)); }
+    .hint { margin-top: .55rem; font-size: .72rem; color: var(--muted); line-height: 1.35; }
+    .foot { text-align: center; margin-top: 1rem; font-size: .72rem; color: var(--muted); }
+    .foot a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="brand">
+      <div class="ico" aria-hidden="true">🍺</div>
+      <h1>Beer Log</h1>
+      <p>Choisis ta plateforme pour télécharger l’app native.</p>
+    </div>
+    <section class="card">
+      <h2>🍎 iPhone · iPad</h2>
+      <p class="meta">Fichier <strong>BeerOff.ipa</strong> — installation sideload (AltStore, Sideloadly, TrollStore…).</p>
+      <a class="btn btn-ios" href="/mobile/beer/beeroff.ipa" download="BeerOff.ipa">Télécharger l’IPA</a>
+      <p class="hint">Après install : Wi‑Fi maison / VPN pour les comptes, ou lien d’invitation pour les invités 4G/5G.</p>
+    </section>
+    <section class="card">
+      <h2>🤖 Android</h2>
+      <p class="meta">Fichier <strong>BeerOff.apk</strong> — autorise « sources inconnues » si demandé.</p>
+      <a class="btn btn-android" href="/mobile/beer/beeroff.apk" download="BeerOff.apk">Télécharger l’APK</a>
+      <p class="hint">Même compte / même serveur que l’app iOS et la webapp.</p>
+    </section>
+    <p class="foot">Plexi · <a href="/beer/">webapp Beer Log</a></p>
+  </main>
+</body>
+</html>

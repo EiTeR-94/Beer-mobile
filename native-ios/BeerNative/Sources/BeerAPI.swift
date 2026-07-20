@@ -535,27 +535,112 @@ final class BeerAPI {
         return decoded.players ?? []
     }
 
-    func adminRpgAdjustXp(username: String, delta: Int) async throws -> Bool {
+    func adminRpgPlayer(_ username: String) async throws -> RpgAdminPlayerDetail {
+        let enc = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
+        let (data, http, _) = try await request(
+            path: "/api/admin/rpg/players/\(enc)",
+            method: "GET",
+            body: nil
+        )
+        guard http.statusCode >= 200 && http.statusCode < 300 else {
+            throw BeerAPIError.server("Joueur introuvable")
+        }
+        return try JSONDecoder().decode(RpgAdminPlayerDetail.self, from: data)
+    }
+
+    func adminRpgPatchPlayer(_ username: String, payload: [String: Any]) async throws -> RpgAdminPlayerDetail {
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let enc = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
+        let (data, http, _) = try await request(
+            path: "/api/admin/rpg/players/\(enc)",
+            method: "PATCH",
+            body: body,
+            contentType: "application/json"
+        )
+        guard http.statusCode >= 200 && http.statusCode < 300 else {
+            throw BeerAPIError.server("Échec mise à jour profil")
+        }
+        return try JSONDecoder().decode(RpgAdminPlayerDetail.self, from: data)
+    }
+
+    func adminRpgAdjustXp(username: String, delta: Int) async throws -> RpgAdminPlayerDetail {
         let body = try JSONSerialization.data(withJSONObject: ["delta": delta])
         let enc = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
-        let (_, http, _) = try await request(
+        let (data, http, _) = try await request(
             path: "/api/admin/rpg/players/\(enc)/xp",
             method: "POST",
             body: body,
             contentType: "application/json"
         )
-        return http.statusCode >= 200 && http.statusCode < 300
+        guard http.statusCode >= 200 && http.statusCode < 300 else {
+            throw BeerAPIError.server("Échec XP")
+        }
+        return try JSONDecoder().decode(RpgAdminPlayerDetail.self, from: data)
     }
 
-    func adminRpgResetDaily(username: String) async throws -> Bool {
+    func adminRpgResetDaily(username: String) async throws -> RpgAdminPlayerDetail {
         let enc = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
-        let (_, http, _) = try await request(
+        let (data, http, _) = try await request(
             path: "/api/admin/rpg/players/\(enc)/reset-daily",
             method: "POST",
-            body: Data(),
+            body: Data("{}".utf8),
             contentType: "application/json"
         )
-        return http.statusCode >= 200 && http.statusCode < 300
+        guard http.statusCode >= 200 && http.statusCode < 300 else {
+            throw BeerAPIError.server("Échec reset journalier")
+        }
+        return try JSONDecoder().decode(RpgAdminPlayerDetail.self, from: data)
+    }
+
+    func adminRpgGrantBadge(username: String, badgeKey: String) async throws -> RpgAdminPlayerDetail {
+        let body = try JSONSerialization.data(withJSONObject: ["badge_key": badgeKey])
+        let enc = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
+        let (data, http, _) = try await request(
+            path: "/api/admin/rpg/players/\(enc)/badges",
+            method: "POST",
+            body: body,
+            contentType: "application/json"
+        )
+        guard http.statusCode >= 200 && http.statusCode < 300 else {
+            throw BeerAPIError.server("Échec badge")
+        }
+        // { granted, player: <admin_get_player detail> }
+        if let wrap = try? JSONDecoder().decode(RpgAdminBadgeActionResponse.self, from: data),
+           let detail = wrap.player {
+            return detail
+        }
+        return try await adminRpgPlayer(username)
+    }
+
+    func adminRpgRevokeBadge(username: String, badgeKey: String) async throws -> RpgAdminPlayerDetail {
+        let encU = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
+        let encB = badgeKey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? badgeKey
+        let (data, http, _) = try await request(
+            path: "/api/admin/rpg/players/\(encU)/badges/\(encB)",
+            method: "DELETE",
+            body: nil
+        )
+        guard http.statusCode >= 200 && http.statusCode < 300 else {
+            throw BeerAPIError.server("Échec retrait badge")
+        }
+        if let wrap = try? JSONDecoder().decode(RpgAdminBadgeActionResponse.self, from: data),
+           let detail = wrap.player {
+            return detail
+        }
+        return try await adminRpgPlayer(username)
+    }
+
+    func adminRpgWipe(username: String) async throws {
+        let enc = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
+        let (_, http, _) = try await request(
+            path: "/api/admin/rpg/players/\(enc)/wipe",
+            method: "POST",
+            body: Data("{}".utf8),
+            contentType: "application/json"
+        )
+        guard http.statusCode >= 200 && http.statusCode < 300 else {
+            throw BeerAPIError.server("Échec wipe RPG")
+        }
     }
 
     func logout() async {

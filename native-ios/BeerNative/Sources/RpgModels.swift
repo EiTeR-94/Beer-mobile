@@ -251,6 +251,11 @@ struct RpgAdminPlayer: Decodable, Identifiable {
     var suspicionScore: Int?
     var suspicionFlagged: Bool?
     var orphan: Bool?
+    var introSeen: Bool?
+    var backfilled: Bool?
+    var dailyXpTotal: Int?
+    var dailyXpCount: Int?
+    var lastRpgCheckinAt: String?
     var id: String { username ?? UUID().uuidString }
 
     enum CodingKeys: String, CodingKey {
@@ -266,7 +271,64 @@ struct RpgAdminPlayer: Decodable, Identifiable {
         case progressPct = "progress_pct"
         case suspicionScore = "suspicion_score"
         case suspicionFlagged = "suspicion_flagged"
+        case introSeen = "intro_seen"
+        case backfilled
+        case dailyXpTotal = "daily_xp_total"
+        case dailyXpCount = "daily_xp_count"
+        case lastRpgCheckinAt = "last_rpg_checkin_at"
     }
+}
+
+/// GET/PATCH /api/admin/rpg/players/{user} — détail complet
+struct RpgAdminPlayerDetail: Decodable {
+    var player: RpgAdminPlayer?
+    var badges: [RpgBadge]?
+    var quests: [RpgAdminQuest]?
+    var events: [RpgAdminEvent]?
+    var atlas: RpgAtlas?
+    var classAffinity: [String: Int]?
+    var classes: [RpgClassInfo]?
+    var catalogBadges: [RpgBadge]?
+
+    enum CodingKeys: String, CodingKey {
+        case player, badges, quests, events, atlas, classes
+        case classAffinity = "class_affinity"
+        case catalogBadges = "catalog_badges"
+    }
+}
+
+struct RpgAdminQuest: Decodable, Identifiable {
+    var key: String?
+    var kind: String?
+    var title: String?
+    var status: String?
+    var progress: Int?
+    var target: Int?
+    var rewardXp: Int?
+    var periodKey: String?
+    var id: String { "\(key ?? "")-\(periodKey ?? "")-\(title ?? UUID().uuidString)" }
+    enum CodingKeys: String, CodingKey {
+        case key, kind, title, status, progress, target
+        case rewardXp = "reward_xp"
+        case periodKey = "period_key"
+    }
+}
+
+struct RpgAdminEvent: Decodable, Identifiable {
+    var kind: String?
+    var createdAt: String?
+    var id: String { "\(kind ?? "")-\(createdAt ?? UUID().uuidString)" }
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case createdAt = "created_at"
+    }
+}
+
+struct RpgAdminBadgeActionResponse: Decodable {
+    var ok: Bool?
+    var granted: Bool?
+    var removed: Bool?
+    var player: RpgAdminPlayerDetail?
 }
 
 func rarityLabelFr(_ r: String?) -> String {
