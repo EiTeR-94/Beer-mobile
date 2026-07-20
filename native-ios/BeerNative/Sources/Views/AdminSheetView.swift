@@ -33,6 +33,21 @@ struct AdminSheetView: View {
     @State private var feedbackUnread: Int = 0
     @State private var rpgPlayersCount: Int = 0
     @State private var rpgWithProfile: Int = 0
+    /// Parité webapp : Comptes / Invités / Outils
+    @State private var adminTab: AdminMainTab = .accounts
+    @State private var showRpgAdmin = false
+
+    private enum AdminMainTab: String, CaseIterable, Identifiable {
+        case accounts, invites, tools
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .accounts: return "Comptes"
+            case .invites: return "Invités"
+            case .tools: return "Outils"
+            }
+        }
+    }
 
     private let validityOptions: [(String, String)] = [
         ("24h", "24 heures"), ("48h", "48 heures"), ("7d", "7 jours"),
@@ -50,105 +65,16 @@ struct AdminSheetView: View {
                 if let message { Text(message).font(.footnote).foregroundStyle(Theme.ok) }
 
                 adminDashboard
+                adminTabBar
 
-                BeerAdminSub(title: "Nouveau compte")
-                BeerAdminCard {
-                    VStack(spacing: 0) {
-                        BeerField(label: "Identifiant", text: $newUser, placeholder: "ex. ney")
-                        BeerField(label: "Mot de passe", text: $newPass, secure: true)
-                            .padding(.top, 10)
-                        Toggle("Administrateur", isOn: $newAdmin)
-                            .font(.system(size: 14))
-                            .foregroundStyle(Theme.muted)
-                            .tint(Theme.accent)
-                            .padding(.top, 8)
-                        BeerPrimaryButton(title: "Créer le compte", disabled: newUser.isEmpty || newPass.count < 6) {
-                            Task { await createUser() }
-                        }
-                    }
+                switch adminTab {
+                case .accounts:
+                    accountsTab
+                case .invites:
+                    invitesTab
+                case .tools:
+                    toolsTab
                 }
-
-                BeerAdminSub(title: "Comptes")
-                    ForEach(users) { u in
-                        AdminUserCard(
-                            user: u,
-                            password: passwordBinding(for: u.username),
-                            isSelf: u.username == app.user,
-                            onSetPassword: { Task { await setPassword(u.username) } },
-                            onToggleAdmin: {
-                                Task { try? await app.api.adminSetAdmin(u.username, isAdmin: !u.isAdmin); await reload() }
-                            },
-                            onDelete: {
-                                Task { try? await app.api.adminDeleteUser(u.username); await reload() }
-                            }
-                        )
-                    }
-
-                HStack(alignment: .center) {
-                    Text("Invitations")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.muted)
-                    Spacer()
-                    BeerGhostButton("IP", action: openAllIPs)
-                }
-                .padding(.top, 12)
-
-                Text("Lien + email (l'invité saisit l'email qu'il t'a donné). Lien 24 h si non utilisé. 1 appareil. « Renvoyer l'accès » = 10 min.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.muted)
-
-                BeerAdminCard {
-                    VStack(spacing: 0) {
-                        BeerField(label: "Nom de l'invité", text: $inviteLabel, placeholder: "ex. Paul")
-                        BeerField(label: "Email de l'invité", text: $inviteEmail, placeholder: "ex. paul@example.com")
-                            .textInputAutocapitalization(.never)
-                            .keyboardType(.emailAddress)
-                            .autocorrectionDisabled()
-                            .padding(.top, 10)
-                        BeerSelectField(
-                            label: "Validité du compte",
-                            value: inviteValidity,
-                            options: validityOptions,
-                            onSelect: { inviteValidity = $0 }
-                        )
-                        .padding(.top, 10)
-                        BeerPrimaryButton(
-                            title: inviteCreating ? "Génération…" : "Créer le lien",
-                            disabled: inviteLabel.count < 2 || inviteEmail.isEmpty || !inviteEmail.contains("@") || inviteCreating,
-                            busy: inviteCreating
-                        ) {
-                            Task { await createInvite() }
-                        }
-                    }
-                }
-                    if let url = createdInviteURL {
-                        InviteLinkResultCard(
-                            url: url,
-                            onCopy: { copyCreatedInviteLink() },
-                            onClose: { createdInviteURL = nil }
-                        )
-                    }
-                    ForEach(invites) { inv in inviteCard(inv) }
-
-                BeerAdminSub(title: "Maintenance")
-                BeerSecondaryButton(title: "🧹 Nettoyer photos orphelines") {
-                    Task {
-                        do { message = try await app.api.adminCleanupPhotos(); errorMessage = nil }
-                        catch let err { errorMessage = err.localizedDescription }
-                    }
-                }
-
-                BeerAdminSub(title: "Référentiels")
-                BeerAdminReferentialsCard(
-                    tab: $refTab,
-                    styles: referentials?.styles ?? [],
-                    hops: referentials?.hops ?? [],
-                    flavors: referentials?.flavors ?? [],
-                    filter: $refFilter,
-                    newName: $refNewName,
-                    onAdd: { Task { await addReferential() } },
-                    onDelete: { name in Task { await deleteReferential(name) } }
-                )
             }
         }
         .task { await reload() }
@@ -163,6 +89,10 @@ struct AdminSheetView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsSheetView()
+                .environmentObject(app)
+        }
+        .fullScreenCover(isPresented: $showRpgAdmin) {
+            BeerquestAdminSheetView()
                 .environmentObject(app)
         }
         .alert(
@@ -180,6 +110,151 @@ struct AdminSheetView: View {
         } message: { inv in
             Text("Le compte « \(inv.label ?? inv.username ?? "invité") » et ses dégustations seront supprimés.")
         }
+    }
+
+    // MARK: - Tabs (parité webapp)
+
+    private var adminTabBar: some View {
+        HStack(spacing: 6) {
+            ForEach(AdminMainTab.allCases) { tab in
+                Button {
+                    adminTab = tab
+                } label: {
+                    Text(tab.label)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(adminTab == tab ? Theme.text : Theme.muted)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(
+                            adminTab == tab
+                                ? Theme.card.opacity(0.95)
+                                : Theme.card.opacity(0.55)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(
+                                    adminTab == tab ? Theme.accent : Theme.border,
+                                    lineWidth: adminTab == tab ? 1.5 : 1
+                                )
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.bottom, 2)
+    }
+
+    @ViewBuilder
+    private var accountsTab: some View {
+        BeerAdminSub(title: "Nouveau compte")
+        BeerAdminCard {
+            VStack(spacing: 0) {
+                BeerField(label: "Identifiant", text: $newUser, placeholder: "ex. ney")
+                BeerField(label: "Mot de passe", text: $newPass, secure: true)
+                    .padding(.top, 10)
+                Toggle("Administrateur", isOn: $newAdmin)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.muted)
+                    .tint(Theme.accent)
+                    .padding(.top, 8)
+                BeerPrimaryButton(title: "Créer le compte", disabled: newUser.isEmpty || newPass.count < 6) {
+                    Task { await createUser() }
+                }
+            }
+        }
+
+        BeerAdminSub(title: "Comptes")
+        ForEach(users) { u in
+            AdminUserCard(
+                user: u,
+                password: passwordBinding(for: u.username),
+                isSelf: u.username == app.user,
+                onSetPassword: { Task { await setPassword(u.username) } },
+                onToggleAdmin: {
+                    Task { try? await app.api.adminSetAdmin(u.username, isAdmin: !u.isAdmin); await reload() }
+                },
+                onDelete: {
+                    Task { try? await app.api.adminDeleteUser(u.username); await reload() }
+                }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var invitesTab: some View {
+        HStack(alignment: .center) {
+            Text("Invitations")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.muted)
+            Spacer()
+            BeerGhostButton("IP", action: openAllIPs)
+        }
+
+        Text("Lien + email (l'invité saisit l'email qu'il t'a donné). Lien 24 h si non utilisé. 1 appareil. « Renvoyer l'accès » = 10 min.")
+            .font(.system(size: 13))
+            .foregroundStyle(Theme.muted)
+
+        BeerAdminCard {
+            VStack(spacing: 0) {
+                BeerField(label: "Nom de l'invité", text: $inviteLabel, placeholder: "ex. Paul")
+                BeerField(label: "Email de l'invité", text: $inviteEmail, placeholder: "ex. paul@example.com")
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.emailAddress)
+                    .autocorrectionDisabled()
+                    .padding(.top, 10)
+                BeerSelectField(
+                    label: "Validité du compte",
+                    value: inviteValidity,
+                    options: validityOptions,
+                    onSelect: { inviteValidity = $0 }
+                )
+                .padding(.top, 10)
+                BeerPrimaryButton(
+                    title: inviteCreating ? "Génération…" : "Créer le lien",
+                    disabled: inviteLabel.count < 2 || inviteEmail.isEmpty || !inviteEmail.contains("@") || inviteCreating,
+                    busy: inviteCreating
+                ) {
+                    Task { await createInvite() }
+                }
+            }
+        }
+        if let url = createdInviteURL {
+            InviteLinkResultCard(
+                url: url,
+                onCopy: { copyCreatedInviteLink() },
+                onClose: { createdInviteURL = nil }
+            )
+        }
+        ForEach(invites) { inv in inviteCard(inv) }
+    }
+
+    @ViewBuilder
+    private var toolsTab: some View {
+        BeerAdminSub(title: "Outils")
+        VStack(spacing: 8) {
+            BeerPrimaryButton(title: "⚔ Admin Beerquest") {
+                showRpgAdmin = true
+            }
+            BeerSecondaryButton(title: "🧹 Nettoyer photos orphelines") {
+                Task {
+                    do { message = try await app.api.adminCleanupPhotos(); errorMessage = nil }
+                    catch let err { errorMessage = err.localizedDescription }
+                }
+            }
+        }
+
+        BeerAdminSub(title: "Référentiels")
+        BeerAdminReferentialsCard(
+            tab: $refTab,
+            styles: referentials?.styles ?? [],
+            hops: referentials?.hops ?? [],
+            flavors: referentials?.flavors ?? [],
+            filter: $refFilter,
+            newName: $refNewName,
+            onAdd: { Task { await addReferential() } },
+            onDelete: { name in Task { await deleteReferential(name) } }
+        )
     }
 
     @ViewBuilder

@@ -11,7 +11,7 @@ settings:
     TARGETED_DEVICE_FAMILY: "1,2"  # Priority 5: basic iPad support (in addition to iPhone)
     INFOPLIST_FILE: BeerNative/Resources/Info.plist
     PRODUCT_BUNDLE_IDENTIFIER: fr.eiter.plexibeer
-    MARKETING_VERSION: "4.4.9"
+    MARKETING_VERSION: "4.4.10"
     CURRENT_PROJECT_VERSION: "213"
     CODE_SIGN_STYLE: Manual
     CODE_SIGN_IDENTITY: ""
