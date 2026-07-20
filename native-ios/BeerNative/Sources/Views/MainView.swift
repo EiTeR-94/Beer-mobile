@@ -215,7 +215,7 @@ private struct AccountMenuOverlay: View {
                         }
 
                         section("Parler à l’admin")
-                        item("💬 Un retour") { onFeedback() }
+                        item("💬 Un retour") { onFeedback() } // parité web — feedback taverne
 
                         if isAdmin {
                             section("Admin")
@@ -265,6 +265,7 @@ private struct AccountMenuOverlay: View {
     }
 }
 
+/// Feedback parité webapp (dialog RPG sombre, pas de Form système).
 private struct FeedbackSheetView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -282,44 +283,137 @@ private struct FeedbackSheetView: View {
     ]
 
     var body: some View {
-        NavigationView {
-            Form {
-                Section {
-                    Text("Dis-nous ce qui va, ce qui coince ou une idée. Seul l’admin le lit.")
-                        .font(.footnote)
-                        .foregroundStyle(Theme.muted)
-                }
-                Section("C’est plutôt…") {
-                    Picker("Catégorie", selection: $category) {
-                        ForEach(categories, id: \.0) { key, label in
-                            Text(label).tag(key)
-                        }
+        ZStack {
+            Theme.bg.ignoresSafeArea()
+            VStack(spacing: 0) {
+                // Header RPG
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("💬 Feedback")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(Theme.text)
+                        Text("Parchemin pour le tavernier")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.muted)
                     }
-                    .pickerStyle(.inline)
-                    .labelsHidden()
-                }
-                Section("Ton message") {
-                    TextEditor(text: $message)
-                        .frame(minHeight: 120)
-                }
-            }
-            .navigationTitle("Feedback")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Annuler") { dismiss() }
+                    Spacer()
+                    Button("Fermer") { dismiss() }
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.muted)
                         .disabled(sending)
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(sending ? "Envoi…" : "Envoyer") {
-                        Task {
-                            sending = true
-                            let ok = await app.sendFeedback(message: message.trimmingCharacters(in: .whitespacesAndNewlines), category: category)
-                            sending = false
-                            if ok { dismiss() }
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Dis-nous ce qui va, ce qui coince ou une idée. Seul l’admin le lit.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("C’est plutôt…")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(Theme.muted)
+                            VStack(spacing: 6) {
+                                ForEach(categories, id: \.0) { key, label in
+                                    Button {
+                                        category = key
+                                    } label: {
+                                        HStack {
+                                            Text(label)
+                                                .font(.system(size: 14, weight: category == key ? .bold : .semibold))
+                                                .foregroundStyle(category == key ? Color(red: 0.07, green: 0.07, blue: 0.07) : Theme.text)
+                                            Spacer()
+                                            if category == key {
+                                                Text("✓")
+                                                    .font(.system(size: 13, weight: .bold))
+                                                    .foregroundStyle(Color(red: 0.07, green: 0.07, blue: 0.07))
+                                            }
+                                        }
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 11)
+                                        .background {
+                                            if category == key {
+                                                LinearGradient(colors: [Theme.accent, Color.orange], startPoint: .leading, endPoint: .trailing)
+                                            } else {
+                                                Theme.card
+                                            }
+                                        }
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 12)
+                                                .stroke(category == key ? Theme.accent : Theme.border)
+                                        )
+                                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Ton message")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(Theme.muted)
+                            ZStack(alignment: .topLeading) {
+                                if message.isEmpty {
+                                    Text("Écris librement…")
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(Theme.muted.opacity(0.7))
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 12)
+                                }
+                                TextEditor(text: $message)
+                                    .scrollContentBackground(.hidden)
+                                    .foregroundStyle(Theme.text)
+                                    .frame(minHeight: 130)
+                                    .padding(8)
+                            }
+                            .background(Theme.fieldBg)
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.border))
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            Text("\(message.count)/1200")
+                                .font(.caption2)
+                                .foregroundStyle(Theme.muted)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                        }
+
+                        HStack(spacing: 10) {
+                            Button("Annuler") { dismiss() }
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Theme.muted)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.border))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .disabled(sending)
+
+                            Button {
+                                Task {
+                                    sending = true
+                                    let msg = String(message.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1200))
+                                    let ok = await app.sendFeedback(message: msg, category: category)
+                                    sending = false
+                                    if ok { dismiss() }
+                                }
+                            } label: {
+                                Text(sending ? "Envoi…" : "Envoyer")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundStyle(Color(red: 0.07, green: 0.07, blue: 0.07))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(
+                                        LinearGradient(colors: [Theme.accent, Color.orange], startPoint: .leading, endPoint: .trailing)
+                                    )
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                            .disabled(sending || message.trimmingCharacters(in: .whitespacesAndNewlines).count < 3)
+                            .opacity(message.trimmingCharacters(in: .whitespacesAndNewlines).count < 3 ? 0.5 : 1)
                         }
                     }
-                    .disabled(sending || message.trimmingCharacters(in: .whitespacesAndNewlines).count < 3)
+                    .padding(16)
                 }
             }
         }

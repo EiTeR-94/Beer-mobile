@@ -239,6 +239,7 @@ struct RpgAdminPlayer: Decodable, Identifiable {
     var title: String?
     var streakDays: Int?
     var classKey: String?
+    var classInfo: RpgClassInfo?
     var beerMaster: Bool?
     var isAdmin: Bool?
     var isInvite: Bool?
@@ -246,17 +247,25 @@ struct RpgAdminPlayer: Decodable, Identifiable {
     var badgeCount: Int?
     var allowed: Bool?
     var hasProfile: Bool?
+    var progressPct: Double?
+    var suspicionScore: Int?
+    var suspicionFlagged: Bool?
+    var orphan: Bool?
     var id: String { username ?? UUID().uuidString }
 
     enum CodingKeys: String, CodingKey {
-        case username, level, xp, title, checkins, allowed
+        case username, level, xp, title, checkins, allowed, orphan
         case streakDays = "streak_days"
         case classKey = "class"
+        case classInfo = "class_info"
         case beerMaster = "beer_master"
         case isAdmin = "is_admin"
         case isInvite = "is_invite"
         case badgeCount = "badge_count"
         case hasProfile = "has_profile"
+        case progressPct = "progress_pct"
+        case suspicionScore = "suspicion_score"
+        case suspicionFlagged = "suspicion_flagged"
     }
 }
 
