@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -398,28 +400,24 @@ fun GrimoireSheet(vm: AppViewModel) {
 @Composable
 private fun ColumnScope.GrimoireHome(state: RpgState, onBadge: (RpgBadge) -> Unit) {
     val p = state.profile ?: return
+    val master = p.beerMaster
+    val nActive = state.quests?.active?.size ?: 0
     val scroll = rememberScrollState()
     Column(Modifier.verticalScroll(scroll)) {
-        HeroSheet(p)
-        if (p.beerMaster) {
-            Spacer(Modifier.height(10.dp))
+        // Master card en premier (parité iOS)
+        if (master) {
             MasterCard(p)
+            Spacer(Modifier.height(10.dp))
         }
+
+        // Fiche d’aventurier unique : avatar + XP + stats (parité iOS homeTab)
+        FicheAventurierCard(p = p, state = state, nActive = nActive)
+
         Spacer(Modifier.height(12.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            StatTile("🔥", "${p.streakDays}", "Streak", Modifier.weight(1f))
-            StatTile("⚡", "${p.dailyXp}/${p.dailySoftCap}", "XP jour", Modifier.weight(1f))
-            StatTile("🍺", "${state.atlas?.totalCheckins ?: 0}", "Check-ins", Modifier.weight(1f))
-            StatTile("📜", "${state.quests?.active?.size ?: 0}", "Quêtes", Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(12.dp))
-        XpHeroBar(p)
-        Spacer(Modifier.height(14.dp))
-        // Cartes encadrées (parité iOS sectionCard)
         SectionCard(
             title = "Quêtes en cours",
             ico = "📜",
-            count = state.quests?.active?.size?.takeIf { it > 0 }
+            count = nActive.takeIf { it > 0 }
         ) {
             val active = state.quests?.active.orEmpty().take(3)
             if (active.isEmpty()) {
@@ -448,11 +446,11 @@ private fun ColumnScope.GrimoireHome(state: RpgState, onBadge: (RpgBadge) -> Uni
             Text(
                 state.phrase?.takeIf { it.isNotBlank() } ?: "…",
                 color = BeerColors.muted,
-                fontSize = 13.sp,
+                fontSize = 14.sp,
                 fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
             )
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(28.dp))
     }
 }
 
@@ -501,8 +499,9 @@ private fun SectionCard(
     }
 }
 
+/** Fiche d’aventurier — une seule carte (avatar, XP, stats) comme iOS. */
 @Composable
-private fun HeroSheet(p: RpgProfile) {
+private fun FicheAventurierCard(p: RpgProfile, state: RpgState, nActive: Int) {
     val master = p.beerMaster
     val className = p.classInfo?.name ?: p.classKey ?: "Aventurier"
     val classIcon = p.classInfo?.icon ?: "🍺"
@@ -510,68 +509,130 @@ private fun HeroSheet(p: RpgProfile) {
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .border(1.dp, if (master) Gold.copy(alpha = 0.45f) else BeerColors.border, RoundedCornerShape(14.dp))
+            .border(
+                1.dp,
+                if (master) Gold.copy(alpha = 0.4f) else BeerColors.border,
+                RoundedCornerShape(14.dp)
+            )
             .background(
-                if (master) Brush.linearGradient(listOf(Color(0xFF47300D), BeerColors.card))
-                else Brush.linearGradient(listOf(BeerColors.card, BeerColors.card))
+                if (master) {
+                    Brush.linearGradient(listOf(Color(0xFF47300D), BeerColors.card))
+                } else {
+                    Brush.linearGradient(listOf(BeerColors.card, BeerColors.card.copy(alpha = 0.98f)))
+                }
             )
             .padding(14.dp)
     ) {
         Text(
             "Fiche d’aventurier",
             color = BeerColors.muted,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.ExtraBold
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 0.6.sp
         )
-        Spacer(Modifier.height(10.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Spacer(Modifier.height(12.dp))
+        Row(verticalAlignment = Alignment.Top) {
+            // Avatar + pastille niveau en bas (parité iOS offset)
             Box(
-                Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(BeerColors.fieldBg)
-                    .border(2.5.dp, if (master) Gold else BeerColors.accent, CircleShape),
+                Modifier.size(64.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(p.displayIcon(), fontSize = 28.sp)
+                Box(
+                    Modifier
+                        .size(64.dp)
+                        .clip(CircleShape)
+                        .background(BeerColors.fieldBg)
+                        .border(2.5.dp, if (master) Gold else BeerColors.accent, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(p.displayIcon(), fontSize = 28.sp)
+                }
+                Text(
+                    "${p.level}",
+                    color = BeerColors.text,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .offset(y = 4.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(BeerColors.card.copy(alpha = 0.95f))
+                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                )
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(p.title ?: "Aventurier", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Text(
-                    if (master) "Profil unique · Beer Master"
-                    else "Classe · $classIcon $className",
-                    color = if (master) Gold else BeerColors.muted,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
+                    p.title ?: "Aventurier",
+                    color = BeerColors.text,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp
                 )
                 Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (master) {
                     Text(
-                        "Nv ${p.level}",
-                        color = BeerColors.text,
+                        "Profil unique · Beer Master",
+                        color = Gold,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                } else {
+                    Text(
+                        "Classe · $classIcon $className",
+                        color = BeerColors.muted,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                if (master) {
+                    Text(
+                        "Prestige",
+                        color = Gold,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier
                             .clip(RoundedCornerShape(999.dp))
-                            .background(BeerColors.fieldBg)
+                            .background(Gold.copy(alpha = 0.12f))
                             .padding(horizontal = 8.dp, vertical = 2.dp)
                     )
-                    if (!master) {
-                        p.titleBand?.name?.let { band ->
-                            Text(
-                                band,
-                                color = BeerColors.accent,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(999.dp))
-                                    .background(BeerColors.accent.copy(alpha = 0.12f))
-                                    .padding(horizontal = 8.dp, vertical = 2.dp)
-                            )
-                        }
+                } else {
+                    p.titleBand?.name?.takeIf { it.isNotBlank() }?.let { band ->
+                        Text(
+                            band,
+                            color = BeerColors.accent,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(BeerColors.accent.copy(alpha = 0.12f))
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
                     }
                 }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        XpHeroBar(p)
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatTileSoft("🔥", "${p.streakDays}", "Streak", Modifier.weight(1f))
+            StatTileSoft(
+                "⚡",
+                "${p.dailyXp}/${p.dailySoftCap}",
+                "XP du jour",
+                Modifier.weight(1f)
+            )
+            StatTileSoft(
+                "🍺",
+                "${state.atlas?.totalCheckins ?: 0}",
+                "Check-ins",
+                Modifier.weight(1f)
+            )
+            if (master) {
+                StatTileSoft("👑", "Unique", "Prestige", Modifier.weight(1f))
+            } else {
+                StatTileSoft("📜", "$nActive", "Quêtes", Modifier.weight(1f))
             }
         }
     }
@@ -579,22 +640,45 @@ private fun HeroSheet(p: RpgProfile) {
 
 @Composable
 private fun MasterCard(p: RpgProfile) {
-    Column(
+    // Parité iOS masterCard
+    Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .border(1.dp, Gold.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
-            .background(Color(0xFF382308).copy(alpha = 0.9f))
-            .padding(12.dp)
+            .background(Color(0xFF38240A).copy(alpha = 0.95f))
+            .padding(12.dp),
+        verticalAlignment = Alignment.Top
     ) {
-        Text(p.prestige?.ribbon ?: "Beer Master", color = Gold, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
-        Text("👑 ${p.prestige?.tagline ?: "Prestige ultime"}", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-        p.prestige?.blurb?.takeIf { it.isNotBlank() }?.let {
-            Text(it, color = BeerColors.muted, fontSize = 12.sp)
+        Text("👑", fontSize = 22.sp)
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                p.prestige?.ribbon ?: "BEER MASTER",
+                color = Gold,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Black
+            )
+            Text(
+                p.title ?: "Beer Master",
+                color = BeerColors.text,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
+            Text(
+                p.prestige?.tagline ?: "Couronne de la taverne",
+                color = BeerColors.muted,
+                fontSize = 12.sp
+            )
+            p.prestige?.blurb?.takeIf { it.isNotBlank() }?.let {
+                Spacer(Modifier.height(4.dp))
+                Text(it, color = BeerColors.muted, fontSize = 12.sp)
+            }
         }
     }
 }
 
+/** Barre XP dans la fiche (parité iOS xpHeroBar). */
 @Composable
 private fun XpHeroBar(p: RpgProfile) {
     val into = p.xpIntoLevel
@@ -603,26 +687,52 @@ private fun XpHeroBar(p: RpgProfile) {
     } else null
     val mid = if (into != null && span != null) "$into / $span XP" else "${p.xp} XP"
     val pct = (p.progressPct.coerceIn(0.0, 100.0) / 100.0).toFloat()
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .border(1.dp, BeerColors.border, RoundedCornerShape(12.dp))
-            .background(BeerColors.card)
-            .padding(12.dp)
-    ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Nv ${p.level}", color = BeerColors.text, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Nv ${p.level}",
+                color = BeerColors.text,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(BeerColors.fieldBg)
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+            )
+            Spacer(Modifier.weight(1f))
             Text(mid, color = BeerColors.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            Text(p.xpToNext?.let { "encore $it" } ?: "max", color = BeerColors.accent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.weight(1f))
+            Text(
+                p.xpToNext?.let { "encore $it" } ?: "max",
+                color = BeerColors.accent,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
         Spacer(Modifier.height(6.dp))
-        LinearProgressIndicator(
-            progress = { pct },
-            modifier = Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(999.dp)),
-            color = Gold,
-            trackColor = BeerColors.fieldBg
-        )
+        // Barre dégradé jaune→orange (parité iOS)
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(10.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(BeerColors.fieldBg)
+        ) {
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(pct.coerceIn(0.02f, 1f))
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(Color(0xFFFACC15), Color(0xFFF97316))
+                        )
+                    )
+            )
+        }
         Spacer(Modifier.height(4.dp))
         Text(
             "${p.progressPct.toInt()}% vers le prochain niveau",
@@ -633,26 +743,136 @@ private fun XpHeroBar(p: RpgProfile) {
     }
 }
 
+/** Stat tile style iOS (fond fieldBg soft). */
+@Composable
+private fun StatTileSoft(ico: String, value: String, label: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(10.dp))
+            .border(1.dp, BeerColors.border.copy(alpha = 0.7f), RoundedCornerShape(10.dp))
+            .background(BeerColors.fieldBg.copy(alpha = 0.65f))
+            .padding(vertical = 8.dp, horizontal = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(ico, fontSize = 14.sp)
+        Text(
+            value,
+            color = BeerColors.text,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(label, color = BeerColors.muted, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    }
+}
+
+/** Hero de tab grimoire (parité iOS tabHero). */
+@Composable
+private fun TabHero(
+    kicker: String,
+    title: String,
+    blurb: String,
+    master: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .border(
+                1.dp,
+                if (master) Gold.copy(alpha = 0.4f) else BeerColors.border,
+                RoundedCornerShape(14.dp)
+            )
+            .background(
+                if (master) {
+                    Brush.linearGradient(listOf(Color(0xFF47300D), BeerColors.card))
+                } else {
+                    Brush.linearGradient(listOf(BeerColors.card, BeerColors.card.copy(alpha = 0.98f)))
+                }
+            )
+            .padding(14.dp)
+    ) {
+        Text(
+            kicker,
+            color = if (master) Gold.copy(alpha = 0.9f) else BeerColors.muted,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 0.8.sp
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(title, color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+        Spacer(Modifier.height(4.dp))
+        Text(blurb, color = BeerColors.muted, fontSize = 13.sp)
+        Spacer(Modifier.height(10.dp))
+        content()
+    }
+}
+
 @Composable
 private fun ColumnScope.GrimoireQuests(state: RpgState) {
     val scroll = rememberScrollState()
     val q = state.quests
+    val active = q?.active.orEmpty()
+    val doneToday = q?.doneToday.orEmpty()
+    val doneWeekly = q?.doneWeekly.orEmpty()
+    val dailies = active.filter { it.kind == "daily" } + doneToday
+    val weeklies = active.filter { it.kind == "weekly" } + doneWeekly
+    val story = active.filter { it.kind == "story" }
+    val nOpen = active.count { it.status != "done" }
+    val nDone = doneToday.size + doneWeekly.size
+    val nTotal = active.size + doneToday.size + doneWeekly.size
+
     Column(Modifier.verticalScroll(scroll)) {
-        SectionTitle("☀️ Journalières")
-        val dailies = (q?.active.orEmpty().filter { it.kind == "daily" } + q?.doneToday.orEmpty())
-        if (dailies.isEmpty()) Text("Rien pour le moment.", color = BeerColors.muted, fontSize = 12.sp)
-        else dailies.forEach { QuestCard(it) }
+        TabHero(
+            kicker = "Tableau des quêtes",
+            title = "📜 Missions de la taverne",
+            blurb = "Accomplis des objectifs pour gagner de l’XP. Les journalières se renouvellent chaque jour."
+        ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatTileSoft("⚔️", "$nOpen", "Actives", Modifier.weight(1f))
+                StatTileSoft("✅", "$nDone", "Finies", Modifier.weight(1f))
+                StatTileSoft("✨", "$nTotal", "Total", Modifier.weight(1f))
+            }
+        }
         Spacer(Modifier.height(12.dp))
-        SectionTitle("📅 Hebdomadaires")
-        val weeklies = (q?.active.orEmpty().filter { it.kind == "weekly" } + q?.doneWeekly.orEmpty())
-        if (weeklies.isEmpty()) Text("Aucune.", color = BeerColors.muted, fontSize = 12.sp)
-        else weeklies.forEach { QuestCard(it) }
+        SectionCard(
+            title = "Journalières",
+            ico = "☀️",
+            count = dailies.size.takeIf { it > 0 }
+        ) {
+            if (dailies.isEmpty()) {
+                Text("Pas de quête du jour — reviens demain.", color = BeerColors.muted, fontSize = 12.sp)
+            } else {
+                dailies.forEach { QuestCard(it) }
+            }
+        }
         Spacer(Modifier.height(12.dp))
-        SectionTitle("📖 Histoire")
-        val story = q?.active.orEmpty().filter { it.kind == "story" }
-        if (story.isEmpty()) Text("Chapitres à venir…", color = BeerColors.muted, fontSize = 12.sp)
-        else story.forEach { QuestCard(it) }
-        Spacer(Modifier.height(24.dp))
+        SectionCard(
+            title = "Hebdomadaires",
+            ico = "📅",
+            count = weeklies.size.takeIf { it > 0 }
+        ) {
+            if (weeklies.isEmpty()) {
+                Text("Aucune quête hebdo pour l’instant.", color = BeerColors.muted, fontSize = 12.sp)
+            } else {
+                weeklies.forEach { QuestCard(it) }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        SectionCard(
+            title = "Histoire",
+            ico = "📖",
+            count = story.size.takeIf { it > 0 }
+        ) {
+            if (story.isEmpty()) {
+                Text("Chapitres à venir… le tavernier écrit encore.", color = BeerColors.muted, fontSize = 12.sp)
+            } else {
+                story.forEach { QuestCard(it) }
+            }
+        }
+        Spacer(Modifier.height(28.dp))
     }
 }
 
@@ -1292,37 +1512,107 @@ private fun StatTile(ico: String, value: String, label: String, modifier: Modifi
 
 @Composable
 private fun QuestCard(q: RpgQuest) {
+    // Parité iOS QuestCardView
     val done = q.status == "done"
-    val pct = if (q.target > 0) (q.progress.toFloat() / q.target).coerceIn(0f, 1f) else 0f
-    Column(
+    val tgt = q.target.coerceAtLeast(1)
+    val prog = q.progress
+    val pct = (prog.toFloat() / tgt).coerceIn(0f, 1f)
+    val (kindLabel, kindIco, kindColor) = when ((q.kind ?: "").lowercase()) {
+        "daily" -> Triple("Journalière", "☀️", QuestBlue)
+        "weekly" -> Triple("Hebdo", "📅", BadgePurple)
+        "story" -> Triple("Histoire", "📖", Color(0xFFF97316))
+        else -> Triple("Quête", "📜", QuestBlue)
+    }
+    val border = if (done) ExploreGreen else kindColor
+    val statusLabel = when {
+        done -> "Terminée"
+        pct > 0f -> "En cours"
+        else -> "À faire"
+    }
+    Box(
         Modifier
             .fillMaxWidth()
-            .padding(bottom = 8.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .border(1.dp, if (done) Color(0xFF34D399) else QuestBlue, RoundedCornerShape(12.dp))
-            .background(BeerColors.card)
-            .padding(10.dp)
+            .padding(bottom = 4.dp)
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Column(Modifier.weight(1f)) {
-                Text((q.kind ?: "quête").uppercase(), color = QuestBlue, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                Text(q.title ?: "—", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .border(1.dp, border.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(border.copy(alpha = 0.08f), BeerColors.card)
+                    )
+                )
+                .padding(12.dp)
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "$kindIco $kindLabel",
+                        color = kindColor,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(kindColor.copy(alpha = 0.12f))
+                            .border(1.dp, kindColor.copy(alpha = 0.35f), RoundedCornerShape(999.dp))
+                            .padding(horizontal = 7.dp, vertical = 3.dp)
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        q.title ?: "—",
+                        color = BeerColors.text,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+                Text(
+                    "✨ +${q.rewardXp} XP",
+                    color = Gold,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
             }
-            Text("+${q.rewardXp} XP", color = Gold, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            q.description?.takeIf { it.isNotBlank() }?.let {
+                Spacer(Modifier.height(4.dp))
+                Text(it, color = BeerColors.muted, fontSize = 12.sp)
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    statusLabel,
+                    color = if (done) ExploreGreen else kindColor,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "$prog/$tgt · ${(pct * 100).toInt()}%",
+                    color = BeerColors.muted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            LinearProgressIndicator(
+                progress = { pct },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(999.dp)),
+                color = if (done) ExploreGreen else kindColor,
+                trackColor = BeerColors.fieldBg
+            )
         }
-        q.description?.let {
-            Text(it, color = BeerColors.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
-        }
-        Spacer(Modifier.height(6.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(if (done) "Terminée" else "En cours", color = if (done) Color(0xFF34D399) else QuestBlue, fontSize = 11.sp)
-            Text("${q.progress}/${q.target} · ${(pct * 100).toInt()}%", color = BeerColors.muted, fontSize = 11.sp)
-        }
-        LinearProgressIndicator(
-            progress = { pct },
-            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(999.dp)),
-            color = if (done) Color(0xFF34D399) else QuestBlue,
-            trackColor = BeerColors.fieldBg
+        // Bandeau gauche (parité iOS)
+        Box(
+            Modifier
+                .align(Alignment.CenterStart)
+                .padding(vertical = 4.dp)
+                .width(3.dp)
+                .height(48.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(border)
         )
     }
 }
