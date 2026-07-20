@@ -1,4 +1,11 @@
-# IPA native SwiftUI — build auto + Release GitHub (téléchargement direct BeerOff.ipa)
+# IPA native SwiftUI — build auto + Release GitHub
+#
+# Après release, le serveur Plexi tire l’IPA tout seul :
+#   timer beer-mobile-sync (toutes les ~2 min)
+#   → /home/eiter/scripts/beer-mobile-sync-github.sh
+#   → /var/www/beer-mobile/BeerOff.ipa + versions.json
+# Portail : https://eiter.freeboxos.fr/mobile/beer/
+# Pas besoin de push manuel.
 
 name: Build iOS IPA
 
@@ -74,8 +81,16 @@ jobs:
           body: |
             Build automatique Beer Quest iOS.
 
-            Portail téléchargement :
+            Le serveur Plexi synchronise cette release sous ~2 min
+            (timer beer-mobile-sync) vers le portail :
             https://eiter.freeboxos.fr/mobile/beer/
           files: |
             build/BeerOff.ipa
           make_latest: true
+
+      - name: Rappel portail auto
+        run: |
+          echo "✅ Release ios-build-${{ github.run_number }} publiée sur GitHub."
+          echo "Le serveur tirera l'IPA automatiquement (≤ ~2 min) :"
+          echo "  https://eiter.freeboxos.fr/mobile/beer/"
+
