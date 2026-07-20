@@ -26,7 +26,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -383,7 +385,7 @@ private fun MainScreen(vm: AppViewModel) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Beer Log", style = MaterialTheme.typography.headlineSmall, color = BeerColors.text)
+                        Text("Beer Quest", style = MaterialTheme.typography.headlineSmall, color = BeerColors.text)
                         Text(
                             if (vm.serverVersion.isNotBlank()) "v${vm.serverVersion} · scan · photo · note"
                             else "scan · photo · note",
@@ -747,6 +749,7 @@ private fun FeedbackReplyDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FeedbackDialog(
     onDismiss: () -> Unit,
@@ -755,69 +758,166 @@ private fun FeedbackDialog(
     var message by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("general") }
     var sending by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val categories = listOf(
-        "general" to "Un avis général",
-        "bug" to "Un bug",
-        "idea" to "Une idée",
-        "ux" to "L’interface",
-        "rpg" to "Le RPG / la progression",
-        "other" to "Autre chose",
+        "general" to "Avis général",
+        "bug" to "Bug",
+        "idea" to "Idée",
+        "ux" to "Interface",
+        "rpg" to "RPG",
+        "other" to "Autre",
     )
-    AlertDialog(
-        onDismissRequest = { if (!sending) onDismiss() },
-        title = { Text("Feedback") },
-        text = {
-            Column {
-                Text(
-                    "Dis-nous ce qui va, ce qui coince ou une idée. Seul l’admin le lit.",
-                    color = BeerColors.muted,
-                    fontSize = 12.sp
-                )
-                Spacer(Modifier.height(8.dp))
-                Text("C’est plutôt…", fontSize = 12.sp, color = BeerColors.muted)
-                categories.forEach { (key, label) ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable { category = key }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = category == key,
-                            onClick = { category = key },
-                            colors = RadioButtonDefaults.colors(selectedColor = BeerColors.accent)
+
+    fun hideKeyboard() {
+        focusManager.clearFocus(force = true)
+        keyboard?.hide()
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = {
+            if (!sending) {
+                hideKeyboard()
+                onDismiss()
+            }
+        },
+        sheetState = sheetState,
+        containerColor = BeerColors.bg,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = BeerColors.muted) },
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp)
+        ) {
+            Text("💬 Feedback", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Dis-nous ce qui va, ce qui coince ou une idée. Seul l’admin le lit.",
+                color = BeerColors.muted,
+                fontSize = 12.sp
+            )
+            Spacer(Modifier.height(12.dp))
+            Text("C’est plutôt…", color = BeerColors.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            // Chips 3 colonnes (parité iOS)
+            categories.chunked(3).forEach { row ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    row.forEach { (key, label) ->
+                        val on = category == key
+                        Text(
+                            label,
+                            color = if (on) Color.Black else BeerColors.text,
+                            fontSize = 12.sp,
+                            fontWeight = if (on) FontWeight.Bold else FontWeight.SemiBold,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    if (on) BeerColors.accent else BeerColors.card
+                                )
+                                .border(
+                                    1.dp,
+                                    if (on) BeerColors.accent else BeerColors.border,
+                                    RoundedCornerShape(10.dp)
+                                )
+                                .clickable {
+                                    category = key
+                                    hideKeyboard()
+                                }
+                                .padding(vertical = 8.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
-                        Text(label, fontSize = 13.sp, color = BeerColors.text)
                     }
+                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                 }
-                OutlinedTextField(
-                    value = message,
-                    onValueChange = { if (it.length <= 1200) message = it },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
-                    placeholder = { Text("Écris librement…") },
-                    maxLines = 6
+                Spacer(Modifier.height(6.dp))
+            }
+            Spacer(Modifier.height(8.dp))
+            Text("Ton message", color = BeerColors.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            OutlinedTextField(
+                value = message,
+                onValueChange = { if (it.length <= 1200) message = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 100.dp, max = 160.dp),
+                placeholder = { Text("Écris librement…", color = BeerColors.muted) },
+                maxLines = 6,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    imeAction = androidx.compose.ui.text.input.ImeAction.Done
+                ),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                    onDone = { hideKeyboard() }
+                ),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = BeerColors.text,
+                    unfocusedTextColor = BeerColors.text,
+                    focusedBorderColor = BeerColors.accent,
+                    unfocusedBorderColor = BeerColors.border,
+                    cursorColor = BeerColors.accent,
+                    focusedContainerColor = BeerColors.card,
+                    unfocusedContainerColor = BeerColors.card,
+                )
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(top = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = { hideKeyboard() }) {
+                    Text("Masquer le clavier", color = BeerColors.accent, fontSize = 12.sp)
+                }
+                Text(
+                    "${message.length.coerceAtMost(1200)}/1200",
+                    color = BeerColors.muted,
+                    fontSize = 11.sp
                 )
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    if (message.trim().length < 3 || sending) return@TextButton
-                    sending = true
-                    onSend(message.trim(), category)
-                },
-                enabled = message.trim().length >= 3 && !sending
+            Spacer(Modifier.height(12.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(if (sending) "Envoi…" else "Envoyer")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !sending) {
-                Text("Annuler")
+                OutlinedButton(
+                    onClick = {
+                        hideKeyboard()
+                        if (!sending) onDismiss()
+                    },
+                    enabled = !sending,
+                    modifier = Modifier.weight(1f),
+                    border = BorderStroke(1.dp, BeerColors.border)
+                ) {
+                    Text("Annuler", color = BeerColors.muted)
+                }
+                Button(
+                    onClick = {
+                        if (message.trim().length < 3 || sending) return@Button
+                        hideKeyboard()
+                        sending = true
+                        onSend(message.trim(), category)
+                    },
+                    enabled = message.trim().length >= 3 && !sending,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = BeerColors.accent)
+                ) {
+                    Text(
+                        if (sending) "…" else "Envoyer",
+                        color = Color.Black,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
-    )
+    }
 }
 
 // ───────────────────────── Wizard ─────────────────────────
@@ -1904,6 +2004,36 @@ private fun HistoryCard(
                 item.flavors?.takeIf { it.isNotEmpty() }?.let {
                     Text(it.joinToString(", "), color = BeerColors.muted, fontSize = 12.sp)
                 }
+                item.hops?.takeIf { it.isNotEmpty() }?.let {
+                    Text("Houblons : ${it.joinToString(", ")}", color = BeerColors.muted, fontSize = 12.sp)
+                }
+                // Commentaire visible (parité iOS) — manquait sur l’APK
+                item.comment?.takeIf { it.isNotBlank() }?.let { c ->
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(IntrinsicSize.Min)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(BeerColors.bg.copy(alpha = 0.55f))
+                    ) {
+                        Box(
+                            Modifier
+                                .width(3.dp)
+                                .fillMaxHeight()
+                                .background(BeerColors.accent)
+                        )
+                        Text(
+                            "« $c »",
+                            color = BeerColors.text,
+                            fontSize = 13.sp,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 9.dp, vertical = 7.dp)
+                        )
+                    }
+                }
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -1921,24 +2051,42 @@ private fun HistoryCard(
 private fun GallerySheet(vm: AppViewModel) {
     val api = vm.api
     var items by remember { mutableStateOf(listOf<CheckinItem>()) }
+    var styles by remember { mutableStateOf(listOf<StyleOption>()) }
+    var filterStyle by remember { mutableStateOf("") }
+    var filterRating by remember { mutableFloatStateOf(0f) }
+    var filterPeriod by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
     var offlineHint by remember { mutableStateOf<String?>(null) }
+    var selected by remember { mutableStateOf<CheckinItem?>(null) }
     val cache = vm.listCache
+    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
-        val cached = cache.loadCheckins().filter { !it.photoURL.isNullOrBlank() }
-        if (cached.isNotEmpty()) {
-            items = cached
-        }
+    suspend fun reload() {
+        loading = true
         try {
-            val live = api.checkins(limit = 100, offset = 0)
-            cache.saveCheckins(live)
+            styles = try {
+                api.styles().also { if (it.isNotEmpty()) cache.saveStyles(it) }
+            } catch (_: Exception) {
+                cache.loadStyles()
+            }
+            val live = api.checkins(
+                style = filterStyle,
+                minRating = filterRating.toDouble(),
+                period = filterPeriod,
+                limit = 100,
+                offset = 0
+            )
+            if (filterStyle.isEmpty() && filterRating <= 0f && filterPeriod.isEmpty()) {
+                cache.saveCheckins(live)
+            }
             items = live.filter { !it.photoURL.isNullOrBlank() }
             offlineHint = null
             vm.prewarmRecentPhotos()
         } catch (_: Exception) {
-            offlineHint = if (items.isEmpty()) {
-                "Hors ligne — aucune photo en cache (ouvre la galerie en Wi‑Fi une fois)"
+            val cached = cache.loadCheckins().filter { !it.photoURL.isNullOrBlank() }
+            items = cached
+            offlineHint = if (cached.isEmpty()) {
+                "Hors ligne — aucune photo en cache"
             } else {
                 "Hors ligne — galerie en cache"
             }
@@ -1946,37 +2094,159 @@ private fun GallerySheet(vm: AppViewModel) {
         loading = false
     }
 
+    LaunchedEffect(Unit) {
+        val cached = cache.loadCheckins().filter { !it.photoURL.isNullOrBlank() }
+        if (cached.isNotEmpty()) items = cached
+        reload()
+    }
+    LaunchedEffect(filterStyle, filterRating, filterPeriod) {
+        if (!loading || items.isNotEmpty()) reload()
+    }
+
     SheetScaffold("Galerie photos", onClose = { vm.closeSheet() }) {
         offlineHint?.let {
             Text(it, color = BeerColors.accent, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
         }
+        // Filtres parité iOS
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(
+                selected = filterRating >= 4f,
+                onClick = { filterRating = if (filterRating >= 4f) 0f else 4f },
+                label = { Text("★4+") }
+            )
+            FilterChip(
+                selected = filterPeriod == "30d",
+                onClick = { filterPeriod = if (filterPeriod == "30d") "" else "30d" },
+                label = { Text("30j") }
+            )
+            FilterChip(
+                selected = filterPeriod == "7d",
+                onClick = { filterPeriod = if (filterPeriod == "7d") "" else "7d" },
+                label = { Text("7j") }
+            )
+        }
+        if (styles.isNotEmpty()) {
+            var expanded by remember { mutableStateOf(false) }
+            TextButton(onClick = { expanded = true }) {
+                Text(
+                    if (filterStyle.isBlank()) "Style: tous" else "Style: $filterStyle",
+                    color = BeerColors.muted
+                )
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                DropdownMenuItem(text = { Text("Tous") }, onClick = { filterStyle = ""; expanded = false })
+                styles.take(40).forEach { st ->
+                    DropdownMenuItem(
+                        text = { Text(st.label.ifBlank { st.value }) },
+                        onClick = { filterStyle = st.value; expanded = false }
+                    )
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("${items.size} photos", color = BeerColors.muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+            if (filterStyle.isNotEmpty() || filterRating > 0 || filterPeriod.isNotEmpty()) {
+                TextButton(onClick = {
+                    filterStyle = ""; filterRating = 0f; filterPeriod = ""
+                }) {
+                    Text("Réinit. filtres", color = BeerColors.accent, fontSize = 12.sp)
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
         if (loading && items.isEmpty()) {
             CircularProgressIndicator(color = BeerColors.accent, modifier = Modifier.align(Alignment.CenterHorizontally))
         } else if (items.isEmpty()) {
-            BeerEmptyState("📷", "Aucune photo", "Ouvre la galerie en Wi‑Fi une fois pour la mettre en cache.")
+            BeerEmptyState("📷", "Aucune photo", "Les dégustations avec photo apparaîtront ici.")
         } else {
-            Text("${items.size} photos", color = BeerColors.muted, fontSize = 12.sp)
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(items, key = { it.id }) { item ->
-                    Column {
-                        BeerAuthImage(
-                            path = item.photoURL,
-                            api = api,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(220.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                        )
-                        Text(
-                            "${item.beerName} — ${item.brewery.orEmpty()}",
-                            color = BeerColors.muted,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
+            // Grille 3 colonnes (parité iOS LazyVGrid)
+            val cols = 3
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f, fill = true)) {
+                items(items.chunked(cols), key = { row -> row.joinToString("-") { it.id.toString() } }) { row ->
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        row.forEach { item ->
+                            Column(
+                                Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        selected = item
+                                    }
+                            ) {
+                                BeerAuthImage(
+                                    path = item.photoURL,
+                                    api = api,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(1f)
+                                        .clip(RoundedCornerShape(10.dp))
+                                )
+                                Text(
+                                    item.beerName,
+                                    color = BeerColors.text,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 2,
+                                    modifier = Modifier.padding(top = 3.dp)
+                                )
+                                Text(
+                                    "★ ${formatRating(item.rating)}",
+                                    color = BeerColors.accent,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                        // pad empty cells
+                        repeat(cols - row.size) {
+                            Spacer(Modifier.weight(1f))
+                        }
                     }
                 }
             }
         }
+    }
+
+    selected?.let { item ->
+        AlertDialog(
+            onDismissRequest = { selected = null },
+            title = { Text(item.beerName, color = BeerColors.text, fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    BeerAuthImage(
+                        path = item.photoURL,
+                        api = api,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "${item.brewery ?: "—"} · ★ ${formatRating(item.rating)}",
+                        color = BeerColors.muted,
+                        fontSize = 13.sp
+                    )
+                    item.comment?.takeIf { it.isNotBlank() }?.let {
+                        Spacer(Modifier.height(6.dp))
+                        Text("« $it »", color = BeerColors.text, fontSize = 13.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    selected = null
+                    vm.selectedCheckin = item
+                    vm.openSheet(BeerSheet.DETAIL)
+                }) { Text("Voir fiche", color = BeerColors.accent) }
+            },
+            dismissButton = {
+                TextButton(onClick = { selected = null }) { Text("Fermer", color = BeerColors.muted) }
+            },
+            containerColor = BeerColors.card
+        )
     }
 }
 

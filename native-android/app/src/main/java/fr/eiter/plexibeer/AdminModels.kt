@@ -15,6 +15,21 @@ data class AdminUser(
     @SerializedName("breweries_count") val breweriesCount: Int? = null,
 )
 
+data class InviteClientProfile(
+    val browser: String? = null,
+    val os: String? = null,
+    val device: String? = null,
+) {
+    val isKnown: Boolean
+        get() = !browser.isNullOrBlank() && browser != "—"
+}
+
+data class InviteIpEntry(
+    val ip: String? = null,
+    @SerializedName("first_seen") val firstSeen: String? = null,
+    @SerializedName("last_seen") val lastSeen: String? = null,
+)
+
 data class InviteItem(
     val id: Int = 0,
     val label: String? = null,
@@ -35,12 +50,18 @@ data class InviteItem(
     @SerializedName("validity_label") val validityLabel: String? = null,
     val checkins: Int? = null,
     @SerializedName("email_hint") val emailHint: String? = null,
+    @SerializedName("redeem_ip") val redeemIp: String? = null,
+    @SerializedName("last_used_ip") val lastUsedIp: String? = null,
+    @SerializedName("device_short") val deviceShort: String? = null,
+    @SerializedName("redeem_client") val redeemClient: InviteClientProfile? = null,
+    @SerializedName("last_client") val lastClient: InviteClientProfile? = null,
+    @SerializedName("ip_log") val ipLog: List<InviteIpEntry>? = null,
 ) {
     val statusText: String
         get() = when {
             revokedAt != null -> "Révoquée"
             reactivationPending == true -> "Réactivation"
-            redeemedAt != null -> "Utilisée"
+            redeemedAt != null -> "Utilisée · lien mort"
             active == false -> "Expirée"
             linkActive == false -> "Lien expiré"
             else -> "En attente"

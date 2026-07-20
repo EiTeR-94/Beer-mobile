@@ -6,6 +6,7 @@ import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,6 +37,8 @@ fun AdminSheet(vm: AppViewModel) {
     var invites by remember { mutableStateOf<List<InviteItem>>(emptyList()) }
     var refs by remember { mutableStateOf(ReferentialsResponse()) }
     var feedbackUnread by remember { mutableIntStateOf(0) }
+    var rpgPlayers by remember { mutableIntStateOf(0) }
+    var rpgProfiles by remember { mutableIntStateOf(0) }
     var loading by remember { mutableStateOf(true) }
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -82,6 +85,11 @@ fun AdminSheet(vm: AppViewModel) {
             feedbackUnread = withContext(Dispatchers.IO) {
                 vm.api.adminFeedbackStats()?.unread ?: 0
             }
+            val rpg = withContext(Dispatchers.IO) {
+                try { vm.api.adminRpgPlayers() } catch (_: Exception) { emptyList() }
+            }
+            rpgPlayers = rpg.size
+            rpgProfiles = rpg.count { it.level > 1 || it.xp > 0 || it.hasProfile == true }
         } catch (e: Exception) {
             error = e.message ?: "Erreur chargement admin"
         }
@@ -146,6 +154,20 @@ fun AdminSheet(vm: AppViewModel) {
         }
         error?.let { Text(it, color = BeerColors.error, fontSize = 13.sp) }
         message?.let { Text(it, color = BeerColors.ok, fontSize = 13.sp) }
+
+        // ── Dashboard (parité iOS) ──
+        AdminDashboard(
+            users = users,
+            invites = invites,
+            feedbackUnread = feedbackUnread,
+            appVersion = vm.appVersion,
+            serverVersion = vm.serverVersion,
+            latestAndroid = vm.latestAndroidVersion,
+            needsUpdate = vm.needsAppUpdate,
+            rpgPlayers = rpgPlayers,
+            rpgProfiles = rpgProfiles,
+        )
+        Spacer(Modifier.height(10.dp))
 
         val scroll = rememberScrollState()
         Column(Modifier.verticalScroll(scroll).weight(1f, fill = true)) {
@@ -267,8 +289,19 @@ fun AdminSheet(vm: AppViewModel) {
                     )
                     Spacer(Modifier.height(6.dp))
                     // Validité simple
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("24h" to "24h", "7d" to "7j", "30d" to "30j", "permanent" to "Perm.").forEach { (v, lab) ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.horizontalScroll(rememberScrollState())
+                    ) {
+                        listOf(
+                            "24h" to "24 h",
+                            "48h" to "48 h",
+                            "7d" to "7 j",
+                            "14d" to "14 j",
+                            "30d" to "30 j",
+                            "90d" to "90 j",
+                            "permanent" to "Permanent",
+                        ).forEach { (v, lab) ->
                             val on = invValidity == v
                             Text(
                                 lab,
@@ -363,7 +396,9 @@ fun AdminSheet(vm: AppViewModel) {
                     }
                 }
                 else -> {
-                    // ── Outils ──
+                    // ── Outils (parité iOS) ──
+                    Text("Outils", color = BeerColors.muted, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Spacer(Modifier.height(6.dp))
                     BeerPrimaryButton("⚔ Admin Beerquest") {
                         vm.openSheet(BeerSheet.RPG_ADMIN)
                     }
@@ -378,6 +413,10 @@ fun AdminSheet(vm: AppViewModel) {
                                 toastErr(e.message ?: "Erreur")
                             }
                         }
+                    }
+                    message?.takeIf { it.isNotBlank() }?.let {
+                        Spacer(Modifier.height(4.dp))
+                        Text(it, color = BeerColors.ok, fontSize = 12.sp)
                     }
                     Spacer(Modifier.height(14.dp))
                     Text("Référentiels", color = BeerColors.muted, fontWeight = FontWeight.Bold, fontSize = 13.sp)
@@ -591,6 +630,101 @@ private fun AdminUserCard(
 }
 
 @Composable
+private fun AdminDashboard(
+    users: List<AdminUser>,
+    invites: List<InviteItem>,
+    feedbackUnread: Int,
+    appVersion: String,
+    serverVersion: String,
+    latestAndroid: String?,
+    needsUpdate: Boolean,
+    rpgPlayers: Int,
+    rpgProfiles: Int,
+) {
+    val activeInvites = invites.count {
+        it.active == true || (it.redeemedAt != null && it.revokedAt == null)
+    }
+    val totalCheckins = users.sumOf { it.checkins }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .border(1.dp, BeerColors.border, RoundedCornerShape(14.dp))
+            .background(BeerColors.card)
+            .padding(12.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("📊 Tableau de bord", color = BeerColors.muted, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Text("Beer Quest", color = BeerColors.accent, fontWeight = FontWeight.Black, fontSize = 11.sp)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Versions", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            VersionPill("Webapp", serverVersion.ifBlank { "—" }, Color(0xFF60A5FA))
+            VersionPill(
+                "Cette APK",
+                appVersion,
+                if (needsUpdate) BeerColors.accent else Color(0xFF4ADE80)
+            )
+            latestAndroid?.let { VersionPill("Dernière APK", it, BeerColors.muted) }
+        }
+        if (needsUpdate) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "⬆️ APK ancienne — télécharge la dernière sur le portail",
+                color = BeerColors.accent,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            DashTile("👥", "${users.size}", "Comptes", Modifier.weight(1f))
+            DashTile("✉️", "$activeInvites", "Invités", Modifier.weight(1f))
+            DashTile("🍺", "$totalCheckins", "Check-ins", Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            DashTile("⚔", "$rpgProfiles", "RPG profils", Modifier.weight(1f))
+            DashTile("💬", "$feedbackUnread", "Feedback", Modifier.weight(1f))
+            DashTile("🏅", "$rpgPlayers", "Joueurs RPG", Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun RowScope.VersionPill(title: String, value: String, accent: Color) {
+    Column(
+        Modifier
+            .weight(1f)
+            .clip(RoundedCornerShape(10.dp))
+            .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+            .background(BeerColors.bg.copy(alpha = 0.5f))
+            .padding(10.dp)
+    ) {
+        Text(title, color = accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        Text(value, color = BeerColors.text, fontSize = 12.sp, fontWeight = FontWeight.Black, maxLines = 1)
+    }
+}
+
+@Composable
+private fun DashTile(ico: String, v: String, l: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, BeerColors.border, RoundedCornerShape(12.dp))
+            .background(BeerColors.bg.copy(alpha = 0.4f))
+            .padding(vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(ico, fontSize = 14.sp)
+        Text(v, color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Text(l, color = BeerColors.muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
 private fun InviteCard(
     inv: InviteItem,
     onCopy: (String) -> Unit,
@@ -612,33 +746,98 @@ private fun InviteCard(
                 inv.statusText,
                 color = BeerColors.accent,
                 fontSize = 11.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(BeerColors.accent.copy(alpha = 0.2f))
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
             )
         }
         Text(
-            "${inv.username ?: "—"} · ${inv.checkins ?: 0} dégust.",
+            "${inv.username ?: "—"} · ${inv.checkins ?: 0} dégustation(s)",
             color = BeerColors.muted,
             fontSize = 12.sp
         )
-        inv.emailHint?.let {
-            Text("Email $it", color = BeerColors.muted, fontSize = 11.sp)
+        if (inv.redeemedAt != null && inv.linkActive != true) {
+            Text(
+                "Lien d'invitation consommé — plus utilisable (session = appareil lié)",
+                color = BeerColors.muted,
+                fontSize = 11.sp
+            )
+        }
+        // Détails (parité iOS inviteDetailLines)
+        inv.emailHint?.takeIf { it.isNotBlank() }?.let {
+            DetailRow("Email", it)
+        }
+        if (inv.redeemedAt == null) {
+            Text("En attente du 1er clic", color = BeerColors.muted, fontSize = 11.sp)
+        } else {
+            val whenAct = inv.lastUsedAt ?: inv.redeemedAt
+            val ip = if (inv.lastUsedAt != null) inv.lastUsedIp else inv.redeemIp
+            Text(
+                "Dernière activité · ${formatDate(whenAct)}${if (!ip.isNullOrBlank()) " · IP $ip" else ""}",
+                color = BeerColors.muted,
+                fontSize = 11.sp
+            )
+            inv.redeemClient?.takeIf { it.isKnown }?.let { rc ->
+                DetailRow(
+                    "Navigateur",
+                    "${rc.browser ?: "—"} · ${rc.os ?: "—"} · ${rc.device ?: "—"}"
+                )
+            }
+            inv.deviceShort?.takeIf { it.isNotBlank() }?.let {
+                DetailRow("Appareil lié", it)
+            }
+            if (inv.permanent == true) {
+                DetailRow("Validité compte", "permanente")
+            } else if (!inv.expiresAt.isNullOrBlank() && inv.reactivationPending != true) {
+                DetailRow("Validité compte", "jusqu'au ${formatDate(inv.expiresAt)}")
+            }
+            if (inv.reactivationPending == true && !inv.linkExpiresAt.isNullOrBlank()) {
+                DetailRow("Lien réactivation", "expire ${formatDate(inv.linkExpiresAt)} (10 min)")
+            }
+        }
+        inv.validityLabel?.takeIf { it.isNotBlank() && it != "—" }?.let {
+            Text("Type : $it", color = BeerColors.muted, fontSize = 11.sp)
+        }
+        inv.ipLog?.takeIf { it.isNotEmpty() }?.let { log ->
+            Text(
+                "IP : ${log.mapNotNull { it.ip }.take(5).joinToString()}",
+                color = BeerColors.muted,
+                fontSize = 11.sp
+            )
         }
         Spacer(Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // Actions horizontales scrollables (parité iOS)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState())
+        ) {
             if (!inv.url.isNullOrBlank() && inv.revokedAt == null && inv.linkActive != false) {
                 SmallAction("Copier") { onCopy(inv.url!!) }
             }
             if (inv.canExtend == true) {
+                SmallAction("+24h") { onExtend("24h") }
+                SmallAction("+48h") { onExtend("48h") }
                 SmallAction("+7j") { onExtend("7d") }
+                SmallAction("+30j") { onExtend("30d") }
                 SmallAction("Perm.") { onExtend("permanent") }
             }
             if (inv.canReissue == true || inv.reactivationPending == true) {
-                SmallAction("Renvoyer") { onReissue() }
+                SmallAction("Renvoyer l'accès") { onReissue() }
             }
             if (inv.revokedAt == null) {
                 SmallAction("Révoquer", danger = true) { onRevoke() }
             }
         }
+    }
+}
+
+@Composable
+private fun DetailRow(label: String, value: String) {
+    Row(Modifier.padding(top = 2.dp)) {
+        Text("$label ", color = BeerColors.text, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Text(value, color = BeerColors.muted, fontSize = 11.sp)
     }
 }
 
