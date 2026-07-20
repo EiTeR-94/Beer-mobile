@@ -25,6 +25,11 @@ struct RootView: View {
             .dismissKeyboardOnTap()
 
             ToastOverlay(toast: app.toast, onDismiss: { app.hideToast() })
+            // Beerquest intro + célébrations (au-dessus du toast)
+            if app.isLoggedIn {
+                RpgCelebrationOverlay()
+                    .environmentObject(app)
+            }
         }
     }
 }

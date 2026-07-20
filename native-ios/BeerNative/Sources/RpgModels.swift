@@ -42,6 +42,7 @@ struct RpgProfile: Decodable {
     var beerMaster: Bool?
     var prestige: RpgPrestige?
     var titleBand: RpgTitleBand?
+    var introSeen: Bool?
 
     enum CodingKeys: String, CodingKey {
         case username, level, xp, title, prestige
@@ -57,6 +58,7 @@ struct RpgProfile: Decodable {
         case classInfo = "class_info"
         case beerMaster = "beer_master"
         case titleBand = "title_band"
+        case introSeen = "intro_seen"
     }
 
     var displayIcon: String {
@@ -137,10 +139,12 @@ struct RpgBadge: Decodable, Identifiable {
     var progress: Int?
     var target: Int?
     var remaining: Int?
+    var unlockPhrase: String?
     var id: String { key ?? name ?? UUID().uuidString }
     enum CodingKeys: String, CodingKey {
         case key, name, icon, rarity, lore, hint, earned, progress, target, remaining
         case earnedAt = "earned_at"
+        case unlockPhrase = "unlock_phrase"
     }
 }
 
@@ -166,7 +170,10 @@ struct RpgLoot: Decodable {
     var level: Int?
     var levelUp: Bool?
     var oldLevel: Int?
+    var levelsGained: Int?
     var title: String?
+    var oldTitle: String?
+    var titleChanged: Bool?
     var progressPct: Double?
     var xpToNext: Int?
     var phrase: String?
@@ -180,6 +187,9 @@ struct RpgLoot: Decodable {
         case xpGained = "xp_gained"
         case levelUp = "level_up"
         case oldLevel = "old_level"
+        case levelsGained = "levels_gained"
+        case oldTitle = "old_title"
+        case titleChanged = "title_changed"
         case progressPct = "progress_pct"
         case xpToNext = "xp_to_next"
         case phraseLevelUp = "phrase_level_up"
@@ -187,6 +197,66 @@ struct RpgLoot: Decodable {
         case questsCompleted = "quests_completed"
         case nextBadges = "next_badges"
         case streakDays = "streak_days"
+    }
+}
+
+// MARK: - Célébrations / intro
+
+enum RpgCelebration: Identifiable, Equatable {
+    case levelUp(RpgLoot)
+    case badge(RpgBadge)
+
+    var id: String {
+        switch self {
+        case .levelUp(let loot):
+            return "lvl-\(loot.level ?? 0)-\(loot.oldLevel ?? 0)-\(loot.xp ?? 0)"
+        case .badge(let b):
+            return "badge-\(b.key ?? b.name ?? UUID().uuidString)"
+        }
+    }
+
+    static func == (lhs: RpgCelebration, rhs: RpgCelebration) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
+// MARK: - Admin Beerquest (liste joueurs)
+
+struct RpgAdminPlayersResponse: Decodable {
+    var players: [RpgAdminPlayer]?
+    var total: Int?
+    var withProfile: Int?
+    enum CodingKeys: String, CodingKey {
+        case players, total
+        case withProfile = "with_profile"
+    }
+}
+
+struct RpgAdminPlayer: Decodable, Identifiable {
+    var username: String?
+    var level: Int?
+    var xp: Int?
+    var title: String?
+    var streakDays: Int?
+    var classKey: String?
+    var beerMaster: Bool?
+    var isAdmin: Bool?
+    var isInvite: Bool?
+    var checkins: Int?
+    var badgeCount: Int?
+    var allowed: Bool?
+    var hasProfile: Bool?
+    var id: String { username ?? UUID().uuidString }
+
+    enum CodingKeys: String, CodingKey {
+        case username, level, xp, title, checkins, allowed
+        case streakDays = "streak_days"
+        case classKey = "class"
+        case beerMaster = "beer_master"
+        case isAdmin = "is_admin"
+        case isInvite = "is_invite"
+        case badgeCount = "badge_count"
+        case hasProfile = "has_profile"
     }
 }
 

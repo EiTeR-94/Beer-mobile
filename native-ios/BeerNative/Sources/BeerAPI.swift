@@ -510,6 +510,54 @@ final class BeerAPI {
         return false
     }
 
+    func rpgIntroSeen() async throws -> Bool {
+        let (data, http, _) = try await request(
+            path: "/api/rpg/intro-seen",
+            method: "POST",
+            body: Data("{}".utf8),
+            contentType: "application/json"
+        )
+        if http.statusCode >= 200 && http.statusCode < 300 {
+            if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                return (obj["ok"] as? Bool) != false
+            }
+            return true
+        }
+        return false
+    }
+
+    func adminRpgPlayers() async throws -> [RpgAdminPlayer] {
+        let (data, http, _) = try await request(path: "/api/admin/rpg/players", method: "GET", body: nil)
+        guard http.statusCode >= 200 && http.statusCode < 300 else {
+            throw BeerAPIError.server("Admin RPG indisponible")
+        }
+        let decoded = try JSONDecoder().decode(RpgAdminPlayersResponse.self, from: data)
+        return decoded.players ?? []
+    }
+
+    func adminRpgAdjustXp(username: String, delta: Int) async throws -> Bool {
+        let body = try JSONSerialization.data(withJSONObject: ["delta": delta])
+        let enc = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
+        let (_, http, _) = try await request(
+            path: "/api/admin/rpg/players/\(enc)/xp",
+            method: "POST",
+            body: body,
+            contentType: "application/json"
+        )
+        return http.statusCode >= 200 && http.statusCode < 300
+    }
+
+    func adminRpgResetDaily(username: String) async throws -> Bool {
+        let enc = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
+        let (_, http, _) = try await request(
+            path: "/api/admin/rpg/players/\(enc)/reset-daily",
+            method: "POST",
+            body: Data(),
+            contentType: "application/json"
+        )
+        return http.statusCode >= 200 && http.statusCode < 300
+    }
+
     func logout() async {
         if !isInviteMode {
             _ = try? await request(path: "/api/logout", method: "POST", body: nil)

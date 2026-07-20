@@ -70,6 +70,10 @@ fun BeerApp(vm: AppViewModel) {
         }
         // Bannière haut d'écran = iOS (tap ou × pour fermer)
         ToastOverlay(toast = vm.toast, onDismiss = { vm.hideToast() })
+        // Beerquest intro + célébrations (au-dessus du toast)
+        if (vm.isLoggedIn) {
+            RpgCelebrationOverlay(vm)
+        }
     }
 }
 
@@ -362,6 +366,14 @@ private fun MainScreen(vm: AppViewModel) {
     var showLogoutConfirm by remember { mutableStateOf(false) }
     var showFeedback by remember { mutableStateOf(false) }
 
+    LaunchedEffect(vm.requestOpenGrimoire) {
+        if (vm.requestOpenGrimoire) {
+            vm.consumeOpenGrimoireRequest()
+            vm.refreshRpg()
+            vm.openSheet(BeerSheet.GRIMOIRE)
+        }
+    }
+
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             // Header compact — actions dans « Mon compte » (parité PWA)
@@ -499,6 +511,7 @@ private fun MainScreen(vm: AppViewModel) {
             BeerSheet.PATCHNOTES -> PatchnotesSheet(vm)
             BeerSheet.ADMIN -> AdminStubSheet(vm)
             BeerSheet.GRIMOIRE -> GrimoireSheet(vm)
+            BeerSheet.RPG_ADMIN -> RpgAdminSheet(vm)
             null -> {}
         }
     }
@@ -583,6 +596,9 @@ private fun AccountMenuOverlay(
             if (vm.isAdmin) {
                 AccountSection("Admin")
                 AccountMenuItem("⚙️ Administration") { onOpen(BeerSheet.ADMIN) }
+                if (vm.rpgActive) {
+                    AccountMenuItem("⚔ Beerquest") { onOpen(BeerSheet.RPG_ADMIN) }
+                }
                 AccountMenuItem("📝 Patch notes") { onOpen(BeerSheet.PATCHNOTES) }
             }
 

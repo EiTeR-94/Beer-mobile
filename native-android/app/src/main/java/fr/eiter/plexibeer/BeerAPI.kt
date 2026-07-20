@@ -408,6 +408,43 @@ class BeerAPI private constructor(context: Context) {
         }
     }
 
+    suspend fun adminRpgPlayers(): List<RpgAdminPlayer> = withContext(Dispatchers.IO) {
+        try {
+            val (body, code) = execute(requestBuilder("api/admin/rpg/players").get().build())
+            if (code !in 200..299) return@withContext emptyList()
+            gson.fromJson(body, RpgAdminPlayersResponse::class.java)?.players.orEmpty()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun adminRpgAdjustXp(username: String, delta: Int): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val json = gson.toJson(mapOf("delta" to delta))
+            val enc = java.net.URLEncoder.encode(username, "UTF-8")
+            val (_, code) = execute(
+                requestBuilder("api/admin/rpg/players/$enc/xp").post(json.toRequestBody(JSON)).build()
+            )
+            code in 200..299
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    suspend fun adminRpgResetDaily(username: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val enc = java.net.URLEncoder.encode(username, "UTF-8")
+            val (_, code) = execute(
+                requestBuilder("api/admin/rpg/players/$enc/reset-daily")
+                    .post(ByteArray(0).toRequestBody())
+                    .build()
+            )
+            code in 200..299
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     suspend fun logout() {
         try {
             execute(requestBuilder("api/logout").post(ByteArray(0).toRequestBody()).build())

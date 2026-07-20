@@ -4,6 +4,7 @@ struct GrimoireSheetView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var tab = 0
+    @State private var detailBadge: RpgBadge?
 
     private let tabs = ["Accueil", "Quêtes", "Badges", "Atlas"]
 
@@ -44,6 +45,10 @@ struct GrimoireSheetView: View {
                 }
             }
             .task { await app.refreshRpg() }
+            .sheet(item: $detailBadge) { b in
+                RpgBadgeDetailView(badge: b) { detailBadge = nil }
+                    .preferredColorScheme(.dark)
+            }
         }
     }
 
@@ -58,23 +63,34 @@ struct GrimoireSheetView: View {
     private func homeTab(_ st: RpgState, _ p: RpgProfile) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                BqHudCard(profile: p, onTap: {})
+                // Fiche d’aventurier (parité webapp)
+                heroSheet(p)
+                if p.beerMaster == true {
+                    masterCard(p)
+                }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 8) {
                     stat("🔥", "\(p.streakDays ?? 0)", "Streak")
                     stat("⚡", "\(p.dailyXp ?? 0)/\(p.dailySoftCap ?? 100)", "XP jour")
                     stat("🍺", "\(st.atlas?.totalCheckins ?? 0)", "Check-ins")
                     stat("📜", "\(st.quests?.active?.count ?? 0)", "Quêtes")
                 }
+                xpHeroBar(p)
                 section("📜 Quêtes en cours")
                 let active = Array((st.quests?.active ?? []).prefix(3))
                 if active.isEmpty {
-                    Text("Aucune quête active.").font(.footnote).foregroundStyle(Theme.muted)
+                    Text("Aucune quête active — le tavernier en prépare pour demain.")
+                        .font(.footnote).foregroundStyle(Theme.muted)
                 } else {
                     ForEach(active) { QuestCardView(q: $0) }
                 }
                 if let next = st.nextBadges, !next.isEmpty {
                     section("🏅 Prochains badges")
-                    ForEach(next) { BadgeProgressView(b: $0) }
+                    ForEach(next) { b in
+                        Button { detailBadge = b } label: {
+                            BadgeProgressView(b: b)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 if let phrase = st.phrase, !phrase.isEmpty {
                     section("🗣️ Le tavernier")
@@ -83,6 +99,135 @@ struct GrimoireSheetView: View {
             }
             .padding(12)
         }
+    }
+
+    @ViewBuilder
+    private func heroSheet(_ p: RpgProfile) -> some View {
+        let master = p.beerMaster == true
+        let className = p.classInfo?.name ?? p.classKey ?? "Aventurier"
+        let classIcon = p.classInfo?.icon ?? "🍺"
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Fiche d’aventurier")
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(Theme.muted)
+                .tracking(0.8)
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Theme.fieldBg)
+                        .frame(width: 64, height: 64)
+                    Circle()
+                        .stroke(master ? Color.yellow : Theme.accent, lineWidth: 2.5)
+                        .frame(width: 64, height: 64)
+                    Text(p.displayIcon).font(.system(size: 28))
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(p.title ?? "Aventurier")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(Theme.text)
+                    if master {
+                        Text("Profil unique · Beer Master")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.yellow)
+                    } else {
+                        Text("Classe · \(classIcon) \(className)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Theme.muted)
+                    }
+                    HStack(spacing: 6) {
+                        Text("Nv \(p.level ?? 1)")
+                            .font(.caption.weight(.bold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Theme.fieldBg)
+                            .clipShape(Capsule())
+                        if let band = p.titleBand?.name, !master {
+                            Text(band)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Theme.accent)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(Theme.accent.opacity(0.12))
+                                .clipShape(Capsule())
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: master
+                    ? [Color(red: 0.28, green: 0.18, blue: 0.05), Theme.card]
+                    : [Theme.card, Theme.card.opacity(0.95)],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(master ? Color.yellow.opacity(0.45) : Theme.border)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    @ViewBuilder
+    private func masterCard(_ p: RpgProfile) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(p.prestige?.ribbon ?? "Beer Master")
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(Color.yellow)
+            Text("👑 \(p.prestige?.tagline ?? "Prestige ultime")")
+                .font(.headline)
+                .foregroundStyle(Theme.text)
+            if let blurb = p.prestige?.blurb, !blurb.isEmpty {
+                Text(blurb).font(.footnote).foregroundStyle(Theme.muted)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(red: 0.22, green: 0.14, blue: 0.04).opacity(0.9))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.yellow.opacity(0.4)))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    @ViewBuilder
+    private func xpHeroBar(_ p: RpgProfile) -> some View {
+        let into = p.xpIntoLevel
+        let span: Int? = {
+            if let s = p.xpLevelStart, let n = p.xpLevelNext { return max(1, n - s) }
+            return nil
+        }()
+        let pct = min(1, max(0, (p.progressPct ?? 0) / 100.0))
+        let mid: String = {
+            if let into, let span { return "\(into) / \(span) XP" }
+            return "\(p.xp ?? 0) XP"
+        }()
+        VStack(spacing: 6) {
+            HStack {
+                Text("Nv \(p.level ?? 1)")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Theme.text)
+                Spacer()
+                Text(mid)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.muted)
+                Spacer()
+                Text(p.xpToNext.map { "encore \($0)" } ?? "max")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Theme.accent)
+            }
+            ProgressView(value: pct)
+                .tint(Color.yellow)
+            Text("\(Int((p.progressPct ?? 0).rounded()))% vers le prochain niveau")
+                .font(.caption2)
+                .foregroundStyle(Theme.muted)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .padding(12)
+        .background(Theme.card)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.border))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     @ViewBuilder
@@ -215,7 +360,12 @@ struct GrimoireSheetView: View {
                         .clipShape(Capsule())
                 }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
-                    ForEach(list) { BadgeTileView(b: $0) }
+                    ForEach(list) { b in
+                        Button { detailBadge = b } label: {
+                            BadgeTileView(b: b)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
             .padding(10)
@@ -236,6 +386,10 @@ struct GrimoireSheetView: View {
                     stat("🏭", "\(st.atlas?.breweriesCount ?? 0)", "Brasseries")
                     stat("📷", "\(st.atlas?.photos ?? 0)", "Photos")
                 }
+                if let styles = st.atlas?.styles, !styles.isEmpty {
+                    section("🎨 Styles dégustés")
+                    FlowStyleChips(styles: styles)
+                }
                 section("⚔️ Classes")
                 Text("Une seule classe à la fois. Si la bière colle : +2 XP.")
                     .font(.footnote).foregroundStyle(Theme.muted)
@@ -252,6 +406,9 @@ struct GrimoireSheetView: View {
                                 .font(.headline).foregroundStyle(Theme.text)
                             if let b = c.blurb {
                                 Text(b).font(.footnote).foregroundStyle(Theme.muted)
+                            }
+                            if let when = c.whenText, !when.isEmpty {
+                                Text(when).font(.caption2).foregroundStyle(Theme.muted)
                             }
                             Text(on ? "Équipée · \(aff[key] ?? 0)%" : "Toucher pour équiper · \(aff[key] ?? 0)%")
                                 .font(.caption).fontWeight(.semibold)
@@ -506,6 +663,33 @@ struct BadgeProgressView: View {
             }
             ProgressView(value: pct).tint(Color.purple)
             Text("\(prog)/\(tgt) · \(Int(pct * 100))%").font(.caption2).foregroundStyle(Theme.muted)
+        }
+    }
+}
+
+/// Chips styles Atlas (wrap simple en grille flexible).
+struct FlowStyleChips: View {
+    let styles: [String]
+    private var shown: [String] { Array(styles.prefix(32)) }
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), spacing: 6)], spacing: 6) {
+            ForEach(shown, id: \.self) { s in
+                Text(s)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Theme.fieldBg)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+        }
+        if styles.count > 32 {
+            Text("+\(styles.count - 32) autres")
+                .font(.caption)
+                .foregroundStyle(Theme.muted)
         }
     }
 }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum BeerSheet: String, Identifiable {
-    case history, gallery, wishlist, gifts, admin, patchnotes, pending, grimoire
+    case history, gallery, wishlist, gifts, admin, patchnotes, pending, grimoire, rpgAdmin
     var id: String { rawValue }
 }
 
@@ -113,9 +113,19 @@ struct MainView: View {
             case .grimoire:
                 GrimoireSheetView()
                     .environmentObject(app)
+            case .rpgAdmin:
+                BeerquestAdminSheetView()
+                    .environmentObject(app)
             }
         }
         .environmentObject(app)
+        .onChange(of: app.requestOpenGrimoire) { want in
+            if want {
+                app.requestOpenGrimoire = false
+                Task { await app.refreshRpg() }
+                sheet = .grimoire
+            }
+        }
     }
 
     /// Titre + bouton Mon compte (parité PWA).
@@ -210,6 +220,9 @@ private struct AccountMenuOverlay: View {
                         if isAdmin {
                             section("Admin")
                             item("⚙️ Administration") { onOpen(.admin) }
+                            if rpgActive {
+                                item("⚔ Beerquest") { onOpen(.rpgAdmin) }
+                            }
                             item("📝 Patch notes") { onOpen(.patchnotes) }
                         }
 

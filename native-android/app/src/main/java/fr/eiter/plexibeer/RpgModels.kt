@@ -90,7 +90,8 @@ data class RpgBadge(
     @SerializedName("earned_at") val earnedAt: String? = null,
     val progress: Int = 0,
     val target: Int = 1,
-    val remaining: Int? = null
+    val remaining: Int? = null,
+    @SerializedName("unlock_phrase") val unlockPhrase: String? = null
 )
 
 data class RpgAtlas(
@@ -109,7 +110,10 @@ data class RpgLoot(
     val level: Int = 1,
     @SerializedName("level_up") val levelUp: Boolean = false,
     @SerializedName("old_level") val oldLevel: Int? = null,
+    @SerializedName("levels_gained") val levelsGained: Int? = null,
     val title: String? = null,
+    @SerializedName("old_title") val oldTitle: String? = null,
+    @SerializedName("title_changed") val titleChanged: Boolean = false,
     @SerializedName("progress_pct") val progressPct: Double = 0.0,
     @SerializedName("xp_to_next") val xpToNext: Int? = null,
     val phrase: String? = null,
@@ -120,6 +124,34 @@ data class RpgLoot(
     @SerializedName("streak_days") val streakDays: Int? = null,
     /** breakdown items may be heterogeneous — keep as JsonElement list if needed */
     val breakdown: List<Map<String, JsonElement>>? = null
+)
+
+/** File de célébrations (level-up / badge). */
+sealed class RpgCelebration {
+    data class LevelUp(val loot: RpgLoot) : RpgCelebration()
+    data class BadgeUnlock(val badge: RpgBadge) : RpgCelebration()
+}
+
+data class RpgAdminPlayersResponse(
+    val players: List<RpgAdminPlayer> = emptyList(),
+    val total: Int = 0,
+    @SerializedName("with_profile") val withProfile: Int = 0
+)
+
+data class RpgAdminPlayer(
+    val username: String? = null,
+    val level: Int = 1,
+    val xp: Int = 0,
+    val title: String? = null,
+    @SerializedName("streak_days") val streakDays: Int = 0,
+    @SerializedName("class") val classKey: String? = null,
+    @SerializedName("beer_master") val beerMaster: Boolean = false,
+    @SerializedName("is_admin") val isAdmin: Boolean = false,
+    @SerializedName("is_invite") val isInvite: Boolean = false,
+    val checkins: Int = 0,
+    @SerializedName("badge_count") val badgeCount: Int = 0,
+    val allowed: Boolean = true,
+    @SerializedName("has_profile") val hasProfile: Boolean = false
 )
 
 fun RpgProfile.displayIcon(): String {

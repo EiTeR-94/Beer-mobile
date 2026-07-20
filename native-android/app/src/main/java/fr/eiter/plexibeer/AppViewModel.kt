@@ -70,10 +70,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var lastRpgLoot by mutableStateOf<RpgLoot?>(null)
         private set
+    var rpgCelebration by mutableStateOf<RpgCelebration?>(null)
+        private set
+    var showRpgIntro by mutableStateOf(false)
+        private set
+    var requestOpenGrimoire by mutableStateOf(false)
 
     val rpgActive: Boolean
         get() = rpgState?.enabled == true && rpgState?.ui == true && rpgState?.profile != null
 
+    private val celebQueue = ArrayDeque<RpgCelebration>()
+    private var celebBusy = false
+    private var celebJob: Job? = null
     private var toastJob: Job? = null
     private var syncInProgress = false
     private var connectivityCallback: ConnectivityManager.NetworkCallback? = null
@@ -296,10 +304,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val st = api.rpgMe()
                 rpgState = st
+                maybeShowRpgIntro(st)
             } catch (_: Exception) {
                 // keep previous state
             }
         }
+    }
+
+    private fun maybeShowRpgIntro(st: RpgState) {
+        val p = st.profile
+        if (st.enabled && st.ui && p != null && !p.introSeen) {
+            showRpgIntro = true
+        } else if (p?.introSeen == true) {
+            showRpgIntro = false
+        }
+    }
+
+    fun dismissRpgIntro(openGrimoire: Boolean = false) {
+        showRpgIntro = false
+        val prev = rpgState
+        if (prev?.profile != null) {
+            rpgState = prev.copy(profile = prev.profile.copy(introSeen = true))
+        }
+        viewModelScope.launch {
+            try { api.rpgIntroSeen() } catch (_: Exception) {}
+            refreshRpg()
+        }
+        if (openGrimoire) requestOpenGrimoire = true
+    }
+
+    fun consumeOpenGrimoireRequest() {
+        requestOpenGrimoire = false
     }
 
     fun handleRpgLoot(loot: RpgLoot?) {
@@ -324,6 +359,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (loot.xpGained != 0) bits.add("+${loot.xpGained} XP")
         loot.badgesEarned.firstOrNull()?.let { bits.add("${it.icon ?: "🏅"} ${it.name}") }
         loot.questsCompleted.firstOrNull()?.let { bits.add("📜 ${it.title}") }
+        val hasCeleb = loot.levelUp || loot.badgesEarned.isNotEmpty()
         val msg = when {
             loot.levelUp -> loot.phraseLevelUp ?: loot.phrase ?: "Niveau ${loot.level} !"
             loot.xpGained > 0 -> loot.phrase ?: "Butin +${loot.xpGained} XP"
@@ -331,13 +367,42 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         showToast(
             msg,
-            if (loot.levelUp || loot.badgesEarned.isNotEmpty()) ToastPayload.Variant.SUCCESS
-            else ToastPayload.Variant.INFO,
+            if (hasCeleb) ToastPayload.Variant.SUCCESS else ToastPayload.Variant.INFO,
             detail = bits.joinToString(" · ").ifBlank { null },
             label = "Beerquest",
-            durationMs = if (loot.levelUp) 5200 else 3800
+            durationMs = if (hasCeleb) 2200 else 3800
         )
+        enqueueCelebrations(loot)
         refreshRpg()
+    }
+
+    private fun enqueueCelebrations(loot: RpgLoot) {
+        if (loot.levelUp) celebQueue.addLast(RpgCelebration.LevelUp(loot))
+        loot.badgesEarned.forEach { celebQueue.addLast(RpgCelebration.BadgeUnlock(it)) }
+        if (celebQueue.isEmpty()) return
+        celebJob?.cancel()
+        celebJob = viewModelScope.launch {
+            delay(1300)
+            pumpCelebrationQueue()
+        }
+    }
+
+    private fun pumpCelebrationQueue() {
+        if (celebBusy) return
+        val next = celebQueue.removeFirstOrNull() ?: return
+        celebBusy = true
+        hapticTick()
+        rpgCelebration = next
+    }
+
+    fun dismissRpgCelebration(openGrimoire: Boolean = false) {
+        rpgCelebration = null
+        celebBusy = false
+        if (openGrimoire) requestOpenGrimoire = true
+        viewModelScope.launch {
+            delay(280)
+            pumpCelebrationQueue()
+        }
     }
 
     fun equipRpgClass(key: String, onDone: (Boolean) -> Unit = {}) {
@@ -357,6 +422,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun clearRpgUiState() {
+        rpgState = null
+        lastRpgLoot = null
+        rpgCelebration = null
+        showRpgIntro = false
+        celebQueue.clear()
+        celebBusy = false
+        celebJob?.cancel()
+    }
+
     private fun applySession(
         userName: String?,
         admin: Boolean,
@@ -373,8 +448,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             BeerSessionStore.save(getApplication(), userName, admin && !invite, invite)
             refreshRpg()
         } else {
-            rpgState = null
-            lastRpgLoot = null
+            clearRpgUiState()
         }
     }
 

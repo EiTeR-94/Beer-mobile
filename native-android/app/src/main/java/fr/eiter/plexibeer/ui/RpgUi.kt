@@ -38,14 +38,31 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import fr.eiter.plexibeer.AppViewModel
+import fr.eiter.plexibeer.RpgAdminPlayer
 import fr.eiter.plexibeer.RpgBadge
+import fr.eiter.plexibeer.RpgCelebration
+import fr.eiter.plexibeer.RpgLoot
 import fr.eiter.plexibeer.RpgProfile
 import fr.eiter.plexibeer.RpgQuest
 import fr.eiter.plexibeer.RpgState
+import fr.eiter.plexibeer.ToastPayload
 import fr.eiter.plexibeer.displayIcon
 import fr.eiter.plexibeer.rarityLabelFr
 import fr.eiter.plexibeer.ui.theme.BeerColors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import androidx.compose.runtime.rememberCoroutineScope
 
 private val Gold = Color(0xFFF5C542)
 private val QuestBlue = Color(0xFF60A5FA)
@@ -294,77 +311,86 @@ fun BqHudBar(profile: RpgProfile, onClick: () -> Unit) {
 fun GrimoireSheet(vm: AppViewModel) {
     val state = vm.rpgState
     var tab by remember { mutableIntStateOf(0) }
+    var detailBadge by remember { mutableStateOf<RpgBadge?>(null) }
     val tabs = listOf("Accueil", "Quêtes", "Badges", "Atlas")
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(BeerColors.bg)
-            .padding(12.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text(
-                "📖 Grimoire",
-                style = MaterialTheme.typography.headlineSmall,
-                color = BeerColors.text,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                "Fermer ✕",
-                color = BeerColors.muted,
-                modifier = Modifier
-                    .clickable { vm.closeSheet() }
-                    .padding(8.dp)
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-        if (state == null || !state.enabled || state.profile == null) {
-            Text(
-                if (state?.enabled == false) "Beerquest est désactivé sur le serveur."
-                else "Beerquest n’est pas disponible pour ce compte.",
-                color = BeerColors.muted,
-                fontSize = 13.sp
-            )
-            return
-        }
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+    Box(Modifier.fillMaxSize().background(BeerColors.bg)) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(12.dp)
         ) {
-            tabs.forEachIndexed { i, label ->
-                val sel = tab == i
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    label,
-                    color = if (sel) Color.Black else BeerColors.muted,
-                    fontWeight = if (sel) FontWeight.Bold else FontWeight.SemiBold,
-                    fontSize = 12.sp,
+                    "📖 Grimoire",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = BeerColors.text,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    "Fermer ✕",
+                    color = BeerColors.muted,
                     modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (sel) BeerColors.accent else BeerColors.card)
-                        .border(1.dp, if (sel) BeerColors.accent else BeerColors.border, RoundedCornerShape(10.dp))
-                        .clickable { tab = i }
-                        .padding(vertical = 8.dp),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        .clickable { vm.closeSheet() }
+                        .padding(8.dp)
                 )
             }
+            Spacer(Modifier.height(8.dp))
+            if (state == null || !state.enabled || state.profile == null) {
+                Text(
+                    if (state?.enabled == false) "Beerquest est désactivé sur le serveur."
+                    else "Beerquest n’est pas disponible pour ce compte.",
+                    color = BeerColors.muted,
+                    fontSize = 13.sp
+                )
+                return
+            }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                tabs.forEachIndexed { i, label ->
+                    val sel = tab == i
+                    Text(
+                        label,
+                        color = if (sel) Color.Black else BeerColors.muted,
+                        fontWeight = if (sel) FontWeight.Bold else FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (sel) BeerColors.accent else BeerColors.card)
+                            .border(1.dp, if (sel) BeerColors.accent else BeerColors.border, RoundedCornerShape(10.dp))
+                            .clickable { tab = i }
+                            .padding(vertical = 8.dp),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            when (tab) {
+                0 -> GrimoireHome(state, onBadge = { detailBadge = it })
+                1 -> GrimoireQuests(state)
+                2 -> GrimoireBadges(state, onBadge = { detailBadge = it })
+                3 -> GrimoireAtlas(state, vm)
+            }
         }
-        Spacer(Modifier.height(12.dp))
-        when (tab) {
-            0 -> GrimoireHome(state)
-            1 -> GrimoireQuests(state)
-            2 -> GrimoireBadges(state)
-            3 -> GrimoireAtlas(state, vm)
+        detailBadge?.let { b ->
+            RpgBadgeDetailDialog(badge = b, onDismiss = { detailBadge = null })
         }
     }
 }
 
 @Composable
-private fun ColumnScope.GrimoireHome(state: RpgState) {
+private fun ColumnScope.GrimoireHome(state: RpgState, onBadge: (RpgBadge) -> Unit) {
     val p = state.profile ?: return
     val scroll = rememberScrollState()
     Column(Modifier.verticalScroll(scroll)) {
-        BqHudBar(p) {}
+        HeroSheet(p)
+        if (p.beerMaster) {
+            Spacer(Modifier.height(10.dp))
+            MasterCard(p)
+        }
         Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             StatTile("🔥", "${p.streakDays}", "Streak", Modifier.weight(1f))
@@ -372,11 +398,17 @@ private fun ColumnScope.GrimoireHome(state: RpgState) {
             StatTile("🍺", "${state.atlas?.totalCheckins ?: 0}", "Check-ins", Modifier.weight(1f))
             StatTile("📜", "${state.quests?.active?.size ?: 0}", "Quêtes", Modifier.weight(1f))
         }
+        Spacer(Modifier.height(12.dp))
+        XpHeroBar(p)
         Spacer(Modifier.height(14.dp))
         SectionTitle("📜 Quêtes en cours")
         val active = state.quests?.active.orEmpty().take(3)
         if (active.isEmpty()) {
-            Text("Aucune quête active.", color = BeerColors.muted, fontSize = 12.sp)
+            Text(
+                "Aucune quête active — le tavernier en prépare pour demain.",
+                color = BeerColors.muted,
+                fontSize = 12.sp
+            )
         } else {
             active.forEach { QuestCard(it) }
         }
@@ -384,7 +416,11 @@ private fun ColumnScope.GrimoireHome(state: RpgState) {
         if (next.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             SectionTitle("🏅 Prochains badges")
-            next.forEach { BadgeProgressRow(it) }
+            next.forEach {
+                Box(Modifier.clickable { onBadge(it) }) {
+                    BadgeProgressRow(it)
+                }
+            }
         }
         state.phrase?.takeIf { it.isNotBlank() }?.let {
             Spacer(Modifier.height(12.dp))
@@ -392,6 +428,138 @@ private fun ColumnScope.GrimoireHome(state: RpgState) {
             Text(it, color = BeerColors.muted, fontSize = 13.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
         }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun HeroSheet(p: RpgProfile) {
+    val master = p.beerMaster
+    val className = p.classInfo?.name ?: p.classKey ?: "Aventurier"
+    val classIcon = p.classInfo?.icon ?: "🍺"
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .border(1.dp, if (master) Gold.copy(alpha = 0.45f) else BeerColors.border, RoundedCornerShape(14.dp))
+            .background(
+                if (master) Brush.linearGradient(listOf(Color(0xFF47300D), BeerColors.card))
+                else Brush.linearGradient(listOf(BeerColors.card, BeerColors.card))
+            )
+            .padding(14.dp)
+    ) {
+        Text(
+            "Fiche d’aventurier",
+            color = BeerColors.muted,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(BeerColors.fieldBg)
+                    .border(2.5.dp, if (master) Gold else BeerColors.accent, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(p.displayIcon(), fontSize = 28.sp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(p.title ?: "Aventurier", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(
+                    if (master) "Profil unique · Beer Master"
+                    else "Classe · $classIcon $className",
+                    color = if (master) Gold else BeerColors.muted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "Nv ${p.level}",
+                        color = BeerColors.text,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(BeerColors.fieldBg)
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                    if (!master) {
+                        p.titleBand?.name?.let { band ->
+                            Text(
+                                band,
+                                color = BeerColors.accent,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(BeerColors.accent.copy(alpha = 0.12f))
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MasterCard(p: RpgProfile) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, Gold.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+            .background(Color(0xFF382308).copy(alpha = 0.9f))
+            .padding(12.dp)
+    ) {
+        Text(p.prestige?.ribbon ?: "Beer Master", color = Gold, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+        Text("👑 ${p.prestige?.tagline ?: "Prestige ultime"}", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        p.prestige?.blurb?.takeIf { it.isNotBlank() }?.let {
+            Text(it, color = BeerColors.muted, fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun XpHeroBar(p: RpgProfile) {
+    val into = p.xpIntoLevel
+    val span = if (p.xpLevelStart != null && p.xpLevelNext != null) {
+        (p.xpLevelNext - p.xpLevelStart).coerceAtLeast(1)
+    } else null
+    val mid = if (into != null && span != null) "$into / $span XP" else "${p.xp} XP"
+    val pct = (p.progressPct.coerceIn(0.0, 100.0) / 100.0).toFloat()
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, BeerColors.border, RoundedCornerShape(12.dp))
+            .background(BeerColors.card)
+            .padding(12.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Nv ${p.level}", color = BeerColors.text, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(mid, color = BeerColors.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Text(p.xpToNext?.let { "encore $it" } ?: "max", color = BeerColors.accent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(6.dp))
+        LinearProgressIndicator(
+            progress = { pct },
+            modifier = Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(999.dp)),
+            color = Gold,
+            trackColor = BeerColors.fieldBg
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "${p.progressPct.toInt()}% vers le prochain niveau",
+            color = BeerColors.muted,
+            fontSize = 11.sp,
+            modifier = Modifier.align(Alignment.End)
+        )
     }
 }
 
@@ -419,7 +587,7 @@ private fun ColumnScope.GrimoireQuests(state: RpgState) {
 }
 
 @Composable
-private fun ColumnScope.GrimoireBadges(state: RpgState) {
+private fun ColumnScope.GrimoireBadges(state: RpgState, onBadge: (RpgBadge) -> Unit) {
     val badges = state.badges
     val earnedList = badges.filter { it.earned }.sortedWith(
         compareByDescending<RpgBadge> { rarityOrder(it.rarity) }
@@ -529,12 +697,12 @@ private fun ColumnScope.GrimoireBadges(state: RpgState) {
         }
 
         Spacer(Modifier.height(12.dp))
-        BadgeGroupSection("En cours", "⚔️", inProgress)
-        BadgeGroupSection("Commun", "⚪", byRarity["common"].orEmpty())
-        BadgeGroupSection("Rare", "🔵", byRarity["rare"].orEmpty())
-        BadgeGroupSection("Épique", "🟣", byRarity["epic"].orEmpty())
-        BadgeGroupSection("Légendaire", "🟡", byRarity["legendary"].orEmpty())
-        BadgeGroupSection("Obtenus", "✅", earnedList)
+        BadgeGroupSection("En cours", "⚔️", inProgress, onBadge)
+        BadgeGroupSection("Commun", "⚪", byRarity["common"].orEmpty(), onBadge)
+        BadgeGroupSection("Rare", "🔵", byRarity["rare"].orEmpty(), onBadge)
+        BadgeGroupSection("Épique", "🟣", byRarity["epic"].orEmpty(), onBadge)
+        BadgeGroupSection("Légendaire", "🟡", byRarity["legendary"].orEmpty(), onBadge)
+        BadgeGroupSection("Obtenus", "✅", earnedList, onBadge)
         Spacer(Modifier.height(28.dp))
     }
 }
@@ -562,7 +730,12 @@ private fun LegendDot(color: Color, label: String) {
 }
 
 @Composable
-private fun BadgeGroupSection(title: String, ico: String, list: List<RpgBadge>) {
+private fun BadgeGroupSection(
+    title: String,
+    ico: String,
+    list: List<RpgBadge>,
+    onBadge: (RpgBadge) -> Unit = {},
+) {
     if (list.isEmpty()) return
     Column(
         Modifier
@@ -596,12 +769,12 @@ private fun BadgeGroupSection(title: String, ico: String, list: List<RpgBadge>) 
             )
         }
         Spacer(Modifier.height(8.dp))
-        BadgeGrid(list)
+        BadgeGrid(list, onBadge)
     }
 }
 
 @Composable
-private fun BadgeGrid(list: List<RpgBadge>) {
+private fun BadgeGrid(list: List<RpgBadge>, onBadge: (RpgBadge) -> Unit = {}) {
     val rows = list.chunked(3)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         rows.forEach { row ->
@@ -610,7 +783,7 @@ private fun BadgeGrid(list: List<RpgBadge>) {
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 row.forEach { b ->
-                    Box(Modifier.weight(1f)) { BadgeTile(b) }
+                    Box(Modifier.weight(1f).clickable { onBadge(b) }) { BadgeTile(b) }
                 }
                 // pad incomplete rows
                 repeat(3 - row.size) {
@@ -633,6 +806,12 @@ private fun ColumnScope.GrimoireAtlas(state: RpgState, vm: AppViewModel) {
             StatTile("🌿", "${a?.hopsCount ?: 0}", "Houblons", Modifier.weight(1f))
             StatTile("🏭", "${a?.breweriesCount ?: 0}", "Brasseries", Modifier.weight(1f))
             StatTile("📷", "${a?.photos ?: 0}", "Photos", Modifier.weight(1f))
+        }
+        val styles = a?.styles.orEmpty()
+        if (styles.isNotEmpty()) {
+            Spacer(Modifier.height(14.dp))
+            SectionTitle("🎨 Styles dégustés")
+            StyleChips(styles)
         }
         Spacer(Modifier.height(14.dp))
         SectionTitle("⚔️ Classes")
@@ -782,6 +961,35 @@ private fun BadgeProgressRow(b: RpgBadge) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun StyleChips(styles: List<String>) {
+    val shown = styles.take(32)
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        shown.forEach { s ->
+            Text(
+                s,
+                color = BeerColors.text,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .border(1.dp, BeerColors.border, RoundedCornerShape(8.dp))
+                    .background(BeerColors.fieldBg)
+                    .padding(horizontal = 8.dp, vertical = 5.dp)
+            )
+        }
+    }
+    if (styles.size > 32) {
+        Spacer(Modifier.height(4.dp))
+        Text("+${styles.size - 32} autres", color = BeerColors.muted, fontSize = 11.sp)
+    }
+}
+
 @Composable
 private fun BadgeTile(b: RpgBadge) {
     val tgt = b.target.coerceAtLeast(1)
@@ -872,5 +1080,365 @@ private fun BadgeTile(b: RpgBadge) {
                 )
             }
         }
+    }
+}
+
+// ─── Célébrations + intro + détail badge + admin Beerquest ───────────────────
+
+@Composable
+fun RpgCelebrationOverlay(vm: AppViewModel) {
+    if (vm.showRpgIntro) {
+        RpgIntroDialog(
+            onDiscover = { vm.dismissRpgIntro(openGrimoire = true) },
+            onLater = { vm.dismissRpgIntro(openGrimoire = false) },
+        )
+    }
+    when (val c = vm.rpgCelebration) {
+        is RpgCelebration.LevelUp -> RpgLevelUpDialog(c.loot) { vm.dismissRpgCelebration() }
+        is RpgCelebration.BadgeUnlock -> RpgBadgeUnlockDialog(c.badge) { open ->
+            vm.dismissRpgCelebration(openGrimoire = open)
+        }
+        null -> {}
+    }
+}
+
+@Composable
+private fun RpgIntroDialog(onDiscover: () -> Unit, onLater: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onLater,
+        title = {
+            Text("⚔ Beerquest", fontWeight = FontWeight.Bold, color = BeerColors.text)
+        },
+        text = {
+            Text(
+                "Tes dégustations font progresser un grimoire (XP, quêtes, badges). Le scan et la note ne changent pas.",
+                color = BeerColors.muted,
+                fontSize = 14.sp
+            )
+        },
+        confirmButton = {
+            Button(onClick = onDiscover, colors = ButtonDefaults.buttonColors(containerColor = BeerColors.accent)) {
+                Text("Découvrir", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onLater) { Text("Plus tard", color = BeerColors.muted) }
+        },
+        containerColor = BeerColors.card
+    )
+}
+
+@Composable
+private fun RpgLevelUpDialog(loot: RpgLoot, onDismiss: () -> Unit) {
+    val oldLv = loot.oldLevel ?: maxOf(1, loot.level - 1)
+    val newLv = loot.level
+    val gained = loot.levelsGained ?: maxOf(1, newLv - oldLv)
+    val pct = (loot.progressPct.coerceIn(0.0, 100.0) / 100.0).toFloat()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Text("LEVEL UP", color = Gold, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, letterSpacing = 2.sp)
+                Text(
+                    if (gained > 1) "Niveaux $oldLv → $newLv" else "Niveau $newLv",
+                    color = BeerColors.text,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 24.sp
+                )
+            }
+        },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    if (gained > 1) "+$gained niveaux d’un coup" else "Lv $oldLv → Lv $newLv",
+                    color = Gold,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp
+                )
+                Spacer(Modifier.height(6.dp))
+                if (loot.titleChanged && loot.oldTitle != null && loot.title != null) {
+                    Text("${loot.oldTitle} → ${loot.title}", color = BeerColors.muted, fontSize = 12.sp)
+                } else {
+                    loot.title?.let { Text(it, color = BeerColors.muted, fontSize = 12.sp) }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    loot.phraseLevelUp ?: loot.phrase ?: "Le tavernier hoche la tête.",
+                    color = BeerColors.muted,
+                    fontSize = 13.sp,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(10.dp))
+                LinearProgressIndicator(
+                    progress = { pct },
+                    modifier = Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(999.dp)),
+                    color = Gold,
+                    trackColor = BeerColors.fieldBg
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = BeerColors.accent)) {
+                Text("Continuer", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        },
+        containerColor = BeerColors.card
+    )
+}
+
+@Composable
+private fun RpgBadgeUnlockDialog(badge: RpgBadge, onDismiss: (Boolean) -> Unit) {
+    val rarity = (badge.rarity ?: "common").lowercase()
+    val rarityColor = when (rarity) {
+        "legendary" -> LegendAmber
+        "epic" -> BadgePurple
+        "rare" -> RareBlue
+        else -> BeerColors.muted
+    }
+    AlertDialog(
+        onDismissRequest = { onDismiss(false) },
+        title = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Text("BADGE · ${rarity.uppercase()}", color = rarityColor, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                Spacer(Modifier.height(8.dp))
+                Text(badge.icon ?: "🏅", fontSize = 48.sp)
+                Text(badge.name ?: "Badge", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 18.sp, textAlign = TextAlign.Center)
+            }
+        },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Text(rarityLabelFr(badge.rarity), color = rarityColor, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Spacer(Modifier.height(6.dp))
+                (badge.lore ?: badge.hint)?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, color = BeerColors.muted, fontSize = 13.sp, textAlign = TextAlign.Center)
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    badge.unlockPhrase ?: "Un badge s’ajoute au grimoire.",
+                    color = BeerColors.muted,
+                    fontSize = 12.sp,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                    textAlign = TextAlign.Center
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onDismiss(false) }, colors = ButtonDefaults.buttonColors(containerColor = BeerColors.accent)) {
+                Text("Super !", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { onDismiss(true) }) {
+                Text("Voir le grimoire", color = QuestBlue)
+            }
+        },
+        containerColor = BeerColors.card
+    )
+}
+
+@Composable
+fun RpgBadgeDetailDialog(badge: RpgBadge, onDismiss: () -> Unit) {
+    val rarity = (badge.rarity ?: "common").lowercase()
+    val rarityColor = when (rarity) {
+        "legendary" -> LegendAmber
+        "epic" -> BadgePurple
+        "rare" -> RareBlue
+        else -> BeerColors.muted
+    }
+    val tgt = badge.target.coerceAtLeast(1)
+    val pct = (badge.progress.toFloat() / tgt).coerceIn(0f, 1f)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Text(badge.icon ?: "🏅", fontSize = 44.sp)
+                Text(badge.name ?: "Badge", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 18.sp, textAlign = TextAlign.Center)
+                Text(rarityLabelFr(badge.rarity), color = rarityColor, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+        },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                if (badge.earned) {
+                    Text("✓ Obtenu", color = ExploreGreen, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    badge.earnedAt?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, color = BeerColors.muted, fontSize = 12.sp)
+                    }
+                } else {
+                    LinearProgressIndicator(
+                        progress = { pct },
+                        modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(999.dp)),
+                        color = if (badge.progress > 0) Gold else rarityColor,
+                        trackColor = BeerColors.fieldBg
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "${badge.progress} / $tgt · ${(pct * 100).toInt()}%",
+                        color = BeerColors.muted,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                badge.lore?.takeIf { it.isNotBlank() }?.let {
+                    Spacer(Modifier.height(10.dp))
+                    Text("Lore", color = BeerColors.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(it, color = BeerColors.text, fontSize = 13.sp)
+                }
+                badge.hint?.takeIf { it.isNotBlank() }?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Objectif", color = BeerColors.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(it, color = BeerColors.text, fontSize = 13.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Fermer", color = BeerColors.accent) }
+        },
+        containerColor = BeerColors.card
+    )
+}
+
+@Composable
+fun RpgAdminSheet(vm: AppViewModel) {
+    var players by remember { mutableStateOf<List<RpgAdminPlayer>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var selected by remember { mutableStateOf<RpgAdminPlayer?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var reloadToken by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(reloadToken) {
+        loading = true
+        error = null
+        players = withContext(Dispatchers.IO) {
+            try { vm.api.adminRpgPlayers() } catch (_: Exception) { emptyList() }
+        }
+        if (players.isEmpty()) error = "Aucun joueur ou accès refusé."
+        loading = false
+    }
+
+    fun reload() {
+        reloadToken++
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(BeerColors.bg)
+            .padding(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text("⚔ Beerquest", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.weight(1f))
+            Text("Rafraîchir", color = QuestBlue, modifier = Modifier.clickable { reload() }.padding(8.dp))
+            Text("Fermer ✕", color = BeerColors.muted, modifier = Modifier.clickable { vm.closeSheet() }.padding(8.dp))
+        }
+        Spacer(Modifier.height(8.dp))
+        when {
+            loading -> Text("Chargement…", color = BeerColors.muted)
+            error != null && players.isEmpty() -> Text(error!!, color = BeerColors.muted)
+            else -> {
+                val scroll = rememberScrollState()
+                Column(Modifier.verticalScroll(scroll).weight(1f, fill = true)) {
+                    players.forEach { p ->
+                        val name = p.username ?: "—"
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(1.dp, BeerColors.border, RoundedCornerShape(12.dp))
+                                .background(BeerColors.card)
+                                .clickable { selected = p }
+                                .padding(12.dp)
+                        ) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(name, color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text("Nv ${p.level}", color = Gold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                            Text(
+                                buildString {
+                                    append("${p.xp} XP")
+                                    p.title?.let { append(" · $it") }
+                                    append(" · ${p.badgeCount} badges")
+                                    if (p.isInvite) append(" · invité")
+                                    if (p.beerMaster) append(" · Master")
+                                },
+                                color = BeerColors.muted,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    selected?.let { p ->
+        val name = p.username.orEmpty()
+        AlertDialog(
+            onDismissRequest = { selected = null },
+            title = { Text(name, color = BeerColors.text, fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text("Nv ${p.level} · ${p.xp} XP · ${p.badgeCount} badges", color = BeerColors.muted, fontSize = 13.sp)
+                    Spacer(Modifier.height(12.dp))
+                    Text("Ajuster l’XP", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(-50, -10, 10, 50).forEach { d ->
+                            OutlinedButton(
+                                onClick = {
+                                    busy = true
+                                    scope.launch {
+                                        val ok = withContext(Dispatchers.IO) {
+                                            try { vm.api.adminRpgAdjustXp(name, d) } catch (_: Exception) { false }
+                                        }
+                                        busy = false
+                                        if (ok) {
+                                            vm.showToast("XP ${if (d > 0) "+" else ""}$d pour $name", ToastPayload.Variant.SUCCESS, label = "Beerquest")
+                                            selected = null
+                                            reload()
+                                        } else {
+                                            vm.showToast("Échec XP", ToastPayload.Variant.ERROR)
+                                        }
+                                    }
+                                },
+                                enabled = !busy && name.isNotBlank()
+                            ) {
+                                Text(if (d > 0) "+$d" else "$d", color = BeerColors.text, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            busy = true
+                            scope.launch {
+                                val ok = withContext(Dispatchers.IO) {
+                                    try { vm.api.adminRpgResetDaily(name) } catch (_: Exception) { false }
+                                }
+                                busy = false
+                                if (ok) {
+                                    vm.showToast("Reset journalier $name", ToastPayload.Variant.SUCCESS, label = "Beerquest")
+                                    selected = null
+                                    reload()
+                                } else {
+                                    vm.showToast("Échec reset", ToastPayload.Variant.ERROR)
+                                }
+                            }
+                        },
+                        enabled = !busy && name.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = BeerColors.accent)
+                    ) {
+                        Text("Reset XP du jour", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { selected = null }) { Text("Fermer", color = BeerColors.muted) }
+            },
+            containerColor = BeerColors.card
+        )
     }
 }

@@ -239,7 +239,7 @@ enum class NetworkStatus(val label: String) {
 }
 
 enum class BeerSheet {
-    HISTORY, GALLERY, WISHLIST, GIFTS, PENDING, DETAIL, EDIT, ADMIN, PATCHNOTES, GRIMOIRE
+    HISTORY, GALLERY, WISHLIST, GIFTS, PENDING, DETAIL, EDIT, ADMIN, PATCHNOTES, GRIMOIRE, RPG_ADMIN
 }
 
 data class ToastPayload(

@@ -41,8 +41,18 @@ final class AppModel: ObservableObject {
     @Published var wizardProduct: BeerProduct?
     @Published var rpgState: RpgState?
     @Published var lastRpgLoot: RpgLoot?
+    /// Célébration en cours (level-up / badge) — une à la fois.
+    @Published var rpgCelebration: RpgCelebration?
+    /// Intro Beerquest 1ʳᵉ visite.
+    @Published var showRpgIntro = false
+    /// Demande d’ouvrir le grimoire (depuis célébration badge).
+    @Published var requestOpenGrimoire = false
 
     var rpgActive: Bool { rpgState?.active == true }
+
+    private var celebQueue: [RpgCelebration] = []
+    private var celebBusy = false
+    private var celebPumpTask: Task<Void, Never>?
 
     let api = BeerAPI.shared
     let offline = OfflineQueue()
@@ -291,8 +301,7 @@ final class AppModel: ObservableObject {
             }
             Task { await refreshRpg() }
         } else {
-            rpgState = nil
-            lastRpgLoot = nil
+            clearRpgUiState()
         }
     }
 
@@ -733,9 +742,39 @@ final class AppModel: ObservableObject {
     func refreshRpg() async {
         guard isLoggedIn, networkStatus == .online else { return }
         do {
-            rpgState = try await api.rpgMe()
+            let st = try await api.rpgMe()
+            rpgState = st
+            maybeShowRpgIntro(st)
         } catch {
             // keep previous
+        }
+    }
+
+    private func maybeShowRpgIntro(_ st: RpgState) {
+        guard st.active, let p = st.profile else {
+            showRpgIntro = false
+            return
+        }
+        // nil / false → afficher l’intro une fois
+        if p.introSeen != true {
+            showRpgIntro = true
+        }
+    }
+
+    func dismissRpgIntro(openGrimoire: Bool = false) {
+        showRpgIntro = false
+        // Optimistic
+        if var st = rpgState, var p = st.profile {
+            p.introSeen = true
+            st.profile = p
+            rpgState = st
+        }
+        Task {
+            _ = try? await api.rpgIntroSeen()
+            await refreshRpg()
+        }
+        if openGrimoire {
+            requestOpenGrimoire = true
         }
     }
 
@@ -761,6 +800,7 @@ final class AppModel: ObservableObject {
         if let q = loot.questsCompleted?.first {
             bits.append("📜 \(q.title ?? "Quête")")
         }
+        let hasCeleb = loot.levelUp == true || !(loot.badgesEarned ?? []).isEmpty
         let msg: String
         if loot.levelUp == true {
             msg = loot.phraseLevelUp ?? loot.phrase ?? "Niveau \(loot.level ?? 0) !"
@@ -769,14 +809,55 @@ final class AppModel: ObservableObject {
         } else {
             msg = loot.phrase ?? "Noté"
         }
+        // Toast court si modales arrivent juste après (évite superposition longue)
         showToast(
             msg,
-            variant: (loot.levelUp == true || !(loot.badgesEarned ?? []).isEmpty) ? .success : .info,
+            variant: hasCeleb ? .success : .info,
             detail: bits.isEmpty ? nil : bits.joined(separator: " · "),
             label: "Beerquest",
-            durationMs: loot.levelUp == true ? 5200 : 3800
+            durationMs: hasCeleb ? 2200 : 3800
         )
+        enqueueCelebrations(from: loot)
         Task { await refreshRpg() }
+    }
+
+    private func enqueueCelebrations(from loot: RpgLoot) {
+        if loot.levelUp == true {
+            celebQueue.append(.levelUp(loot))
+        }
+        for b in loot.badgesEarned ?? [] {
+            celebQueue.append(.badge(b))
+        }
+        guard !celebQueue.isEmpty else { return }
+        // Laisse le toast s’installer (~1.3 s) comme la webapp
+        celebPumpTask?.cancel()
+        celebPumpTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_300_000_000)
+            guard !Task.isCancelled else { return }
+            pumpCelebrationQueue()
+        }
+    }
+
+    private func pumpCelebrationQueue() {
+        guard !celebBusy else { return }
+        guard let next = celebQueue.first else { return }
+        celebQueue.removeFirst()
+        celebBusy = true
+        hapticSuccess()
+        rpgCelebration = next
+    }
+
+    func dismissRpgCelebration(openGrimoire: Bool = false) {
+        rpgCelebration = nil
+        celebBusy = false
+        if openGrimoire {
+            requestOpenGrimoire = true
+        }
+        // Enchaîne la suivante
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 280_000_000)
+            pumpCelebrationQueue()
+        }
     }
 
     func equipRpgClass(_ key: String) async {
@@ -791,6 +872,16 @@ final class AppModel: ObservableObject {
         } catch {
             showToast("Impossible d’équiper", variant: .error, label: "Beerquest")
         }
+    }
+
+    func clearRpgUiState() {
+        rpgState = nil
+        lastRpgLoot = nil
+        rpgCelebration = nil
+        showRpgIntro = false
+        celebQueue.removeAll()
+        celebBusy = false
+        celebPumpTask?.cancel()
     }
 
     private static func isNetworkFailure(_ error: Error) -> Bool {
