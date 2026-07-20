@@ -103,6 +103,7 @@ fun AdminSheet(vm: AppViewModel) {
         Modifier
             .fillMaxSize()
             .background(BeerColors.bg)
+            .consumeClicks()
             .padding(12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {

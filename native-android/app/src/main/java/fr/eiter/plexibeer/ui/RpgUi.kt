@@ -330,7 +330,12 @@ fun GrimoireSheet(vm: AppViewModel) {
     var detailBadge by remember { mutableStateOf<RpgBadge?>(null) }
     val tabs = listOf("Accueil", "Quêtes", "Badges", "Atlas")
 
-    Box(Modifier.fillMaxSize().background(BeerColors.bg)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(BeerColors.bg)
+            .consumeClicks()
+    ) {
         Column(
             Modifier
                 .fillMaxSize()
@@ -2053,6 +2058,7 @@ fun RpgAdminSheet(vm: AppViewModel) {
         Modifier
             .fillMaxSize()
             .background(BeerColors.bg)
+            .consumeClicks()
             .padding(12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {

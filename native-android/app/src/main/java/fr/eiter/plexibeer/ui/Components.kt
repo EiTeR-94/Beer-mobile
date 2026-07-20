@@ -3,6 +3,7 @@ package fr.eiter.plexibeer.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -21,6 +23,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -36,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
@@ -48,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import fr.eiter.plexibeer.BeerAPI
 import fr.eiter.plexibeer.BeerProduct
+import fr.eiter.plexibeer.StyleOption
 import fr.eiter.plexibeer.ImageCache
 import fr.eiter.plexibeer.NetworkStatus
 import fr.eiter.plexibeer.ToastPayload
@@ -125,6 +131,247 @@ fun BeerGhostButton(title: String, onClick: () -> Unit, modifier: Modifier = Mod
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+/**
+ * Empêche les clics de traverser l’overlay vers le HUD / wizard en dessous
+ * (sinon un tap dans le vide d’un sheet ouvre le Grimoire).
+ */
+fun Modifier.consumeClicks(): Modifier = composed {
+    clickable(
+        indication = null,
+        interactionSource = remember { MutableInteractionSource() },
+        onClick = {}
+    )
+}
+
+/** Sélecteur compact Style / Note / Période (parité iOS BeerSelectField). */
+@Composable
+fun BeerSelectField(
+    label: String,
+    value: String,
+    options: List<Pair<String, String>>,
+    onChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val currentLabel = options.firstOrNull { it.first == value }?.second
+        ?: options.firstOrNull()?.second
+        ?: "—"
+    Column(modifier = modifier) {
+        Text(
+            label,
+            color = BeerColors.muted,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1
+        )
+        Spacer(Modifier.height(3.dp))
+        Box {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .border(1.dp, BeerColors.border, RoundedCornerShape(8.dp))
+                    .background(BeerColors.fieldBg)
+                    .clickable { expanded = true }
+                    .padding(horizontal = 6.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    currentLabel,
+                    color = BeerColors.text,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Text("▾", color = BeerColors.muted, fontSize = 10.sp)
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { (key, lab) ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                lab,
+                                color = if (key == value) BeerColors.accent else BeerColors.text,
+                                fontWeight = if (key == value) FontWeight.Bold else FontWeight.Normal,
+                                fontSize = 13.sp
+                            )
+                        },
+                        onClick = {
+                            onChange(key)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Filtres historique / galerie — parité iOS BeerHistoryFiltersRow (API week/month/year). */
+@Composable
+fun BeerHistoryFiltersRow(
+    filterStyle: String,
+    filterRating: Float,
+    filterPeriod: String,
+    styles: List<StyleOption>,
+    onStyle: (String) -> Unit,
+    onRating: (Float) -> Unit,
+    onPeriod: (String) -> Unit,
+) {
+    val styleOpts = buildList {
+        add("" to "Tous styles")
+        styles.filter { it.value.isNotBlank() }.forEach {
+            add(it.value to it.label.ifBlank { it.value })
+        }
+    }
+    val ratingOpts = listOf(
+        "0" to "Toutes",
+        "0.25" to "0.25 ★+",
+        "0.5" to "0.5 ★+",
+        "1" to "1 ★+",
+        "2" to "2 ★+",
+        "3" to "3 ★+",
+        "4" to "4 ★+",
+        "5" to "5 ★+",
+    )
+    val periodOpts = listOf(
+        "" to "Tout",
+        "week" to "7 jours",
+        "month" to "30 jours",
+        "year" to "1 an",
+    )
+    val ratingKey = when {
+        filterRating <= 0f -> "0"
+        filterRating == filterRating.toInt().toFloat() -> filterRating.toInt().toString()
+        else -> filterRating.toString()
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.Bottom
+    ) {
+        BeerSelectField(
+            label = "Style",
+            value = filterStyle,
+            options = styleOpts,
+            onChange = onStyle,
+            modifier = Modifier.weight(1f)
+        )
+        BeerSelectField(
+            label = "Note min",
+            value = ratingKey,
+            options = ratingOpts,
+            onChange = { onRating(it.toFloatOrNull() ?: 0f) },
+            modifier = Modifier.weight(1f)
+        )
+        BeerSelectField(
+            label = "Période",
+            value = filterPeriod,
+            options = periodOpts,
+            onChange = onPeriod,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+/** Filtres idées cadeaux — parité iOS BeerGiftsFiltersRow. */
+@Composable
+fun BeerGiftsFiltersRow(
+    search: String,
+    filterStyle: String,
+    minRating: Float,
+    styleOptions: List<String>,
+    onSearch: (String) -> Unit,
+    onStyle: (String) -> Unit,
+    onRating: (Float) -> Unit,
+) {
+    val styles = buildList {
+        add("" to "Tous styles")
+        styleOptions.forEach { add(it to it) }
+    }
+    val ratingOpts = listOf(
+        "0" to "Toutes",
+        "4" to "≥4★",
+        "4.5" to "≥4.5★",
+        "5" to "=5★",
+    )
+    val ratingKey = when {
+        minRating >= 5f -> "5"
+        minRating >= 4.5f -> "4.5"
+        minRating >= 4f -> "4"
+        else -> "0"
+    }
+    Column(Modifier.fillMaxWidth()) {
+        Text("Recherche", color = BeerColors.muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(3.dp))
+        OutlinedTextField(
+            value = search,
+            onValueChange = onSearch,
+            placeholder = { Text("nom, brasserie…", color = BeerColors.muted, fontSize = 12.sp) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = BeerColors.text,
+                unfocusedTextColor = BeerColors.text,
+                focusedBorderColor = BeerColors.accent,
+                unfocusedBorderColor = BeerColors.border,
+                cursorColor = BeerColors.accent,
+                focusedContainerColor = BeerColors.fieldBg,
+                unfocusedContainerColor = BeerColors.fieldBg,
+            ),
+            shape = RoundedCornerShape(8.dp)
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.Bottom
+        ) {
+            BeerSelectField(
+                label = "Style",
+                value = filterStyle,
+                options = styles,
+                onChange = onStyle,
+                modifier = Modifier.weight(1f)
+            )
+            BeerSelectField(
+                label = "Note min",
+                value = ratingKey,
+                options = ratingOpts,
+                onChange = { onRating(it.toFloatOrNull() ?: 0f) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+/** Étoiles + note (détail check-in). */
+@Composable
+fun BeerStarRating(rating: Double, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        // Approximation visuelle (5 étoiles + note chiffrée)
+        val filled = (rating / 5.0 * 5).toInt().coerceIn(0, 5)
+        Text(
+            "★".repeat(filled) + "☆".repeat(5 - filled),
+            color = BeerColors.star,
+            fontSize = 16.sp
+        )
+        Text(
+            formatRating(rating),
+            color = BeerColors.accent,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 14.sp
         )
     }
 }

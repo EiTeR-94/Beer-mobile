@@ -1768,10 +1768,12 @@ private suspend fun tryMlKitBarcode(context: Context, file: File): String? =
 
 @Composable
 private fun SheetScaffold(title: String, onClose: () -> Unit, trailing: (@Composable () -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
+    // fillMaxSize + consumeClicks : bloque les taps vers le HUD Grimoire en dessous
     Column(
         Modifier
             .fillMaxSize()
             .background(BeerColors.bg)
+            .consumeClicks()
             .padding(12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -1886,39 +1888,16 @@ private fun HistorySheet(vm: AppViewModel) {
             Spacer(Modifier.height(8.dp))
         }
 
-        // Filters
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilterChip(
-                selected = filterRating >= 4f,
-                onClick = { filterRating = if (filterRating >= 4f) 0f else 4f },
-                label = { Text("★4+") }
-            )
-            FilterChip(
-                selected = filterPeriod == "30d",
-                onClick = { filterPeriod = if (filterPeriod == "30d") "" else "30d" },
-                label = { Text("30j") }
-            )
-            FilterChip(
-                selected = filterPeriod == "7d",
-                onClick = { filterPeriod = if (filterPeriod == "7d") "" else "7d" },
-                label = { Text("7j") }
-            )
-        }
-        if (styles.isNotEmpty()) {
-            var expanded by remember { mutableStateOf(false) }
-            TextButton(onClick = { expanded = true }) {
-                Text(if (filterStyle.isBlank()) "Style: tous" else "Style: $filterStyle", color = BeerColors.muted)
-            }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                DropdownMenuItem(text = { Text("Tous") }, onClick = { filterStyle = ""; expanded = false })
-                styles.take(40).forEach { st ->
-                    DropdownMenuItem(text = { Text(st.label.ifBlank { st.value }) }, onClick = {
-                        filterStyle = st.value
-                        expanded = false
-                    })
-                }
-            }
-        }
+        // Filtres parité iOS (Style / Note min / Période week|month|year)
+        BeerHistoryFiltersRow(
+            filterStyle = filterStyle,
+            filterRating = filterRating,
+            filterPeriod = filterPeriod,
+            styles = styles,
+            onStyle = { filterStyle = it },
+            onRating = { filterRating = it },
+            onPeriod = { filterPeriod = it },
+        )
 
         error?.let { Text(it, color = BeerColors.error, fontSize = 12.sp) }
 
@@ -2163,42 +2142,15 @@ private fun GallerySheet(vm: AppViewModel) {
         offlineHint?.let {
             Text(it, color = BeerColors.accent, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
         }
-        // Filtres parité iOS
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilterChip(
-                selected = filterRating >= 4f,
-                onClick = { filterRating = if (filterRating >= 4f) 0f else 4f },
-                label = { Text("★4+") }
-            )
-            FilterChip(
-                selected = filterPeriod == "30d",
-                onClick = { filterPeriod = if (filterPeriod == "30d") "" else "30d" },
-                label = { Text("30j") }
-            )
-            FilterChip(
-                selected = filterPeriod == "7d",
-                onClick = { filterPeriod = if (filterPeriod == "7d") "" else "7d" },
-                label = { Text("7j") }
-            )
-        }
-        if (styles.isNotEmpty()) {
-            var expanded by remember { mutableStateOf(false) }
-            TextButton(onClick = { expanded = true }) {
-                Text(
-                    if (filterStyle.isBlank()) "Style: tous" else "Style: $filterStyle",
-                    color = BeerColors.muted
-                )
-            }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                DropdownMenuItem(text = { Text("Tous") }, onClick = { filterStyle = ""; expanded = false })
-                styles.take(40).forEach { st ->
-                    DropdownMenuItem(
-                        text = { Text(st.label.ifBlank { st.value }) },
-                        onClick = { filterStyle = st.value; expanded = false }
-                    )
-                }
-            }
-        }
+        BeerHistoryFiltersRow(
+            filterStyle = filterStyle,
+            filterRating = filterRating,
+            filterPeriod = filterPeriod,
+            styles = styles,
+            onStyle = { filterStyle = it },
+            onRating = { filterRating = it },
+            onPeriod = { filterPeriod = it },
+        )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("${items.size} photos", color = BeerColors.muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
             if (filterStyle.isNotEmpty() || filterRating > 0 || filterPeriod.isNotEmpty()) {
@@ -2472,11 +2424,16 @@ private fun GiftsSheet(vm: AppViewModel) {
             }
         }
         Spacer(Modifier.height(8.dp))
-        BeerField("Recherche", search, { search = it }, "nom, brasserie…")
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilterChip(selected = minRating >= 4f, onClick = { minRating = if (minRating >= 4f) 0f else 4f }, label = { Text("★4+") })
-            FilterChip(selected = minRating >= 4.5f, onClick = { minRating = if (minRating >= 4.5f) 0f else 4.5f }, label = { Text("★4.5+") })
-        }
+        BeerGiftsFiltersRow(
+            search = search,
+            filterStyle = filterStyle,
+            minRating = minRating,
+            styleOptions = styleOptions,
+            onSearch = { search = it },
+            onStyle = { filterStyle = it },
+            onRating = { minRating = it },
+        )
+        Spacer(Modifier.height(8.dp))
         if (filtered.isEmpty()) {
             Text("Aucune idée cadeau avec ces filtres.", color = BeerColors.muted, modifier = Modifier.padding(24.dp))
         } else {
@@ -2572,61 +2529,175 @@ private fun CheckinDetailSheet(vm: AppViewModel, item: CheckinItem) {
     val scope = rememberCoroutineScope()
     var hidden by remember { mutableStateOf(item.hiddenFromPartner == true) }
 
-    SheetScaffold(item.beerName, onClose = { vm.closeSheet() }) {
-        Column(Modifier.verticalScroll(rememberScrollState())) {
-            BeerAuthImage(
-                path = item.photoURL,
-                api = vm.api,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(240.dp)
-                    .clip(RoundedCornerShape(12.dp))
-            )
-            Spacer(Modifier.height(12.dp))
-            Text("★ ${formatRating(item.rating)}", color = BeerColors.accent, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Text(
-                "${item.brewery ?: "—"} · ${item.style ?: "?"} · ${formatDate(item.createdAt)}",
-                color = BeerColors.muted
-            )
-            item.location?.trim()?.takeIf { it.isNotEmpty() }?.let {
-                Spacer(Modifier.height(8.dp))
-                BeerCard {
-                    Text("Lieu", color = BeerColors.muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    Text("📍 $it", color = BeerColors.text, fontSize = 14.sp)
-                }
-            }
-            item.comment?.takeIf { it.isNotBlank() }?.let {
-                Spacer(Modifier.height(8.dp))
-                Text("« $it »", color = BeerColors.text)
-            }
-            item.flavors?.takeIf { it.isNotEmpty() }?.let {
-                Text("Goûts: ${it.joinToString()}", color = BeerColors.muted, fontSize = 13.sp)
-            }
-            item.hops?.takeIf { it.isNotEmpty() }?.let {
-                Text("Houblons: ${it.joinToString()}", color = BeerColors.muted, fontSize = 13.sp)
-            }
-            Spacer(Modifier.height(12.dp))
-            BeerPrimaryButton("Re-noter") { vm.startRetaste(item) }
-            BeerSecondaryButton("Modifier") {
-                vm.editingCheckin = item
-                vm.openSheet(BeerSheet.EDIT)
-            }
+    // Parité iOS CheckinDetailView + BeerDetailHead
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(BeerColors.bg)
+            .consumeClicks()
+    ) {
+        // BeerDetailHead
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            BeerGhostButton("Fermer", onClick = { vm.closeSheet() })
+            Spacer(Modifier.weight(1f))
             if (vm.isAdmin) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Masqué partenaire", color = BeerColors.text, modifier = Modifier.weight(1f))
-                    Switch(checked = hidden, onCheckedChange = { v ->
-                        hidden = v
+                BeerGhostButton(
+                    if (hidden) "Visible" else "Masquer",
+                    onClick = {
+                        val next = !hidden
+                        hidden = next
                         scope.launch {
                             try {
-                                vm.api.updateCheckin(item.id, hiddenFromPartner = v)
-                                vm.showToast(if (v) "Masqué" else "Visible", ToastPayload.Variant.SUCCESS)
+                                vm.api.updateCheckin(item.id, hiddenFromPartner = next)
+                                vm.showToast(
+                                    if (next) "Masqué partenaire" else "Visible partenaire",
+                                    ToastPayload.Variant.SUCCESS
+                                )
                             } catch (e: Exception) {
-                                hidden = !v
+                                hidden = !next
                                 vm.showToast(e.message ?: "Erreur", ToastPayload.Variant.ERROR)
                             }
                         }
-                    })
+                    }
+                )
+            }
+            Button(
+                onClick = { vm.startRetaste(item) },
+                colors = ButtonDefaults.buttonColors(containerColor = BeerColors.accent),
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    "Noter à nouveau",
+                    color = BeerColors.btnPrimaryText,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                    maxLines = 1
+                )
+            }
+            BeerGhostButton(
+                "Modifier",
+                onClick = {
+                    vm.editingCheckin = item
+                    vm.openSheet(BeerSheet.EDIT)
                 }
+            )
+        }
+
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            if (!item.photoURL.isNullOrBlank()) {
+                BeerAuthImage(
+                    path = item.photoURL,
+                    api = vm.api,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(1.dp, BeerColors.border, RoundedCornerShape(14.dp))
+                )
+            } else {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(1.dp, BeerColors.border, RoundedCornerShape(14.dp))
+                        .background(BeerColors.card),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Pas de photo", color = BeerColors.muted)
+                }
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    item.beerName,
+                    color = BeerColors.text,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (vm.isAdmin && (hidden || item.hiddenFromPartner == true)) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "privé",
+                        color = BeerColors.accent,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(BeerColors.accent.copy(alpha = 0.15f))
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+            }
+            Text(
+                "${item.brewery ?: "—"} · ${item.style ?: "?"} · ${formatDate(item.createdAt)}",
+                color = BeerColors.muted,
+                fontSize = 13.sp
+            )
+
+            item.location?.trim()?.takeIf { it.isNotEmpty() }?.let { loc ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(1.dp, BeerColors.border, RoundedCornerShape(14.dp))
+                        .background(BeerColors.card)
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Text("📍", fontSize = 14.sp)
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("Lieu", color = BeerColors.muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Text(loc, color = BeerColors.text, fontSize = 14.sp)
+                    }
+                }
+            }
+
+            BeerStarRating(item.rating)
+
+            item.flavors?.takeIf { it.isNotEmpty() }?.let {
+                Text(
+                    "Goûts : ${it.joinToString(", ")}",
+                    color = BeerColors.text,
+                    fontSize = 13.sp
+                )
+            }
+            item.hops?.takeIf { it.isNotEmpty() }?.let {
+                Text(
+                    "Houblons : ${it.joinToString(", ")}",
+                    color = BeerColors.muted,
+                    fontSize = 13.sp
+                )
+            }
+            item.comment?.takeIf { it.isNotBlank() }?.let { c ->
+                Text(
+                    "« $c »",
+                    color = BeerColors.text,
+                    fontSize = 14.sp,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(1.dp, BeerColors.border, RoundedCornerShape(14.dp))
+                        .background(BeerColors.card)
+                        .padding(12.dp)
+                )
             }
         }
     }
