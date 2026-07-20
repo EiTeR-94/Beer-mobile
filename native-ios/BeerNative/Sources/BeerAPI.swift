@@ -782,31 +782,6 @@ final class BeerAPI {
         return (try? JSONDecoder().decode(V.self, from: data))?.version ?? "?"
     }
 
-    /// Manifest versions natives (portail public, sans session).
-    func fetchMobileVersions() async -> MobileVersionsManifest? {
-        guard let url = URL(string: ServerSettings.versionsURLString) else { return nil }
-        do {
-            var req = URLRequest(url: url)
-            req.timeoutInterval = 8
-            req.cachePolicy = .reloadIgnoringLocalCacheData
-            let (data, resp) = try await URLSession.shared.data(for: req)
-            guard let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return nil }
-            return try? JSONDecoder().decode(MobileVersionsManifest.self, from: data)
-        } catch {
-            return nil
-        }
-    }
-
-    func adminFeedbackStats() async -> AdminFeedbackStats? {
-        do {
-            let (data, http, _) = try await request(path: "/api/admin/feedback?limit=1", method: "GET", body: nil)
-            guard http.statusCode >= 200 && http.statusCode < 300 else { return nil }
-            return (try? JSONDecoder().decode(AdminFeedbackListResponse.self, from: data))?.stats
-        } catch {
-            return nil
-        }
-    }
-
     func patchnotes() async throws -> PatchnotesResponse {
         let (data, http, _) = try await request(path: "/api/admin/patchnotes", method: "GET", body: nil)
         if http.statusCode == 401 || http.statusCode == 403 {
