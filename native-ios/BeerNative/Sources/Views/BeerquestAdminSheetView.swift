@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Admin Beerquest — style RPG taverne (liste + détail éditable + badges grille).
+/// Admin Beerquest — style RPG taverne (Joueurs + Feedback, parité webapp).
 struct BeerquestAdminSheetView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -11,6 +11,27 @@ struct BeerquestAdminSheetView: View {
     @State private var filter = ""
     @State private var flagsLine = "Registre des aventuriers"
 
+    /// Parité webapp : Joueurs / Feedback
+    @State private var adminTab: BqAdminTab = .players
+    @State private var feedbackItems: [AdminFeedbackItem] = []
+    @State private var feedbackStats: AdminFeedbackStats?
+    @State private var feedbackLoading = false
+    @State private var feedbackError: String?
+    @State private var feedbackUnreadOnly = false
+    @State private var feedbackToDelete: AdminFeedbackItem?
+    @State private var feedbackBusyId: Int?
+
+    private enum BqAdminTab: String, CaseIterable, Identifiable {
+        case players, feedback
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .players: return "Joueurs"
+            case .feedback: return "Feedback"
+            }
+        }
+    }
+
     private var filtered: [RpgAdminPlayer] {
         let q = filter.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return players }
@@ -20,6 +41,8 @@ struct BeerquestAdminSheetView: View {
                 || ($0.classKey ?? "").lowercased().contains(q)
         }
     }
+
+    private var unreadCount: Int { feedbackStats?.unread ?? 0 }
 
     var body: some View {
         NavigationStack {
@@ -33,8 +56,14 @@ struct BeerquestAdminSheetView: View {
 
                 VStack(spacing: 0) {
                     header
-                    searchBar
-                    listBody
+                    tabBar
+                    if adminTab == .players {
+                        searchBar
+                        listBody
+                    } else {
+                        feedbackToolbar
+                        feedbackBody
+                    }
                 }
             }
             .navigationBarHidden(true)
@@ -49,6 +78,21 @@ struct BeerquestAdminSheetView: View {
                 }
                 .environmentObject(app)
                 .preferredColorScheme(.dark)
+            }
+            .alert(
+                "Supprimer ce feedback ?",
+                isPresented: Binding(
+                    get: { feedbackToDelete != nil },
+                    set: { if !$0 { feedbackToDelete = nil } }
+                ),
+                presenting: feedbackToDelete
+            ) { item in
+                Button("Annuler", role: .cancel) { feedbackToDelete = nil }
+                Button("Supprimer", role: .destructive) {
+                    Task { await deleteFeedback(item) }
+                }
+            } message: { item in
+                Text(String((item.message ?? "").prefix(120)))
             }
         }
     }
@@ -69,7 +113,12 @@ struct BeerquestAdminSheetView: View {
                     .lineLimit(2)
             }
             Spacer()
-            Button { Task { await reload() } } label: {
+            Button {
+                Task {
+                    if adminTab == .players { await reload() }
+                    else { await loadFeedback() }
+                }
+            } label: {
                 Text("↻")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.muted)
@@ -82,6 +131,52 @@ struct BeerquestAdminSheetView: View {
         }
         .padding(.horizontal, 14)
         .padding(.top, 10)
+        .padding(.bottom, 8)
+    }
+
+    private var tabBar: some View {
+        HStack(spacing: 6) {
+            ForEach(BqAdminTab.allCases) { tab in
+                Button {
+                    adminTab = tab
+                    if tab == .feedback {
+                        Task { await loadFeedback() }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(tab.label)
+                            .font(.system(size: 13, weight: .bold))
+                        if tab == .feedback, unreadCount > 0 {
+                            Text("\(unreadCount)")
+                                .font(.system(size: 10, weight: .heavy))
+                                .foregroundStyle(Color(red: 0.07, green: 0.07, blue: 0.07))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Theme.accent)
+                                .clipShape(Capsule())
+                        }
+                    }
+                    .foregroundStyle(adminTab == tab ? Theme.text : Theme.muted)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(
+                        adminTab == tab
+                            ? Theme.card.opacity(0.95)
+                            : Theme.card.opacity(0.55)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(
+                                adminTab == tab ? Theme.accent : Theme.border,
+                                lineWidth: adminTab == tab ? 1.5 : 1
+                            )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
         .padding(.bottom, 8)
     }
 
@@ -100,6 +195,184 @@ struct BeerquestAdminSheetView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal, 14)
         .padding(.bottom, 10)
+    }
+
+    // MARK: - Feedback (parité webapp)
+
+    private var feedbackToolbar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Button {
+                    Task { await loadFeedback() }
+                } label: {
+                    Text("↻ Actualiser")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(Theme.card)
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    Task { await markAllFeedbackRead() }
+                } label: {
+                    Text("Tout marquer lu")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(Theme.card)
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .disabled(unreadCount == 0)
+
+                Spacer(minLength: 0)
+            }
+
+            Toggle(isOn: $feedbackUnreadOnly) {
+                Text("Non lus seulement")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.muted)
+            }
+            .tint(Theme.accent)
+            .onChange(of: feedbackUnreadOnly) { _ in
+                Task { await loadFeedback() }
+            }
+
+            let total = feedbackStats?.total ?? feedbackItems.count
+            let unread = feedbackStats?.unread ?? 0
+            Text("\(unread) non lu(s) · \(total) au total")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.muted)
+        }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 8)
+    }
+
+    @ViewBuilder
+    private var feedbackBody: some View {
+        if feedbackLoading && feedbackItems.isEmpty {
+            Spacer()
+            ProgressView("Chargement feedback…").tint(Theme.accent)
+            Spacer()
+        } else if let feedbackError, feedbackItems.isEmpty {
+            Spacer()
+            Text(feedbackError).foregroundStyle(Theme.error).padding()
+            Spacer()
+        } else if feedbackItems.isEmpty {
+            Spacer()
+            Text(feedbackUnreadOnly ? "Aucun feedback non lu." : "Aucun feedback.")
+                .foregroundStyle(Theme.muted)
+            Spacer()
+        } else {
+            ScrollView {
+                LazyVStack(spacing: 10) {
+                    ForEach(feedbackItems, id: \.stableId) { item in
+                        feedbackCard(item)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 28)
+            }
+        }
+    }
+
+    private func feedbackCard(_ f: AdminFeedbackItem) -> some View {
+        let unread = f.adminRead != true
+        let when = BeerFormatters.formatDate(f.createdAt)
+        var line1: [String] = []
+        if !when.isEmpty { line1.append(when) }
+        if let ip = f.clientIp, !ip.isEmpty { line1.append(ip) }
+        var line2: [String] = []
+        let device = f.deviceLine
+        if !device.isEmpty { line2.append(device) }
+        if let v = f.appVersion, !v.isEmpty { line2.append("v\(v)") }
+        if let lv = f.metaRpgLevel { line2.append(lv) }
+        let busy = feedbackBusyId == f.id
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(f.username ?? "—")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(Theme.text)
+                        if f.isInvite == true {
+                            adminPill("invité", .invite)
+                        }
+                        if unread {
+                            adminPill("nouveau", .off)
+                        }
+                    }
+                    Text(f.displayCategory)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Theme.accent)
+                }
+                Spacer(minLength: 0)
+            }
+
+            Text(f.message ?? "")
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.text)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !line1.isEmpty {
+                Text(line1.joined(separator: " · "))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.muted)
+            }
+            if !line2.isEmpty {
+                Text(line2.joined(separator: " · "))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.muted)
+            }
+
+            HStack(spacing: 8) {
+                if unread {
+                    Button {
+                        Task { await markFeedbackRead(f) }
+                    } label: {
+                        Text(busy ? "…" : "Lu")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Theme.text)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(Theme.fieldBg)
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                }
+                Button {
+                    feedbackToDelete = f
+                } label: {
+                    Text("Suppr")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Theme.error)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.error.opacity(0.45)))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 2)
+        }
+        .padding(12)
+        .background(Theme.card)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(unread ? Theme.accent.opacity(0.45) : Theme.border, lineWidth: unread ? 1.5 : 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
     @ViewBuilder
@@ -242,11 +515,88 @@ struct BeerquestAdminSheetView: View {
         error = nil
         do {
             players = try await app.api.adminRpgPlayers()
-            flagsLine = "\(players.count) aventurier(s) · grimoire admin"
+            // Badge feedback (léger, comme la webapp)
+            if let stats = await app.api.adminFeedbackStats() {
+                feedbackStats = stats
+            }
+            let unread = feedbackStats?.unread ?? 0
+            if unread > 0 {
+                flagsLine = "\(players.count) aventurier(s) · \(unread) feedback non lu(s)"
+            } else {
+                flagsLine = "\(players.count) aventurier(s) · grimoire admin"
+            }
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription ?? "Erreur chargement"
         }
         loading = false
+    }
+
+    private func loadFeedback() async {
+        feedbackLoading = true
+        feedbackError = nil
+        do {
+            let res = try await app.api.adminFeedbackList(limit: 80, unreadOnly: feedbackUnreadOnly)
+            feedbackItems = res.items ?? []
+            feedbackStats = res.stats
+            let unread = res.stats?.unread ?? 0
+            if unread > 0 {
+                flagsLine = "\(players.count) aventurier(s) · \(unread) feedback non lu(s)"
+            } else if !players.isEmpty {
+                flagsLine = "\(players.count) aventurier(s) · grimoire admin"
+            }
+        } catch {
+            feedbackError = (error as? LocalizedError)?.errorDescription ?? "Feedback indisponible"
+        }
+        feedbackLoading = false
+    }
+
+    private func markFeedbackRead(_ item: AdminFeedbackItem) async {
+        guard let id = item.id else { return }
+        feedbackBusyId = id
+        defer { feedbackBusyId = nil }
+        do {
+            try await app.api.adminFeedbackMarkRead(id: id, read: true)
+            await loadFeedback()
+            app.showToast("Marqué lu", variant: .success, durationMs: 2200)
+        } catch {
+            app.showToast(
+                (error as? LocalizedError)?.errorDescription ?? "Erreur",
+                variant: .error,
+                durationMs: 3200
+            )
+        }
+    }
+
+    private func markAllFeedbackRead() async {
+        do {
+            try await app.api.adminFeedbackReadAll()
+            await loadFeedback()
+            app.showToast("Tout marqué lu", variant: .success, durationMs: 2400)
+        } catch {
+            app.showToast(
+                (error as? LocalizedError)?.errorDescription ?? "Erreur",
+                variant: .error,
+                durationMs: 3200
+            )
+        }
+    }
+
+    private func deleteFeedback(_ item: AdminFeedbackItem) async {
+        feedbackToDelete = nil
+        guard let id = item.id else { return }
+        feedbackBusyId = id
+        defer { feedbackBusyId = nil }
+        do {
+            try await app.api.adminFeedbackDelete(id: id)
+            await loadFeedback()
+            app.showToast("Feedback supprimé", variant: .success, durationMs: 2400)
+        } catch {
+            app.showToast(
+                (error as? LocalizedError)?.errorDescription ?? "Suppression impossible",
+                variant: .error,
+                durationMs: 3200
+            )
+        }
     }
 }
 

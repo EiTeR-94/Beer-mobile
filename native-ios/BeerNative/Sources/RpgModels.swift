@@ -364,13 +364,76 @@ struct AdminFeedbackItem: Decodable, Identifiable {
     var id: Int?
     var message: String?
     var category: String?
+    var categoryLabel: String?
     var username: String?
+    var isInvite: Bool?
     var adminRead: Bool?
     var createdAt: String?
+    var clientIp: String?
+    var appVersion: String?
+    var device: String?
+    var osName: String?
+    var browser: String?
+    var pagePath: String?
+    var meta: [String: FlexibleJSON]?
+
     enum CodingKeys: String, CodingKey {
-        case id, message, category, username
+        case id, message, category, username, device, browser, meta
+        case categoryLabel = "category_label"
+        case isInvite = "is_invite"
         case adminRead = "admin_read"
         case createdAt = "created_at"
+        case clientIp = "client_ip"
+        case appVersion = "app_version"
+        case osName = "os_name"
+        case pagePath = "page_path"
+    }
+
+    /// Identifiant stable pour ForEach
+    var stableId: Int { id ?? 0 }
+
+    var displayCategory: String {
+        let lab = (categoryLabel ?? "").trimmingCharacters(in: .whitespaces)
+        if !lab.isEmpty { return lab }
+        return category ?? "général"
+    }
+
+    var deviceLine: String {
+        [device, osName, browser]
+            .compactMap { $0 }
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && $0 != "—" }
+            .joined(separator: " · ")
+    }
+
+    var metaRpgLevel: String? {
+        guard let m = meta, let v = m["rpg_level"] else { return nil }
+        switch v {
+        case .int(let i): return "Lv \(i)"
+        case .double(let d): return "Lv \(Int(d))"
+        case .string(let s) where !s.isEmpty: return "Lv \(s)"
+        default: return nil
+        }
+    }
+}
+
+/// JSON hétérogène pour meta feedback (int/string/bool…).
+enum FlexibleJSON: Decodable {
+    case string(String)
+    case int(Int)
+    case double(Double)
+    case bool(Bool)
+    case null
+    case other
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() { self = .null; return }
+        if let i = try? c.decode(Int.self) { self = .int(i); return }
+        if let d = try? c.decode(Double.self) { self = .double(d); return }
+        if let b = try? c.decode(Bool.self) { self = .bool(b); return }
+        if let s = try? c.decode(String.self) { self = .string(s); return }
+        self = .other
     }
 }
 

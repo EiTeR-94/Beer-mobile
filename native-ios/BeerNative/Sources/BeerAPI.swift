@@ -768,11 +768,63 @@ final class BeerAPI {
 
     func adminFeedbackStats() async -> AdminFeedbackStats? {
         do {
-            let (data, http, _) = try await request(path: "/api/admin/feedback?limit=1", method: "GET", body: nil)
-            guard http.statusCode >= 200 && http.statusCode < 300 else { return nil }
-            return (try? JSONDecoder().decode(AdminFeedbackListResponse.self, from: data))?.stats
+            let res = try await adminFeedbackList(limit: 1, unreadOnly: false)
+            return res.stats
         } catch {
             return nil
+        }
+    }
+
+    /// Liste feedback admin (parité webapp onglet Feedback).
+    func adminFeedbackList(limit: Int = 80, unreadOnly: Bool = false) async throws -> AdminFeedbackListResponse {
+        var path = "/api/admin/feedback?limit=\(max(1, min(limit, 200)))"
+        if unreadOnly { path += "&unread=1" }
+        let (data, http, _) = try await request(path: path, method: "GET", body: nil)
+        try throwIfUnauthorized(http.statusCode)
+        if http.statusCode == 403 { throw BeerAPIError.forbidden }
+        guard (200..<300).contains(http.statusCode),
+              let decoded = try? JSONDecoder().decode(AdminFeedbackListResponse.self, from: data) else {
+            throw BeerAPIError.decode
+        }
+        return decoded
+    }
+
+    func adminFeedbackMarkRead(id: Int, read: Bool = true) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["read": read])
+        let (_, http, _) = try await request(
+            path: "/api/admin/feedback/\(id)/read",
+            method: "POST",
+            body: body,
+            contentType: "application/json"
+        )
+        try throwIfUnauthorized(http.statusCode)
+        guard (200..<300).contains(http.statusCode) else {
+            throw BeerAPIError.server("Marquage lu impossible")
+        }
+    }
+
+    func adminFeedbackReadAll() async throws {
+        let (_, http, _) = try await request(
+            path: "/api/admin/feedback/read-all",
+            method: "POST",
+            body: Data("{}".utf8),
+            contentType: "application/json"
+        )
+        try throwIfUnauthorized(http.statusCode)
+        guard (200..<300).contains(http.statusCode) else {
+            throw BeerAPIError.server("Lecture globale impossible")
+        }
+    }
+
+    func adminFeedbackDelete(id: Int) async throws {
+        let (_, http, _) = try await request(
+            path: "/api/admin/feedback/\(id)",
+            method: "DELETE",
+            body: nil
+        )
+        try throwIfUnauthorized(http.statusCode)
+        guard (200..<300).contains(http.statusCode) else {
+            throw BeerAPIError.server("Suppression impossible")
         }
     }
 
