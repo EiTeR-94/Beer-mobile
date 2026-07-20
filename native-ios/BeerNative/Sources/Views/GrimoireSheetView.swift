@@ -948,12 +948,11 @@ private struct ClassCardView: View {
             .clipShape(RoundedRectangle(cornerRadius: 10))
         }
         .padding(12)
-        .background(equipped ? Theme.card : Theme.card) // même fond opaque
+        // Fonds 100 % opaques (pas de Color.opacity sur le conteneur équipé)
         .background(
-            // Teinte or opaque (pas de mix alpha sur le conteneur)
             equipped
-                ? Color(red: 0.95, green: 0.62, blue: 0.04).opacity(0.14)
-                : Color.clear
+                ? Color(red: 0.22, green: 0.17, blue: 0.09) // brun-or plein
+                : Theme.card
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
@@ -964,9 +963,9 @@ private struct ClassCardView: View {
                 )
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        // Seules les classes NON équipées sont un peu atténuées (comme webapp .is-available)
+        // Seules les classes NON équipées sont atténuées (webapp .is-available)
         .opacity(equipped ? 1.0 : 0.82)
-        .shadow(color: equipped ? Theme.accent.opacity(0.2) : .clear, radius: 8, y: 2)
+        .shadow(color: equipped ? Color.black.opacity(0.35) : .clear, radius: 6, y: 2)
     }
 }
 
