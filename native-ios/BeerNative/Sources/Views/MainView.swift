@@ -16,7 +16,7 @@ struct MainView: View {
         if app.isInvite || InviteSessionStore.hasInviteSession {
             return "Tu perds l'accès sur cet iPhone. Il faudra un nouveau lien d'invitation pour revenir."
         }
-        return "Tu devras te reconnecter (Wi‑Fi maison ou VPN) pour accéder à Beer Log."
+        return "Tu devras te reconnecter (Wi‑Fi maison ou VPN) pour accéder à Beer Quest."
     }
 
     private var connectedLabel: String {
@@ -134,7 +134,7 @@ struct MainView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Beer Log")
+                Text("Beer Quest")
                     .font(.system(size: Theme.Font.h1, weight: .bold))
                     .foregroundStyle(Theme.text)
                 Text(app.serverVersion.isEmpty ? "scan · photo · note" : "v\(app.serverVersion) · scan · photo · note")

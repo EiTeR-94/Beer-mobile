@@ -64,18 +64,18 @@ jobs:
           file "$APP/$BIN" | grep -E "Mach-O.*arm64"
           ! find build/Payload -name "index.html" | grep -q .
           # Nom public figé
-          cp -f build/PlexiBeer.ipa build/BeerOff.ipa 2>/dev/null || cp -f build/*.ipa build/BeerOff.ipa
+          cp -f build/BeerQuest.ipa build/BeerOff.ipa 2>/dev/null || cp -f build/PlexiBeer.ipa build/BeerOff.ipa 2>/dev/null || cp -f build/*.ipa build/BeerOff.ipa
 
       - name: Release GitHub (IPA)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ios-build-${{ github.run_number }}
-          name: Beer Log iOS build ${{ github.run_number }}
+          name: Beer Quest iOS build ${{ github.run_number }}
           body: |
-            Build automatique Beer Log iOS.
+            Build automatique Beer Quest iOS.
 
-            Téléchargement direct (pas d'AltStore) :
-            https://eiter.freeboxos.fr/mobile/beer/BeerOff.ipa
+            Portail téléchargement :
+            https://eiter.freeboxos.fr/mobile/beer/
           files: |
             build/BeerOff.ipa
           make_latest: true

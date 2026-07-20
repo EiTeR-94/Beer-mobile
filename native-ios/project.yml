@@ -11,8 +11,8 @@ settings:
     TARGETED_DEVICE_FAMILY: "1,2"  # Priority 5: basic iPad support (in addition to iPhone)
     INFOPLIST_FILE: BeerNative/Resources/Info.plist
     PRODUCT_BUNDLE_IDENTIFIER: fr.eiter.plexibeer
-    MARKETING_VERSION: "4.4.5"
-    CURRENT_PROJECT_VERSION: "208"
+    MARKETING_VERSION: "4.4.6"
+    CURRENT_PROJECT_VERSION: "209"
     CODE_SIGN_STYLE: Manual
     CODE_SIGN_IDENTITY: ""
     CODE_SIGNING_ALLOWED: NO
@@ -37,7 +37,7 @@ targets:
       path: BeerNative/Resources/BeerNative.entitlements
     settings:
       base:
-        PRODUCT_NAME: PlexiBeer
+        PRODUCT_NAME: BeerQuest
         GENERATE_INFOPLIST_FILE: NO
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
 
@@ -52,7 +52,7 @@ targets:
       - target: BeerNative
     settings:
       base:
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/PlexiBeer.app/PlexiBeer"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/BeerQuest.app/BeerQuest"
         BUNDLE_LOADER: "$(TEST_HOST)"
 
 schemes:

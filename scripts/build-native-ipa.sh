@@ -18,7 +18,7 @@ fi
 (cd native-ios && xcodegen generate)
 
 DERIVED="$ROOT/build/DerivedData"
-rm -rf "$ROOT/build/Payload" "$DERIVED" "$ROOT/build/PlexiBeer.ipa"
+rm -rf "$ROOT/build/Payload" "$DERIVED" "$ROOT/build/BeerQuest.ipa"
 mkdir -p "$ROOT/build"
 
 echo "==> xcodebuild (Release iphoneos)"
@@ -99,7 +99,7 @@ echo "==> IPA"
 rm -rf "$ROOT/build/Payload"
 mkdir -p "$ROOT/build/Payload"
 ditto "$APP" "$ROOT/build/Payload/$APP_NAME"
-(cd "$ROOT/build" && zip -qr PlexiBeer.ipa Payload)
+(cd "$ROOT/build" && zip -qr BeerQuest.ipa Payload)
 
-echo "OK: $ROOT/build/PlexiBeer.ipa ($APP_NAME, exe=$BIN_NAME)"
-unzip -l "$ROOT/build/PlexiBeer.ipa" | head -15
+echo "OK: $ROOT/build/BeerQuest.ipa ($APP_NAME, exe=$BIN_NAME)"
+unzip -l "$ROOT/build/BeerQuest.ipa" | head -15

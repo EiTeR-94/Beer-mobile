@@ -570,16 +570,71 @@ private struct AdminUserCard: View {
     let onToggleAdmin: () -> Void
     let onDelete: () -> Void
 
+    /// Fraîcheur d’activité (ambre → muet), sans arc-en-ciel.
+    private var activityTone: Color {
+        guard let raw = user.lastCheckinAt, !raw.isEmpty else { return Theme.muted.opacity(0.7) }
+        // ISO-ish dates: plus c’est récent, plus c’est chaud
+        let prefix = String(raw.prefix(10))
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        guard let d = fmt.date(from: prefix) else { return Theme.muted }
+        let days = Calendar.current.dateComponents([.day], from: d, to: Date()).day ?? 999
+        if days <= 2 { return Theme.accent }
+        if days <= 14 { return Theme.accent.opacity(0.75) }
+        if days <= 45 { return Theme.muted }
+        return Theme.muted.opacity(0.55)
+    }
+
+    private var activityLabel: String {
+        guard let raw = user.lastCheckinAt, !raw.isEmpty else { return "Jamais de check-in" }
+        return "Dernière activité \(BeerFormatters.formatDate(raw))"
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(user.username).fontWeight(.semibold)
-                if user.isAdmin {
-                    Text("admin").font(.caption2).padding(4).background(Theme.accent.opacity(0.2)).clipShape(Capsule())
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(user.username).fontWeight(.semibold).foregroundStyle(Theme.text)
+                        if user.isAdmin {
+                            Text("admin")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(Color(red: 0.07, green: 0.07, blue: 0.07))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Theme.accent)
+                                .clipShape(Capsule())
+                        }
+                        if isSelf {
+                            Text("toi")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(Theme.muted)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .overlay(Capsule().stroke(Theme.border))
+                        }
+                    }
+                    Text(activityLabel)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(activityTone)
                 }
                 Spacer()
-                Text("\(user.checkins) dégust.").font(.caption).foregroundStyle(Theme.muted)
             }
+
+            // Détails type invités (stats compactes)
+            HStack(spacing: 6) {
+                metaChip("🍺 \(user.checkins)", "dégust.")
+                metaChip("📷 \(user.photos ?? 0)", "photos")
+                metaChip("🎨 \(user.stylesCount ?? 0)", "styles")
+                metaChip("🏭 \(user.breweriesCount ?? 0)", "brass.")
+            }
+
+            if let created = user.createdAt, !created.isEmpty {
+                Text("Créé \(BeerFormatters.formatDate(created))")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.muted.opacity(0.85))
+            }
+
             BeerField(label: "Nouveau mot de passe", text: $password, secure: true)
             HStack(spacing: 6) {
                 BeerCompactButton(title: "MDP", action: onSetPassword)
@@ -593,6 +648,30 @@ private struct AdminUserCard: View {
             }
             .padding(.top, 2)
         }
-        .padding(10).background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 10))
+        .padding(12)
+        .background(Theme.card)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(user.isAdmin ? Theme.accent.opacity(0.35) : Theme.border, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func metaChip(_ value: String, _ label: String) -> some View {
+        VStack(spacing: 1) {
+            Text(value)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(label)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Theme.muted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .background(Theme.fieldBg.opacity(0.65))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border.opacity(0.7)))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }

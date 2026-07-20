@@ -11,13 +11,20 @@ struct ToastPayload: Equatable {
     var label: String?
 }
 
-/// Bannière non-modale en haut d’écran — ne masque plus toute l’UI (plus de voile noir superposé).
+/// Bannière non-modale en haut d’écran — tap n’importe où pour fermer.
 struct ToastOverlay: View {
     let toast: ToastPayload?
     let onDismiss: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
+        ZStack(alignment: .top) {
+            // Zone pleine pour dismiss au tap (transparente)
+            if toast != nil {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: onDismiss)
+                    .ignoresSafeArea()
+            }
             if let toast {
                 ToastBanner(payload: toast, onDismiss: onDismiss)
                     .padding(.horizontal, 14)
@@ -29,7 +36,6 @@ struct ToastOverlay: View {
                         )
                     )
             }
-            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .allowsHitTesting(toast != nil)

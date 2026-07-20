@@ -11,7 +11,7 @@ struct BeerHeader: View {
     var body: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Beer Log")
+                Text("Beer Quest")
                     .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(Theme.text)
                 Text("scan · photo · note")
@@ -657,7 +657,7 @@ struct InviteHelpBar: View {
         HStack(alignment: .top, spacing: 8) {
             (
                 Text("Conseil").fontWeight(.semibold).foregroundColor(Theme.accent)
-                + Text(" — garde Beer Log installé sur ton écran d'accueil et évite de vider ses données dans les réglages du téléphone : c'est ce qui maintient ta connexion.")
+                + Text(" — garde Beer Quest installé sur ton écran d'accueil et évite de vider ses données dans les réglages du téléphone : c'est ce qui maintient ta connexion.")
                     .foregroundColor(Theme.text)
             )
             .font(.system(size: 12.8))

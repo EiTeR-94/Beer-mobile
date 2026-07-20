@@ -260,13 +260,20 @@ struct AdminUser: Identifiable, Codable {
     let isAdmin: Bool
     let checkins: Int
     let createdAt: String?
+    let photos: Int?
+    let lastCheckinAt: String?
+    let stylesCount: Int?
+    let breweriesCount: Int?
 
     var id: String { username }
 
     enum CodingKeys: String, CodingKey {
-        case username, checkins
+        case username, checkins, photos
         case isAdmin = "is_admin"
         case createdAt = "created_at"
+        case lastCheckinAt = "last_checkin_at"
+        case stylesCount = "styles_count"
+        case breweriesCount = "breweries_count"
     }
 }
 

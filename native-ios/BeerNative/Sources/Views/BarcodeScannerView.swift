@@ -49,7 +49,7 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
 
     private func showDenied() {
         let label = UILabel()
-        label.text = "Autorise la caméra dans Réglages → Beer Log"
+        label.text = "Autorise la caméra dans Réglages → Beer Quest"
         label.textColor = .white
         label.numberOfLines = 0
         label.textAlignment = .center

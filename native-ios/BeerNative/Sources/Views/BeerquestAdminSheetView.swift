@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Admin Beerquest — parité webapp (liste + détail éditable + badges).
+/// Admin Beerquest — style RPG taverne (liste + détail éditable + badges grille).
 struct BeerquestAdminSheetView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -9,7 +9,7 @@ struct BeerquestAdminSheetView: View {
     @State private var error: String?
     @State private var selectedUser: String?
     @State private var filter = ""
-    @State private var flagsLine = "Profils RPG · alpha"
+    @State private var flagsLine = "Registre des aventuriers"
 
     private var filtered: [RpgAdminPlayer] {
         let q = filter.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -23,12 +23,20 @@ struct BeerquestAdminSheetView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                header
-                searchBar
-                listBody
+            ZStack {
+                // Fond RPG
+                LinearGradient(
+                    colors: [Color(red: 0.08, green: 0.07, blue: 0.05), Theme.bg, Color(red: 0.06, green: 0.08, blue: 0.1)],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .ignoresSafeArea()
+
+                VStack(spacing: 0) {
+                    header
+                    searchBar
+                    listBody
+                }
             }
-            .background(Theme.bg)
             .navigationBarHidden(true)
             .task { await reload() }
             .sheet(item: Binding(
@@ -47,8 +55,12 @@ struct BeerquestAdminSheetView: View {
 
     private var header: some View {
         HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("⚔ Beerquest")
+            VStack(alignment: .leading, spacing: 3) {
+                Text("⚔ REGISTRE")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(Theme.accent)
+                    .tracking(1.2)
+                Text("Admin Beerquest")
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(Theme.text)
                 Text(flagsLine)
@@ -62,7 +74,9 @@ struct BeerquestAdminSheetView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.muted)
                     .frame(width: 36, height: 36)
+                    .background(Theme.card)
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             Button("Fermer") { dismiss() }
                 .font(.system(size: 14, weight: .semibold))
@@ -76,15 +90,15 @@ struct BeerquestAdminSheetView: View {
     private var searchBar: some View {
         HStack(spacing: 8) {
             Text("🔍").font(.system(size: 13))
-            TextField("nom, invite_…", text: $filter)
+            TextField("Chercher un aventurier…", text: $filter)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .foregroundStyle(Theme.text)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Theme.fieldBg)
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.border))
+        .background(Theme.card)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.accent.opacity(0.25)))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal, 14)
         .padding(.bottom, 10)
@@ -94,7 +108,7 @@ struct BeerquestAdminSheetView: View {
     private var listBody: some View {
         if loading {
             Spacer()
-            ProgressView("Chargement…").tint(Theme.accent)
+            ProgressView("Ouverture du grimoire…").tint(Theme.accent)
             Spacer()
         } else if let error, players.isEmpty {
             Spacer()
@@ -102,11 +116,11 @@ struct BeerquestAdminSheetView: View {
             Spacer()
         } else if filtered.isEmpty {
             Spacer()
-            Text("Aucun joueur.").foregroundStyle(Theme.muted)
+            Text("Aucun aventurier.").foregroundStyle(Theme.muted)
             Spacer()
         } else {
             ScrollView {
-                LazyVStack(spacing: 8) {
+                LazyVStack(spacing: 10) {
                     ForEach(filtered) { p in
                         Button { selectedUser = p.username } label: {
                             playerCard(p)
@@ -122,27 +136,51 @@ struct BeerquestAdminSheetView: View {
 
     private func playerCard(_ p: RpgAdminPlayer) -> some View {
         let fill = min(1.0, max(0.0, (p.progressPct ?? 0) / 100.0))
+        let master = p.beerMaster == true
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top) {
-                Text(p.username ?? "—")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Theme.text)
+            HStack(alignment: .center, spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(master ? Color.yellow.opacity(0.15) : Theme.fieldBg)
+                        .frame(width: 42, height: 42)
+                    Circle()
+                        .stroke(master ? Color.yellow.opacity(0.6) : Theme.accent.opacity(0.45), lineWidth: 1.5)
+                        .frame(width: 42, height: 42)
+                    Text(master ? "👑" : (p.classInfo?.icon ?? "🍺"))
+                        .font(.system(size: 18))
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(p.username ?? "—")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                    Text(p.title ?? "Sans titre")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Theme.accent)
+                }
                 Spacer()
-                HStack(spacing: 4) {
-                    if p.isInvite == true { adminPill("invité", .invite) }
-                    if p.orphan == true { adminPill("orphelin", .off) }
-                    if p.allowed == false { adminPill("RPG bloqué", .off) }
-                    else { adminPill("RPG OK", .on) }
-                    if p.hasProfile == false { adminPill("sans profil", .muted) }
-                    if p.suspicionFlagged == true || (p.suspicionScore ?? 0) >= 12 {
-                        adminPill("⚠ susp \(p.suspicionScore ?? 0)", .off)
-                    }
+                Text("Nv \(p.level ?? 1)")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(Color(red: 0.07, green: 0.07, blue: 0.07))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        LinearGradient(colors: [Theme.accent, Color.orange], startPoint: .leading, endPoint: .trailing)
+                    )
+                    .clipShape(Capsule())
+            }
+            HStack(spacing: 4) {
+                if p.isInvite == true { adminPill("invité", .invite) }
+                if p.orphan == true { adminPill("orphelin", .off) }
+                if p.allowed == false { adminPill("RPG bloqué", .off) }
+                else { adminPill("RPG OK", .on) }
+                if p.hasProfile == false { adminPill("sans profil", .muted) }
+                if p.suspicionFlagged == true || (p.suspicionScore ?? 0) >= 12 {
+                    adminPill("⚠ susp \(p.suspicionScore ?? 0)", .off)
                 }
             }
             Text(metaLine(p))
-                .font(.system(size: 12))
+                .font(.system(size: 11))
                 .foregroundStyle(Theme.muted)
-                .fixedSize(horizontal: false, vertical: true)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Theme.fieldBg)
@@ -154,19 +192,25 @@ struct BeerquestAdminSheetView: View {
             .frame(height: 6)
         }
         .padding(12)
-        .background(Theme.card)
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.border))
+        .background(
+            LinearGradient(
+                colors: master
+                    ? [Color(red: 0.22, green: 0.14, blue: 0.05), Theme.card]
+                    : [Theme.card, Theme.card.opacity(0.95)],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+        )
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(master ? Color.yellow.opacity(0.35) : Theme.border))
         .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
     private func metaLine(_ p: RpgAdminPlayer) -> String {
-        var bits: [String] = ["Lv \(p.level ?? 1)"]
-        if let t = p.title, !t.isEmpty { bits.append(t) }
+        var bits: [String] = []
+        bits.append("\(p.xp ?? 0) XP")
         let cls = p.classInfo?.name ?? p.classKey
         if let c = cls, !c.isEmpty { bits.append(c) }
-        bits.append("\(p.xp ?? 0) XP")
-        bits.append("\(p.checkins ?? 0) check-in(s)")
-        bits.append("\(p.badgeCount ?? 0) badge(s)")
+        bits.append("\(p.checkins ?? 0) check-ins")
+        bits.append("\(p.badgeCount ?? 0) badges")
         if let s = p.streakDays, s > 0 { bits.append("🔥 \(s) j") }
         return bits.joined(separator: " · ")
     }
@@ -200,7 +244,7 @@ struct BeerquestAdminSheetView: View {
         error = nil
         do {
             players = try await app.api.adminRpgPlayers()
-            flagsLine = "\(players.count) joueur(s) · profils RPG"
+            flagsLine = "\(players.count) aventurier(s) · grimoire admin"
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription ?? "Erreur chargement"
         }
@@ -212,7 +256,7 @@ private struct UserKey: Identifiable {
     let id: String
 }
 
-// MARK: - Détail joueur (édition + badges)
+// MARK: - Détail joueur
 
 private struct RpgAdminPlayerDetailView: View {
     @EnvironmentObject private var app: AppModel
@@ -224,7 +268,6 @@ private struct RpgAdminPlayerDetailView: View {
     @State private var busy = false
     @State private var error: String?
 
-    // editable fields
     @State private var xpText = "0"
     @State private var streakText = "0"
     @State private var titleText = ""
@@ -232,49 +275,61 @@ private struct RpgAdminPlayerDetailView: View {
     @State private var introSeen = true
     @State private var suspicionText = "0"
     @State private var confirmWipe = false
+    @State private var badgeFilter = "all" // all | earned | locked
 
     var body: some View {
         NavigationStack {
-            Group {
-                if loading && detail == nil {
-                    ProgressView("Chargement \(username)…").tint(Theme.accent)
-                } else if let error, detail == nil {
-                    Text(error).foregroundStyle(Theme.error).padding()
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 14) {
-                            if let err = error {
-                                Text(err).font(.caption).foregroundStyle(Theme.error)
+            ZStack {
+                LinearGradient(
+                    colors: [Color(red: 0.09, green: 0.07, blue: 0.04), Theme.bg],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .ignoresSafeArea()
+
+                Group {
+                    if loading && detail == nil {
+                        ProgressView("Lecture du parchemin…").tint(Theme.accent)
+                    } else if let error, detail == nil {
+                        Text(error).foregroundStyle(Theme.error).padding()
+                    } else {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 14) {
+                                if let err = error {
+                                    Text(err).font(.caption).foregroundStyle(Theme.error)
+                                }
+                                profileHeader
+                                editSection
+                                actionsSection
+                                badgesSection
+                                questsSection
+                                eventsSection
                             }
-                            profileHeader
-                            editSection
-                            actionsSection
-                            badgesSection
-                            questsSection
-                            eventsSection
+                            .padding(14)
+                            .padding(.bottom, 40)
                         }
-                        .padding(16)
-                        .padding(.bottom, 40)
+                        .scrollDismissesKeyboard(.interactively)
                     }
                 }
             }
-            .background(Theme.bg)
-            .navigationTitle(username)
+            .navigationTitle("⚔ \(username)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Fermer", action: onClose)
                 }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("OK") { KeyboardDismiss.endEditing() }
+                        .fontWeight(.semibold)
+                }
             }
             .task { await load() }
             .confirmationDialog(
-                "EFFACER tout le RPG de « \(username) » ?\n(profil, badges, quêtes — pas les check-ins)",
+                "EFFACER tout le RPG de « \(username) » ?",
                 isPresented: $confirmWipe,
                 titleVisibility: .visible
             ) {
-                Button("Effacer le RPG", role: .destructive) {
-                    Task { await wipe() }
-                }
+                Button("Effacer le RPG", role: .destructive) { Task { await wipe() } }
                 Button("Annuler", role: .cancel) {}
             }
         }
@@ -283,86 +338,135 @@ private struct RpgAdminPlayerDetailView: View {
     @ViewBuilder
     private var profileHeader: some View {
         let p = detail?.player
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(username).font(.title3.weight(.bold)).foregroundStyle(Theme.text)
-                if p?.isInvite == true {
-                    Text("invité").font(.caption.weight(.bold)).foregroundStyle(Color(red: 0.38, green: 0.65, blue: 0.98))
-                }
-                if p?.allowed != false {
-                    Text("RPG OK").font(.caption.weight(.bold)).foregroundStyle(.green)
-                } else {
-                    Text("RPG bloqué").font(.caption.weight(.bold)).foregroundStyle(Theme.error)
-                }
-            }
-            let chips = [
-                "Lv \(p?.level ?? 1)",
-                "\(p?.xp ?? 0) XP",
-                "\(p?.checkins ?? 0) check-ins",
-                "🔥 \(p?.streakDays ?? 0) j",
-                "daily \(p?.dailyXpTotal ?? 0) XP",
-                "atlas \(detail?.atlas?.stylesCount ?? 0) styles",
-                "susp \(p?.suspicionScore ?? 0)",
-            ]
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 6)], spacing: 6) {
-                ForEach(chips, id: \.self) { s in
-                    Text(s)
-                        .font(.system(size: 11, weight: .semibold))
+        let master = p?.beerMaster == true
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(master ? Color.yellow.opacity(0.18) : Theme.fieldBg)
+                        .frame(width: 64, height: 64)
+                    Circle()
+                        .stroke(
+                            LinearGradient(colors: [Theme.accent, Color.yellow], startPoint: .topLeading, endPoint: .bottomTrailing),
+                            lineWidth: 2.5
+                        )
+                        .frame(width: 64, height: 64)
+                    Text(master ? "👑" : (p?.classInfo?.icon ?? "🍺"))
+                        .font(.system(size: 28))
+                    Text("\(p?.level ?? 1)")
+                        .font(.system(size: 10, weight: .heavy))
                         .foregroundStyle(Theme.text)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
                         .background(Theme.card)
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .clipShape(Capsule())
+                        .offset(y: 28)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(username)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(Theme.text)
+                    Text(p?.title ?? "Aventurier")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.accent)
+                    HStack(spacing: 6) {
+                        if p?.isInvite == true {
+                            chip("invité", Color(red: 0.38, green: 0.65, blue: 0.98))
+                        }
+                        if p?.allowed != false {
+                            chip("RPG OK", .green)
+                        } else {
+                            chip("bloqué", Theme.error)
+                        }
+                        if let cls = p?.classInfo?.name ?? p?.classKey, !cls.isEmpty {
+                            chip(cls, Theme.muted)
+                        }
+                    }
                 }
             }
-            if let aff = detail?.classAffinity, !aff.isEmpty {
-                Text("Affinité : " + aff.map { "\($0.key) \($0.value)%" }.sorted().joined(separator: " · "))
-                    .font(.caption)
-                    .foregroundStyle(Theme.muted)
+
+            // Stats RPG
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                statBox("⚡", "\(p?.xp ?? 0)", "XP")
+                statBox("🔥", "\(p?.streakDays ?? 0)", "Streak")
+                statBox("🍺", "\(p?.checkins ?? 0)", "Check-ins")
+                statBox("🏅", "\((detail?.badges ?? []).filter { $0.earned == true }.count)", "Badges")
+                statBox("🎨", "\(detail?.atlas?.stylesCount ?? 0)", "Styles")
+                statBox("⚠", "\(p?.suspicionScore ?? 0)", "Suspicion")
             }
+
             ProgressView(value: min(1, max(0, (p?.progressPct ?? 0) / 100.0)))
                 .tint(Theme.accent)
+            Text("\(Int(p?.progressPct ?? 0))% vers le niveau suivant")
+                .font(.caption2)
+                .foregroundStyle(Theme.muted)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(12)
-        .background(Theme.card)
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.border))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .padding(14)
+        .background(
+            LinearGradient(
+                colors: master
+                    ? [Color(red: 0.25, green: 0.16, blue: 0.05), Theme.card]
+                    : [Color(red: 0.12, green: 0.1, blue: 0.07), Theme.card],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+        )
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.accent.opacity(0.35), lineWidth: 1.5))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func chip(_ t: String, _ c: Color) -> some View {
+        Text(t)
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(c)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(c.opacity(0.12))
+            .overlay(Capsule().stroke(c.opacity(0.35)))
+            .clipShape(Capsule())
+    }
+
+    private func statBox(_ ico: String, _ v: String, _ l: String) -> some View {
+        VStack(spacing: 2) {
+            Text(ico).font(.system(size: 13))
+            Text(v).font(.system(size: 13, weight: .bold)).foregroundStyle(Theme.text).lineLimit(1).minimumScaleFactor(0.7)
+            Text(l).font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.muted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(Theme.fieldBg.opacity(0.7))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border.opacity(0.8)))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     private var editSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Éditer le profil")
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(Theme.text)
-            field("XP (absolu — fixe le niveau)", text: $xpText, keyboard: .numberPad)
-            field("Streak (jours)", text: $streakText, keyboard: .numberPad)
-            field("Titre", text: $titleText, keyboard: .default)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Classe").font(.caption.weight(.bold)).foregroundStyle(Theme.muted)
-                Picker("Classe", selection: $classKey) {
-                    Text("— aucune —").tag("none")
-                    ForEach(detail?.classes ?? []) { c in
-                        Text("\(c.icon ?? "🍺") \(c.name ?? c.key ?? "")").tag(c.key ?? "")
-                    }
-                }
-                .pickerStyle(.menu)
-                .tint(Theme.accent)
+            sectionTitle("📜 Éditer le profil")
+            labeledField("XP (absolu → niveau auto)", text: $xpText, keyboard: .numberPad)
+            labeledField("Streak (jours)", text: $streakText, keyboard: .numberPad)
+            labeledField("Titre", text: $titleText, keyboard: .default)
+
+            // Classe — liste cliquable (pas un menu invisible)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Classe équipée")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Theme.muted)
+                classPickerGrid
             }
+
             Toggle("Intro vue", isOn: $introSeen)
                 .tint(Theme.accent)
                 .foregroundStyle(Theme.text)
-            field("Suspicion (0–100)", text: $suspicionText, keyboard: .numberPad)
+            labeledField("Suspicion (0–100)", text: $suspicionText, keyboard: .numberPad)
+
             if let last = detail?.player?.lastRpgCheckinAt {
                 Text("Dernier RPG : \(last)")
                     .font(.caption)
                     .foregroundStyle(Theme.muted)
             }
-            Button {
-                Task { await save() }
-            } label: {
-                Text(busy ? "…" : "Enregistrer")
+
+            Button { Task { await save() } } label: {
+                Text(busy ? "…" : "Enregistrer le parchemin")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Color(red: 0.07, green: 0.07, blue: 0.07))
                     .frame(maxWidth: .infinity)
@@ -378,21 +482,60 @@ private struct RpgAdminPlayerDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
+    private var classPickerGrid: some View {
+        let classes = detail?.classes ?? []
+        return VStack(spacing: 6) {
+            classPickRow(key: "none", label: "— aucune —", icon: "∅")
+            ForEach(classes) { c in
+                classPickRow(key: c.key ?? "", label: c.name ?? c.key ?? "—", icon: c.icon ?? "🍺")
+            }
+        }
+    }
+
+    private func classPickRow(key: String, label: String, icon: String) -> some View {
+        let on = classKey == key
+        return Button {
+            classKey = key
+        } label: {
+            HStack {
+                Text("\(icon) \(label)")
+                    .font(.system(size: 13, weight: on ? .bold : .semibold))
+                    .foregroundStyle(on ? Color(red: 0.07, green: 0.07, blue: 0.07) : Theme.text)
+                Spacer()
+                if on {
+                    Text("✓").font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(Color(red: 0.07, green: 0.07, blue: 0.07))
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background {
+                if on {
+                    LinearGradient(colors: [Theme.accent, Color.orange.opacity(0.9)], startPoint: .leading, endPoint: .trailing)
+                } else {
+                    Theme.fieldBg
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(on ? Theme.accent : Theme.border, lineWidth: on ? 1.5 : 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+    }
+
     private var actionsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Actions rapides")
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(Theme.text)
+            sectionTitle("⚡ Actions rapides")
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                 actionBtn("+50 XP") { Task { await adjustXp(50) } }
                 actionBtn("+200 XP") { Task { await adjustXp(200) } }
                 actionBtn("−50 XP") { Task { await adjustXp(-50) } }
-                actionBtn("Reset soft-cap jour") { Task { await resetDaily() } }
+                actionBtn("Reset soft-cap") { Task { await resetDaily() } }
                 actionBtn("Clear suspicion") { Task { await clearSuspicion() } }
-                Button {
-                    confirmWipe = true
-                } label: {
-                    Text("Effacer tout le RPG")
+                Button { confirmWipe = true } label: {
+                    Text("Effacer RPG")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
@@ -412,44 +555,41 @@ private struct RpgAdminPlayerDetailView: View {
     @ViewBuilder
     private var badgesSection: some View {
         let badges = detail?.badges ?? []
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Badges")
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(Theme.text)
-            if badges.isEmpty {
-                Text("Aucun badge catalogue.").font(.caption).foregroundStyle(Theme.muted)
+        let earned = badges.filter { $0.earned == true }
+        let locked = badges.filter { $0.earned != true }
+        let shown: [RpgBadge] = {
+            switch badgeFilter {
+            case "earned": return earned
+            case "locked": return locked
+            default: return badges
+            }
+        }()
+
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                sectionTitle("🏅 Salle des trophées")
+                Spacer()
+                Text("\(earned.count)/\(badges.count)")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Theme.accent)
+            }
+
+            // Filtres
+            HStack(spacing: 6) {
+                filterChip("Tous", "all")
+                filterChip("Obtenus", "earned")
+                filterChip("À donner", "locked")
+            }
+
+            if shown.isEmpty {
+                Text("Aucun badge dans ce filtre.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.muted)
             } else {
-                ForEach(badges) { b in
-                    HStack(spacing: 8) {
-                        Text(b.icon ?? "🏅")
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(b.name ?? b.key ?? "—")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(Theme.text)
-                            Text(rarityLabelFr(b.rarity))
-                                .font(.caption2)
-                                .foregroundStyle(Theme.muted)
-                        }
-                        Spacer()
-                        if b.earned == true {
-                            Button("Retirer") {
-                                Task { await revokeBadge(b.key ?? "") }
-                            }
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(Theme.error)
-                            .disabled(busy)
-                        } else {
-                            Button("Donner") {
-                                Task { await grantBadge(b.key ?? "") }
-                            }
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(Theme.accent)
-                            .disabled(busy)
-                        }
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                    ForEach(shown) { b in
+                        badgeTile(b)
                     }
-                    .padding(8)
-                    .background(Theme.fieldBg.opacity(0.6))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
             }
         }
@@ -459,20 +599,99 @@ private struct RpgAdminPlayerDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
+    private func filterChip(_ title: String, _ key: String) -> some View {
+        let on = badgeFilter == key
+        return Button {
+            badgeFilter = key
+        } label: {
+            Text(title)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(on ? Color(red: 0.07, green: 0.07, blue: 0.07) : Theme.muted)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(on ? Theme.accent : Theme.fieldBg)
+                .overlay(Capsule().stroke(on ? Theme.accent : Theme.border))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func badgeTile(_ b: RpgBadge) -> some View {
+        let earned = b.earned == true
+        let rarity = (b.rarity ?? "common").lowercased()
+        let rc: Color = {
+            switch rarity {
+            case "legendary": return .orange
+            case "epic": return .purple
+            case "rare": return Color(red: 0.38, green: 0.65, blue: 0.98)
+            default: return Theme.muted
+            }
+        }()
+        return VStack(spacing: 6) {
+            Text(b.icon ?? "🏅").font(.title2)
+            Text(b.name ?? "—")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .frame(minHeight: 28)
+            Text(rarityLabelFr(b.rarity))
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(rc)
+            Button {
+                Task {
+                    if earned {
+                        await revokeBadge(b.key ?? "", name: b.name ?? b.key ?? "Badge")
+                    } else {
+                        await grantBadge(b.key ?? "", name: b.name ?? b.key ?? "Badge")
+                    }
+                }
+            } label: {
+                Text(earned ? "Retirer" : "Donner")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(earned ? Theme.error : Color(red: 0.07, green: 0.07, blue: 0.07))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+                    .background(earned ? Theme.error.opacity(0.12) : Theme.accent)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(earned ? Theme.error.opacity(0.4) : Theme.accent))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .disabled(busy || (b.key ?? "").isEmpty)
+        }
+        .padding(10)
+        .background(
+            LinearGradient(
+                colors: earned ? [rc.opacity(0.14), Theme.fieldBg] : [Theme.fieldBg, Theme.fieldBg],
+                startPoint: .top, endPoint: .bottom
+            )
+        )
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(earned ? rc.opacity(0.5) : Theme.border))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .opacity(earned ? 1 : 0.92)
+    }
+
     @ViewBuilder
     private var questsSection: some View {
         let quests = detail?.quests ?? []
         VStack(alignment: .leading, spacing: 6) {
-            Text("Quêtes")
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(Theme.text)
+            sectionTitle("📜 Quêtes")
             if quests.isEmpty {
                 Text("Aucune quête.").font(.caption).foregroundStyle(Theme.muted)
             } else {
-                ForEach(quests.prefix(20)) { q in
-                    Text("[\(q.status ?? "?")] \(q.kind ?? "") · \(q.title ?? "—") · \(q.progress ?? 0)/\(q.target ?? 0) · +\(q.rewardXp ?? 0) XP")
-                        .font(.caption)
-                        .foregroundStyle(Theme.muted)
+                ForEach(quests.prefix(12)) { q in
+                    let done = q.status == "done"
+                    HStack {
+                        Text(done ? "✅" : "⚔️")
+                        Text("\(q.kind ?? "") · \(q.title ?? "—")")
+                            .font(.caption)
+                            .foregroundStyle(Theme.text)
+                            .lineLimit(1)
+                        Spacer()
+                        Text("\(q.progress ?? 0)/\(q.target ?? 0)")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(done ? Color.green : Theme.muted)
+                    }
                 }
             }
         }
@@ -486,13 +705,11 @@ private struct RpgAdminPlayerDetailView: View {
     private var eventsSection: some View {
         let events = detail?.events ?? []
         VStack(alignment: .leading, spacing: 6) {
-            Text("Événements récents")
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(Theme.text)
+            sectionTitle("📖 Chronique")
             if events.isEmpty {
                 Text("Aucun événement.").font(.caption).foregroundStyle(Theme.muted)
             } else {
-                ForEach(events.prefix(15)) { ev in
+                ForEach(events.prefix(10)) { ev in
                     Text("\(ev.kind ?? "?") · \(String((ev.createdAt ?? "").prefix(19)))")
                         .font(.caption)
                         .foregroundStyle(Theme.muted)
@@ -505,7 +722,13 @@ private struct RpgAdminPlayerDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
-    private func field(_ label: String, text: Binding<String>, keyboard: UIKeyboardType) -> some View {
+    private func sectionTitle(_ t: String) -> some View {
+        Text(t)
+            .font(.subheadline.weight(.bold))
+            .foregroundStyle(Theme.text)
+    }
+
+    private func labeledField(_ label: String, text: Binding<String>, keyboard: UIKeyboardType) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label).font(.caption.weight(.bold)).foregroundStyle(Theme.muted)
             TextField(label, text: text)
@@ -514,7 +737,7 @@ private struct RpgAdminPlayerDetailView: View {
                 .autocorrectionDisabled()
                 .padding(10)
                 .background(Theme.fieldBg)
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border, lineWidth: 1.2))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .foregroundStyle(Theme.text)
         }
@@ -550,8 +773,7 @@ private struct RpgAdminPlayerDetailView: View {
         loading = true
         error = nil
         do {
-            let d = try await app.api.adminRpgPlayer(username)
-            applyDetail(d)
+            applyDetail(try await app.api.adminRpgPlayer(username))
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription ?? "Erreur"
         }
@@ -562,7 +784,7 @@ private struct RpgAdminPlayerDetailView: View {
         busy = true
         error = nil
         defer { busy = false }
-        var payload: [String: Any] = [
+        let payload: [String: Any] = [
             "xp": Int(xpText) ?? 0,
             "streak_days": Int(streakText) ?? 0,
             "title": titleText,
@@ -571,12 +793,11 @@ private struct RpgAdminPlayerDetailView: View {
             "suspicion_score": Int(suspicionText) ?? 0,
         ]
         do {
-            let d = try await app.api.adminRpgPatchPlayer(username, payload: payload)
-            applyDetail(d)
-            app.showToast("Profil mis à jour — \(username)", variant: .success, label: "Beerquest")
+            applyDetail(try await app.api.adminRpgPatchPlayer(username, payload: payload))
+            app.showToast("Parchemin enregistré", variant: .success, label: "Beerquest", durationMs: 2600)
         } catch {
             self.error = "Échec enregistrement"
-            app.showToast("Échec enregistrement", variant: .error)
+            app.showToast("Échec enregistrement", variant: .error, durationMs: 2800)
         }
     }
 
@@ -584,11 +805,10 @@ private struct RpgAdminPlayerDetailView: View {
         busy = true
         defer { busy = false }
         do {
-            let d = try await app.api.adminRpgAdjustXp(username: username, delta: delta)
-            applyDetail(d)
-            app.showToast("XP \(delta > 0 ? "+" : "")\(delta) → \(username)", variant: .success, label: "Beerquest")
+            applyDetail(try await app.api.adminRpgAdjustXp(username: username, delta: delta))
+            app.showToast("\(delta > 0 ? "+" : "")\(delta) XP", variant: .success, label: username, durationMs: 2400)
         } catch {
-            app.showToast("Échec XP", variant: .error)
+            app.showToast("Échec XP", variant: .error, durationMs: 2600)
         }
     }
 
@@ -596,11 +816,10 @@ private struct RpgAdminPlayerDetailView: View {
         busy = true
         defer { busy = false }
         do {
-            let d = try await app.api.adminRpgResetDaily(username: username)
-            applyDetail(d)
-            app.showToast("Soft-cap journalier réinitialisé", variant: .success, label: "Beerquest")
+            applyDetail(try await app.api.adminRpgResetDaily(username: username))
+            app.showToast("Soft-cap du jour remis à 0", variant: .success, label: "Beerquest", durationMs: 2600)
         } catch {
-            app.showToast("Échec reset", variant: .error)
+            app.showToast("Échec reset", variant: .error, durationMs: 2600)
         }
     }
 
@@ -608,37 +827,34 @@ private struct RpgAdminPlayerDetailView: View {
         busy = true
         defer { busy = false }
         do {
-            let d = try await app.api.adminRpgPatchPlayer(username, payload: ["suspicion_score": 0])
-            applyDetail(d)
-            app.showToast("Suspicion effacée", variant: .success, label: "Beerquest")
+            applyDetail(try await app.api.adminRpgPatchPlayer(username, payload: ["suspicion_score": 0]))
+            app.showToast("Suspicion effacée", variant: .success, label: "Beerquest", durationMs: 2400)
         } catch {
-            app.showToast("Échec", variant: .error)
+            app.showToast("Échec", variant: .error, durationMs: 2600)
         }
     }
 
-    private func grantBadge(_ key: String) async {
+    private func grantBadge(_ key: String, name: String) async {
         guard !key.isEmpty else { return }
         busy = true
         defer { busy = false }
         do {
-            let d = try await app.api.adminRpgGrantBadge(username: username, badgeKey: key)
-            applyDetail(d)
-            app.showToast("Badge accordé", variant: .success, label: "Beerquest")
+            applyDetail(try await app.api.adminRpgGrantBadge(username: username, badgeKey: key))
+            app.showToast("Badge accordé", variant: .success, detail: name, label: "🏅 Trophy", durationMs: 2800)
         } catch {
-            app.showToast("Échec badge", variant: .error)
+            app.showToast("Échec badge", variant: .error, durationMs: 2600)
         }
     }
 
-    private func revokeBadge(_ key: String) async {
+    private func revokeBadge(_ key: String, name: String) async {
         guard !key.isEmpty else { return }
         busy = true
         defer { busy = false }
         do {
-            let d = try await app.api.adminRpgRevokeBadge(username: username, badgeKey: key)
-            applyDetail(d)
-            app.showToast("Badge retiré", variant: .success, label: "Beerquest")
+            applyDetail(try await app.api.adminRpgRevokeBadge(username: username, badgeKey: key))
+            app.showToast("Badge retiré", variant: .info, detail: name, label: "🏅 Trophy", durationMs: 2800)
         } catch {
-            app.showToast("Échec retrait", variant: .error)
+            app.showToast("Échec retrait", variant: .error, durationMs: 2600)
         }
     }
 
@@ -647,10 +863,10 @@ private struct RpgAdminPlayerDetailView: View {
         defer { busy = false }
         do {
             try await app.api.adminRpgWipe(username: username)
-            app.showToast("RPG effacé — \(username)", variant: .success, label: "Beerquest")
+            app.showToast("RPG effacé", variant: .success, label: username, durationMs: 3000)
             onClose()
         } catch {
-            app.showToast("Échec wipe", variant: .error)
+            app.showToast("Échec wipe", variant: .error, durationMs: 2800)
         }
     }
 }
