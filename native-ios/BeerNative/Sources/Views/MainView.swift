@@ -370,9 +370,8 @@ private struct AccountMenuOverlay: View {
     let onLogout: () -> Void
 
     var body: some View {
-        // GeometryReader : plafonne la hauteur à ~72 % de l’écran.
-        // fixedSize + maxHeight : le panneau épouse le contenu (s’arrête sous Déconnexion)
-        // et ne scrolle que si trop long (admin).
+        // ViewThatFits : panneau = hauteur contenu (s’arrête sous Déconnexion).
+        // Si trop long pour l’écran → version scrollable plafonnée (~72 %).
         GeometryReader { geo in
             let maxPanelH = min(geo.size.height * 0.72, geo.size.height - 72)
             let maxPanelW = min(320.0, geo.size.width - 60)
@@ -383,46 +382,62 @@ private struct AccountMenuOverlay: View {
                     .ignoresSafeArea()
                     .onTapGesture { onDismiss() }
 
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Connecté")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Theme.muted)
-                            Text(connectedLabel)
-                                .font(.system(size: 15, weight: .bold))
-                                .foregroundStyle(Theme.text)
-                        }
-                        Spacer(minLength: 8)
-                        Button(action: onDismiss) {
-                            Text("×")
-                                .font(.system(size: 22, weight: .medium))
-                                .foregroundStyle(Theme.muted)
-                                .padding(4)
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 12)
-                    .padding(.bottom, 8)
-
-                    ScrollView {
-                        menuItems
-                            .padding(.horizontal, 6)
-                            .padding(.bottom, 12)
-                    }
-                    // Hauteur intrinsèque du contenu, plafonnée → pas de grand vide sous Déconnexion
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxHeight: max(120, maxPanelH - 56), alignment: .top)
+                ViewThatFits(in: .vertical) {
+                    // 1) Contenu compact — pas de ScrollView → pas de vide
+                    menuPanel(scroll: false, width: maxPanelW)
+                    // 2) Trop long → scroll, hauteur max écran
+                    menuPanel(scroll: true, width: maxPanelW)
+                        .frame(maxHeight: maxPanelH, alignment: .top)
                 }
-                .frame(width: maxPanelW, alignment: .leading)
-                .background(Theme.card)
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.border))
-                .clipShape(RoundedRectangle(cornerRadius: 16))
                 .padding(.top, 56)
                 .padding(.trailing, 12)
             }
         }
         .ignoresSafeArea()
+    }
+
+    @ViewBuilder
+    private func menuPanel(scroll: Bool, width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Connecté")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.muted)
+                    Text(connectedLabel)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                }
+                Spacer(minLength: 8)
+                Button(action: onDismiss) {
+                    Text("×")
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundStyle(Theme.muted)
+                        .padding(4)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+
+            if scroll {
+                ScrollView {
+                    menuItems
+                        .padding(.horizontal, 6)
+                        .padding(.bottom, 12)
+                }
+            } else {
+                menuItems
+                    .padding(.horizontal, 6)
+                    .padding(.bottom, 12)
+            }
+        }
+        .frame(width: width, alignment: .leading)
+        // Sans scroll : hauteur = contenu. Avec scroll : laisse le parent plafonner.
+        .fixedSize(horizontal: true, vertical: !scroll)
+        .background(Theme.card)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.border))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
     @ViewBuilder

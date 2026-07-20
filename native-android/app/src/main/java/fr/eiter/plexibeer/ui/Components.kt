@@ -206,28 +206,28 @@ fun BeerPreviewCard(product: BeerProduct) {
 
 @Composable
 fun BeerStepNav(step: Int, onStep: (Int) -> Unit) {
+    // Navigation libre 1↔2↔3 (parité iOS BeerStepNav — pas de blocage Photo→Note)
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         listOf(1 to "1 Bière", 2 to "2 Photo", 3 to "3 Note").forEach { (s, label) ->
             val current = s == step
-            val enabled = s <= step || s == step + 1 || s < step
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(999.dp))
                     .background(if (current) BeerColors.accent else BeerColors.card)
                     .border(1.dp, if (current) BeerColors.accent else BeerColors.border, RoundedCornerShape(999.dp))
-                    .clickable(enabled = enabled) { onStep(s) }
+                    .clickable { onStep(s) }
                     .padding(vertical = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     label,
-                    color = if (current) BeerColors.btnPrimaryText else BeerColors.text,
+                    color = if (current) BeerColors.btnPrimaryText else BeerColors.muted,
                     fontSize = 11.5.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal
                 )
             }
         }

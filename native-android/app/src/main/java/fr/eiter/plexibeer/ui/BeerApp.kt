@@ -556,7 +556,7 @@ private fun AccountMenuOverlay(
 ) {
     BackHandler(onBack = onDismiss)
     val config = LocalConfiguration.current
-    // ~72 % de l’écran, laisse de l’air sous le header (parité iOS)
+    // Plafond écran uniquement si le contenu dépasse — sinon hauteur = contenu (sous Déconnexion)
     val maxPanelH = minOf(config.screenHeightDp * 0.72f, (config.screenHeightDp - 72).toFloat()).dp
     val maxPanelW = minOf(320, config.screenWidthDp - 60).coerceAtLeast(240).dp
 
@@ -567,16 +567,18 @@ private fun AccountMenuOverlay(
                 .background(Color.Black.copy(alpha = 0.45f))
                 .clickable(onClick = onDismiss)
         )
+        // wrapContentHeight : pas de vide sous Déconnexion ; heightIn max seulement si trop long
         Column(
             Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = 56.dp, end = 12.dp)
                 .width(maxPanelW)
+                .wrapContentHeight()
                 .heightIn(max = maxPanelH)
                 .clip(RoundedCornerShape(16.dp))
                 .border(1.dp, BeerColors.border, RoundedCornerShape(16.dp))
                 .background(BeerColors.card)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(rememberScrollState(), enabled = true)
                 .padding(horizontal = 10.dp, vertical = 12.dp)
         ) {
             Row(
@@ -1690,10 +1692,10 @@ private fun BeerWizard(vm: AppViewModel) {
                 }
 
                 BeerCard {
-                    Text("Commentaire (optionnel, 120 car.)", color = BeerColors.text, fontWeight = FontWeight.SemiBold)
+                    Text("Commentaire (optionnel, 300 car.)", color = BeerColors.text, fontWeight = FontWeight.SemiBold)
                     OutlinedTextField(
                         value = comment,
-                        onValueChange = { if (it.length <= 120) comment = it },
+                        onValueChange = { if (it.length <= 300) comment = it },
                         placeholder = { Text("Terrasse, avec elle, à refaire…", color = BeerColors.muted.copy(alpha = 0.6f)) },
                         modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -1707,7 +1709,7 @@ private fun BeerWizard(vm: AppViewModel) {
                         ),
                         shape = RoundedCornerShape(10.dp)
                     )
-                    Text("${comment.length}/120", color = BeerColors.muted, fontSize = 11.sp, modifier = Modifier.align(Alignment.End))
+                    Text("${comment.length}/300", color = BeerColors.muted, fontSize = 11.sp, modifier = Modifier.align(Alignment.End))
                 }
 
                 BeerSecondaryButton("← Retour") { vm.wizardStep = 2 }
@@ -2710,7 +2712,7 @@ private fun CheckinEditSheet(vm: AppViewModel, item: CheckinItem) {
                     }
                 }
             }
-            BeerField("Commentaire", comment, { if (it.length <= 120) comment = it })
+            BeerField("Commentaire", comment, { if (it.length <= 300) comment = it })
             BeerField(
                 label = "Lieu ou lien",
                 value = location,
