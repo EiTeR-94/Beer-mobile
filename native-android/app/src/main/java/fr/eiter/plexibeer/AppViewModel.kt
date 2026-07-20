@@ -76,6 +76,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var requestOpenGrimoire by mutableStateOf(false)
 
+    /** Réponses admin feedback non vues (popup login, parité iOS/web). */
+    var pendingFeedbackReplies by mutableStateOf<List<AdminFeedbackItem>>(emptyList())
+        private set
+    var feedbackReplyIndex by mutableIntStateOf(0)
+        private set
+
+    /** Versions portail (bannière update). */
+    var latestAndroidVersion by mutableStateOf<String?>(null)
+        private set
+    var latestIosVersion by mutableStateOf<String?>(null)
+        private set
+
+    val appVersion: String
+        get() = try {
+            val p = getApplication<Application>().packageManager
+                .getPackageInfo(getApplication<Application>().packageName, 0)
+            p.versionName ?: "?"
+        } catch (_: Exception) {
+            "?"
+        }
+
+    val needsAppUpdate: Boolean
+        get() {
+            val latest = latestAndroidVersion ?: return false
+            if (appVersion == "?" || latest.isBlank()) return false
+            return beerVersionCompare(appVersion, latest) < 0
+        }
+
+    val currentFeedbackReply: AdminFeedbackItem?
+        get() = pendingFeedbackReplies.getOrNull(feedbackReplyIndex)
+
     val rpgActive: Boolean
         get() = rpgState?.enabled == true && rpgState?.ui == true && rpgState?.profile != null
 
@@ -447,8 +478,46 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (loggedIn && userName != null) {
             BeerSessionStore.save(getApplication(), userName, admin && !invite, invite)
             refreshRpg()
+            viewModelScope.launch {
+                checkFeedbackReplies()
+                refreshMobileVersions()
+            }
         } else {
             clearRpgUiState()
+            pendingFeedbackReplies = emptyList()
+            feedbackReplyIndex = 0
+        }
+    }
+
+    suspend fun checkFeedbackReplies() {
+        if (!isLoggedIn) return
+        try {
+            val items = withContext(Dispatchers.IO) { api.feedbackReplies(unseenOnly = true) }
+            pendingFeedbackReplies = items
+            feedbackReplyIndex = 0
+        } catch (_: Exception) {
+        }
+    }
+
+    fun advanceFeedbackReply() {
+        if (feedbackReplyIndex + 1 < pendingFeedbackReplies.size) {
+            feedbackReplyIndex++
+        } else {
+            val ids = pendingFeedbackReplies.mapNotNull { it.id }
+            pendingFeedbackReplies = emptyList()
+            feedbackReplyIndex = 0
+            viewModelScope.launch {
+                withContext(Dispatchers.IO) { api.markFeedbackRepliesSeen(ids) }
+            }
+        }
+    }
+
+    suspend fun refreshMobileVersions() {
+        try {
+            val m = withContext(Dispatchers.IO) { api.fetchMobileVersions() } ?: return
+            latestAndroidVersion = m.android
+            latestIosVersion = m.ios
+        } catch (_: Exception) {
         }
     }
 

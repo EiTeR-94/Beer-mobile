@@ -402,6 +402,14 @@ private fun MainScreen(vm: AppViewModel) {
                     }
                 }
                 Spacer(Modifier.height(8.dp))
+                if (vm.needsAppUpdate) {
+                    AppUpdateBanner(
+                        current = vm.appVersion,
+                        latest = vm.latestAndroidVersion ?: "?",
+                        portalUrl = ServerSettings.portalURL
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
                 // Beerquest HUD (raccourci grimoire, comme PWA)
                 vm.rpgState?.profile?.takeIf { vm.rpgActive }?.let { profile ->
                     BqHudBar(profile) {
@@ -469,6 +477,16 @@ private fun MainScreen(vm: AppViewModel) {
             )
         }
 
+        // Popup réponses admin feedback (parité iOS/web)
+        vm.currentFeedbackReply?.let { item ->
+            FeedbackReplyDialog(
+                item = item,
+                index = vm.feedbackReplyIndex,
+                total = vm.pendingFeedbackReplies.size,
+                onNext = { vm.advanceFeedbackReply() }
+            )
+        }
+
         if (showLogoutConfirm) {
             val invite = vm.isInvite
             AlertDialog(
@@ -509,7 +527,7 @@ private fun MainScreen(vm: AppViewModel) {
             BeerSheet.DETAIL -> vm.selectedCheckin?.let { CheckinDetailSheet(vm, it) }
             BeerSheet.EDIT -> vm.editingCheckin?.let { CheckinEditSheet(vm, it) }
             BeerSheet.PATCHNOTES -> PatchnotesSheet(vm)
-            BeerSheet.ADMIN -> AdminStubSheet(vm)
+            BeerSheet.ADMIN -> AdminSheet(vm)
             BeerSheet.GRIMOIRE -> GrimoireSheet(vm)
             BeerSheet.RPG_ADMIN -> RpgAdminSheet(vm)
             null -> {}
@@ -631,6 +649,101 @@ private fun AccountMenuItem(label: String, danger: Boolean = false, onClick: () 
             .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 11.dp)
+    )
+}
+
+@Composable
+private fun AppUpdateBanner(current: String, latest: String, portalUrl: String) {
+    val ctx = LocalContext.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(BeerColors.accent.copy(alpha = 0.12f))
+            .border(1.dp, BeerColors.accent.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+            .clickable {
+                try {
+                    ctx.startActivity(
+                        android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(portalUrl)
+                        )
+                    )
+                } catch (_: Exception) {
+                }
+            }
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                "⬆️ Mise à jour APK disponible",
+                color = BeerColors.accent,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp
+            )
+            Text(
+                "v$current → v$latest — tape pour le portail",
+                color = BeerColors.muted,
+                fontSize = 11.sp
+            )
+        }
+        Text("→", color = BeerColors.accent, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun FeedbackReplyDialog(
+    item: AdminFeedbackItem,
+    index: Int,
+    total: Int,
+    onNext: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = { /* forcer Compris */ },
+        title = {
+            Text(
+                if (item.isRejected) "Feedback refusé" else "Feedback mis en place",
+                color = BeerColors.text,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    item.displayStatus,
+                    color = BeerColors.accent,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(6.dp))
+                item.message?.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        "Tu avais écrit : « ${it.take(220)}${if (it.length > 220) "…" else ""} »",
+                        color = BeerColors.muted,
+                        fontSize = 12.sp
+                    )
+                    Spacer(Modifier.height(6.dp))
+                }
+                Text(
+                    item.adminReply
+                        ?: if (item.isRejected) "Ta demande n'a pas été retenue."
+                        else "Ta demande a été prise en compte.",
+                    color = BeerColors.text,
+                    fontSize = 14.sp
+                )
+                if (total > 1) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("${index + 1} / $total", color = BeerColors.muted, fontSize = 11.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onNext) {
+                Text(if (index + 1 < total) "Suivant" else "Compris", color = BeerColors.accent)
+            }
+        },
+        containerColor = BeerColors.card
     )
 }
 
@@ -2352,16 +2465,4 @@ private fun PatchnotesSheet(vm: AppViewModel) {
     }
 }
 
-@Composable
-private fun AdminStubSheet(vm: AppViewModel) {
-    SheetScaffold("Admin", onClose = { vm.closeSheet() }) {
-        Text(
-            "Panneau admin complet disponible sur iOS. Sur Android: patch notes + compte owner. Gestion invites via le hub web si besoin.",
-            color = BeerColors.muted
-        )
-        Spacer(Modifier.height(12.dp))
-        BeerSecondaryButton("Voir patch notes") {
-            vm.openSheet(BeerSheet.PATCHNOTES)
-        }
-    }
-}
+/* Admin complet : AdminSheet.kt (parité iOS / webapp) */

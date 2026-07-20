@@ -7,6 +7,9 @@ object ServerSettings {
     /** Fallback 4G si AAAA Freebox casse le TLS (IPv4 + SNI host). */
     const val WAN_IPV4_API_BASE = "https://$WAN_IPV4/beer/"
     const val LAN_API_BASE = "https://192.168.1.50:8444/beer/"
+    /** Manifest versions IPA/APK/web (portail public). */
+    const val versionsURL = "https://$CANONICAL_HOST/mobile/beer/versions.json"
+    const val portalURL = "https://$CANONICAL_HOST/mobile/beer/"
     /** Beerquest alpha (clone isolé) — invites IPA/APK */
     const val ALPHA_API_BASE_STRING = "https://$CANONICAL_HOST/beer-alpha/"
     const val ALPHA_WAN_IPV4_API_BASE = "https://$WAN_IPV4/beer-alpha/"

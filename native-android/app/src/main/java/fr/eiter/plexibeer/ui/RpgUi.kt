@@ -43,10 +43,16 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import fr.eiter.plexibeer.AdminFeedbackItem
+import fr.eiter.plexibeer.AdminFeedbackStats
 import fr.eiter.plexibeer.AppViewModel
 import fr.eiter.plexibeer.RpgAdminPlayer
 import fr.eiter.plexibeer.RpgBadge
@@ -62,7 +68,6 @@ import fr.eiter.plexibeer.ui.theme.BeerColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.runtime.rememberCoroutineScope
 
 private val Gold = Color(0xFFF5C542)
 private val QuestBlue = Color(0xFF60A5FA)
@@ -1300,13 +1305,28 @@ fun RpgBadgeDetailDialog(badge: RpgBadge, onDismiss: () -> Unit) {
 
 @Composable
 fun RpgAdminSheet(vm: AppViewModel) {
+    var tab by remember { mutableIntStateOf(0) } // 0 joueurs, 1 feedback
     var players by remember { mutableStateOf<List<RpgAdminPlayer>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<RpgAdminPlayer?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var levelText by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     var reloadToken by remember { mutableIntStateOf(0) }
+
+    // Feedback admin
+    var fbItems by remember { mutableStateOf<List<AdminFeedbackItem>>(emptyList()) }
+    var fbStats by remember { mutableStateOf<AdminFeedbackStats?>(null) }
+    var fbUnreadOnly by remember { mutableStateOf(false) }
+    var fbStatus by remember { mutableStateOf("") }
+    var fbLoading by remember { mutableStateOf(false) }
+    var resolveId by remember { mutableStateOf<Int?>(null) }
+    var resolveStatus by remember { mutableStateOf("done") }
+    var resolveReply by remember { mutableStateOf("") }
+    var showResolve by remember { mutableStateOf(false) }
+
+    fun reload() { reloadToken++ }
 
     LaunchedEffect(reloadToken) {
         loading = true
@@ -1318,8 +1338,23 @@ fun RpgAdminSheet(vm: AppViewModel) {
         loading = false
     }
 
-    fun reload() {
-        reloadToken++
+    LaunchedEffect(tab, fbUnreadOnly, fbStatus, reloadToken) {
+        if (tab != 1) return@LaunchedEffect
+        fbLoading = true
+        try {
+            val res = withContext(Dispatchers.IO) {
+                vm.api.adminFeedbackList(
+                    limit = 80,
+                    unreadOnly = fbUnreadOnly,
+                    status = fbStatus.ifBlank { null }
+                )
+            }
+            fbItems = res.items.orEmpty()
+            fbStats = res.stats
+        } catch (e: Exception) {
+            error = e.message
+        }
+        fbLoading = false
     }
 
     Column(
@@ -1329,15 +1364,50 @@ fun RpgAdminSheet(vm: AppViewModel) {
             .padding(12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text("⚔ Beerquest", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.weight(1f))
-            Text("Rafraîchir", color = QuestBlue, modifier = Modifier.clickable { reload() }.padding(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text("⚔ Admin Beerquest", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                val unread = fbStats?.unread ?: 0
+                Text(
+                    if (unread > 0) "${players.size} joueurs · $unread feedback non lu(s)"
+                    else "${players.size} aventurier(s)",
+                    color = BeerColors.muted,
+                    fontSize = 12.sp
+                )
+            }
+            Text("↻", color = QuestBlue, modifier = Modifier.clickable { reload() }.padding(8.dp))
             Text("Fermer ✕", color = BeerColors.muted, modifier = Modifier.clickable { vm.closeSheet() }.padding(8.dp))
         }
         Spacer(Modifier.height(8.dp))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("Joueurs", "Feedback").forEachIndexed { i, lab ->
+                val active = tab == i
+                val badge = if (i == 1 && (fbStats?.unread ?: 0) > 0) " ${(fbStats?.unread)}" else ""
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .border(1.dp, if (active) Gold else BeerColors.border, RoundedCornerShape(10.dp))
+                        .background(if (active) BeerColors.card else BeerColors.card.copy(alpha = 0.55f))
+                        .clickable { tab = i }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        lab + badge,
+                        color = if (active) BeerColors.text else BeerColors.muted,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+
         when {
-            loading -> Text("Chargement…", color = BeerColors.muted)
-            error != null && players.isEmpty() -> Text(error!!, color = BeerColors.muted)
-            else -> {
+            tab == 0 && loading -> Text("Chargement…", color = BeerColors.muted)
+            tab == 0 && error != null && players.isEmpty() -> Text(error!!, color = BeerColors.muted)
+            tab == 0 -> {
                 val scroll = rememberScrollState()
                 Column(Modifier.verticalScroll(scroll).weight(1f, fill = true)) {
                     players.forEach { p ->
@@ -1349,7 +1419,10 @@ fun RpgAdminSheet(vm: AppViewModel) {
                                 .clip(RoundedCornerShape(12.dp))
                                 .border(1.dp, BeerColors.border, RoundedCornerShape(12.dp))
                                 .background(BeerColors.card)
-                                .clickable { selected = p }
+                                .clickable {
+                                    selected = p
+                                    levelText = p.level.toString()
+                                }
                                 .padding(12.dp)
                         ) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -1371,7 +1444,177 @@ fun RpgAdminSheet(vm: AppViewModel) {
                     }
                 }
             }
+            tab == 1 -> {
+                // Feedback toolbar
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = fbUnreadOnly, onCheckedChange = { fbUnreadOnly = it })
+                    Text("Non lus seulement", color = BeerColors.text, fontSize = 13.sp)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("" to "Tous", "open" to "En cours", "done" to "Faits", "rejected" to "Refusés").forEach { (v, lab) ->
+                        val on = fbStatus == v
+                        Text(
+                            lab,
+                            color = if (on) Color.Black else BeerColors.text,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (on) BeerColors.accent else BeerColors.card)
+                                .border(1.dp, BeerColors.border, RoundedCornerShape(8.dp))
+                                .clickable { fbStatus = v }
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+                val s = fbStats
+                Text(
+                    "${s?.unread ?: 0} non lu(s) · ${s?.open ?: 0} en cours · ${s?.done ?: 0} faits · ${s?.rejected ?: 0} refusés",
+                    color = BeerColors.muted,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(vertical = 6.dp)
+                )
+                if (fbLoading) {
+                    Text("Chargement feedback…", color = BeerColors.muted)
+                } else if (fbItems.isEmpty()) {
+                    Text("Aucun feedback.", color = BeerColors.muted)
+                } else {
+                    val scroll = rememberScrollState()
+                    Column(Modifier.verticalScroll(scroll).weight(1f, fill = true)) {
+                        fbItems.forEach { f ->
+                            FeedbackAdminCard(
+                                f = f,
+                                busy = busy,
+                                onToggleRead = {
+                                    scope.launch {
+                                        busy = true
+                                        try {
+                                            withContext(Dispatchers.IO) {
+                                                vm.api.adminFeedbackMarkRead(f.id!!, f.adminRead != true)
+                                            }
+                                            reload()
+                                        } catch (e: Exception) {
+                                            vm.showToast(e.message ?: "Erreur", ToastPayload.Variant.ERROR)
+                                        }
+                                        busy = false
+                                    }
+                                },
+                                onDone = {
+                                    resolveId = f.id
+                                    resolveStatus = "done"
+                                    resolveReply = ""
+                                    showResolve = true
+                                },
+                                onReject = {
+                                    resolveId = f.id
+                                    resolveStatus = "rejected"
+                                    resolveReply = ""
+                                    showResolve = true
+                                },
+                                onReopen = {
+                                    scope.launch {
+                                        busy = true
+                                        try {
+                                            withContext(Dispatchers.IO) { vm.api.adminFeedbackReopen(f.id!!) }
+                                            reload()
+                                            vm.showToast("Rouvert", ToastPayload.Variant.SUCCESS)
+                                        } catch (e: Exception) {
+                                            vm.showToast(e.message ?: "Erreur", ToastPayload.Variant.ERROR)
+                                        }
+                                        busy = false
+                                    }
+                                },
+                                onDelete = {
+                                    scope.launch {
+                                        busy = true
+                                        try {
+                                            withContext(Dispatchers.IO) { vm.api.adminFeedbackDelete(f.id!!) }
+                                            reload()
+                                            vm.showToast("Supprimé", ToastPayload.Variant.SUCCESS)
+                                        } catch (e: Exception) {
+                                            vm.showToast(e.message ?: "Erreur", ToastPayload.Variant.ERROR)
+                                        }
+                                        busy = false
+                                    }
+                                }
+                            )
+                            Spacer(Modifier.height(8.dp))
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    // Resolve dialog
+    if (showResolve && resolveId != null) {
+        AlertDialog(
+            onDismissRequest = { showResolve = false },
+            title = {
+                Text(
+                    if (resolveStatus == "rejected") "Refuser" else "Mis en place",
+                    color = BeerColors.text,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        if (resolveStatus == "rejected") "Raison obligatoire (visible par le joueur)"
+                        else "Message optionnel pour le joueur",
+                        color = BeerColors.muted,
+                        fontSize = 12.sp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = resolveReply,
+                        onValueChange = { resolveReply = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = BeerColors.text,
+                            unfocusedTextColor = BeerColors.text,
+                            focusedBorderColor = BeerColors.accent,
+                            unfocusedBorderColor = BeerColors.border
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val id = resolveId ?: return@TextButton
+                        if (resolveStatus == "rejected" && resolveReply.trim().length < 3) {
+                            vm.showToast("Raison trop courte", ToastPayload.Variant.ERROR)
+                            return@TextButton
+                        }
+                        busy = true
+                        scope.launch {
+                            try {
+                                withContext(Dispatchers.IO) {
+                                    vm.api.adminFeedbackResolve(id, resolveStatus, resolveReply.trim())
+                                }
+                                showResolve = false
+                                reload()
+                                vm.showToast(
+                                    if (resolveStatus == "rejected") "Refusé — joueur notifié"
+                                    else "Fait — joueur notifié",
+                                    ToastPayload.Variant.SUCCESS
+                                )
+                            } catch (e: Exception) {
+                                vm.showToast(e.message ?: "Erreur", ToastPayload.Variant.ERROR)
+                            }
+                            busy = false
+                        }
+                    }
+                ) { Text("Envoyer", color = BeerColors.accent) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResolve = false }) {
+                    Text("Annuler", color = BeerColors.muted)
+                }
+            },
+            containerColor = BeerColors.card
+        )
     }
 
     selected?.let { p ->
@@ -1382,7 +1625,45 @@ fun RpgAdminSheet(vm: AppViewModel) {
             text = {
                 Column {
                     Text("Nv ${p.level} · ${p.xp} XP · ${p.badgeCount} badges", color = BeerColors.muted, fontSize = 13.sp)
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(10.dp))
+                    Text("Niveau (parité iOS)", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    OutlinedTextField(
+                        value = levelText,
+                        onValueChange = { levelText = it.filter { c -> c.isDigit() }.take(3) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = BeerColors.text,
+                            unfocusedTextColor = BeerColors.text,
+                            focusedBorderColor = BeerColors.accent,
+                            unfocusedBorderColor = BeerColors.border
+                        )
+                    )
+                    TextButton(
+                        onClick = {
+                            val lv = levelText.toIntOrNull()
+                            if (lv == null || lv < 1) {
+                                vm.showToast("Niveau invalide", ToastPayload.Variant.ERROR)
+                                return@TextButton
+                            }
+                            busy = true
+                            scope.launch {
+                                val ok = withContext(Dispatchers.IO) {
+                                    vm.api.adminRpgPatchPlayer(name, mapOf("level" to lv))
+                                }
+                                busy = false
+                                if (ok) {
+                                    vm.showToast("Niveau $lv pour $name", ToastPayload.Variant.SUCCESS, label = "Beerquest")
+                                    selected = null
+                                    reload()
+                                } else {
+                                    vm.showToast("Échec niveau", ToastPayload.Variant.ERROR)
+                                }
+                            }
+                        },
+                        enabled = !busy
+                    ) { Text("Appliquer niveau", color = BeerColors.accent) }
+                    Spacer(Modifier.height(8.dp))
                     Text("Ajuster l’XP", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     Spacer(Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1440,5 +1721,105 @@ fun RpgAdminSheet(vm: AppViewModel) {
             },
             containerColor = BeerColors.card
         )
+    }
+}
+
+@Composable
+private fun FeedbackAdminCard(
+    f: AdminFeedbackItem,
+    busy: Boolean,
+    onToggleRead: () -> Unit,
+    onDone: () -> Unit,
+    onReject: () -> Unit,
+    onReopen: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val unread = f.adminRead != true
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .border(
+                1.5.dp,
+                when {
+                    f.isDone -> Color(0xFF4ADE80).copy(alpha = 0.45f)
+                    f.isRejected -> BeerColors.error.copy(alpha = 0.45f)
+                    unread -> BeerColors.accent.copy(alpha = 0.45f)
+                    else -> BeerColors.border
+                },
+                RoundedCornerShape(12.dp)
+            )
+            .background(BeerColors.card)
+            .padding(12.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(f.username ?: "—", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text(f.displayStatus, color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+        Text(f.categoryLabel ?: f.category ?: "", color = BeerColors.accent, fontSize = 11.sp)
+        Spacer(Modifier.height(4.dp))
+        Text(f.message.orEmpty(), color = BeerColors.text, fontSize = 13.sp)
+        f.adminReply?.takeIf { it.isNotBlank() }?.let {
+            Spacer(Modifier.height(4.dp))
+            Text("Réponse : $it", color = BeerColors.muted, fontSize = 12.sp)
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(
+                checked = f.adminRead == true,
+                onCheckedChange = { onToggleRead() },
+                enabled = !busy
+            )
+            Text("Lu", color = BeerColors.text, fontSize = 12.sp)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (f.isOpen) {
+                Text(
+                    "✓ Fait",
+                    color = Color.Black,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(BeerColors.accent)
+                        .clickable(enabled = !busy, onClick = onDone)
+                        .padding(horizontal = 10.dp, vertical = 7.dp)
+                )
+                Text(
+                    "✕ Refuser",
+                    color = BeerColors.text,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .border(1.dp, BeerColors.border, RoundedCornerShape(8.dp))
+                        .clickable(enabled = !busy, onClick = onReject)
+                        .padding(horizontal = 10.dp, vertical = 7.dp)
+                )
+            } else {
+                Text(
+                    "Rouvrir",
+                    color = BeerColors.text,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .border(1.dp, BeerColors.border, RoundedCornerShape(8.dp))
+                        .clickable(enabled = !busy, onClick = onReopen)
+                        .padding(horizontal = 10.dp, vertical = 7.dp)
+                )
+            }
+            Text(
+                "Suppr",
+                color = BeerColors.error,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .border(1.dp, BeerColors.error.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                    .clickable(enabled = !busy, onClick = onDelete)
+                    .padding(horizontal = 10.dp, vertical = 7.dp)
+            )
+        }
     }
 }

@@ -858,4 +858,257 @@ class BeerAPI private constructor(context: Context) {
         }
         return decoded
     }
+
+    // ── Admin comptes / invites / outils (parité iOS) ────────────────────────
+
+    suspend fun adminUsers(): List<AdminUser> = withContext(Dispatchers.IO) {
+        val (body, code) = execute(requestBuilder("api/admin/users").get().build())
+        if (code !in 200..299) return@withContext emptyList()
+        val type = object : TypeToken<List<AdminUser>>() {}.type
+        gson.fromJson<List<AdminUser>>(body, type) ?: emptyList()
+    }
+
+    suspend fun adminCreateUser(username: String, password: String, isAdmin: Boolean) {
+        val json = gson.toJson(
+            mapOf("username" to username, "password" to password, "is_admin" to isAdmin)
+        )
+        val (_, code) = execute(
+            requestBuilder("api/admin/users").post(json.toRequestBody(JSON)).build()
+        )
+        if (code !in 200..299) throw ApiException("Création compte impossible", code)
+    }
+
+    suspend fun adminDeleteUser(username: String) {
+        val enc = java.net.URLEncoder.encode(username, "UTF-8")
+        val (_, code) = execute(requestBuilder("api/admin/users/$enc").delete().build())
+        if (code !in 200..299) throw ApiException("Suppression impossible", code)
+    }
+
+    suspend fun adminSetAdmin(username: String, isAdmin: Boolean) {
+        val enc = java.net.URLEncoder.encode(username, "UTF-8")
+        val json = gson.toJson(mapOf("is_admin" to isAdmin))
+        val (_, code) = execute(
+            requestBuilder("api/admin/users/$enc").patch(json.toRequestBody(JSON)).build()
+        )
+        if (code !in 200..299) throw ApiException("Changement admin impossible", code)
+    }
+
+    suspend fun adminSetPassword(username: String, password: String) {
+        val enc = java.net.URLEncoder.encode(username, "UTF-8")
+        val json = gson.toJson(mapOf("password" to password))
+        val (_, code) = execute(
+            requestBuilder("api/admin/users/$enc").patch(json.toRequestBody(JSON)).build()
+        )
+        if (code !in 200..299) throw ApiException("Mot de passe non mis à jour", code)
+    }
+
+    suspend fun adminInvites(): List<InviteItem> = withContext(Dispatchers.IO) {
+        val (body, code) = execute(requestBuilder("api/invites").get().build())
+        if (code !in 200..299) return@withContext emptyList()
+        val type = object : TypeToken<List<InviteItem>>() {}.type
+        gson.fromJson<List<InviteItem>>(body, type) ?: emptyList()
+    }
+
+    suspend fun adminCreateInvite(label: String, email: String, validity: String = "7d"): CreateInviteResponse {
+        val json = gson.toJson(
+            mapOf("label" to label, "email" to email, "validity" to validity)
+        )
+        val (body, code) = execute(
+            requestBuilder("api/invites").post(json.toRequestBody(JSON)).build()
+        )
+        val decoded = gson.fromJson(body, CreateInviteResponse::class.java)
+            ?: CreateInviteResponse(ok = false, error = "Réponse invalide")
+        if (code !in 200..299) throw ApiException(decoded.error ?: "Création invite impossible", code)
+        return decoded
+    }
+
+    suspend fun adminExtendInvite(id: Int, validity: String) {
+        val json = gson.toJson(mapOf("validity" to validity))
+        val (_, code) = execute(
+            requestBuilder("api/invites/$id/extend").post(json.toRequestBody(JSON)).build()
+        )
+        if (code !in 200..299) throw ApiException("Prolongation impossible", code)
+    }
+
+    suspend fun adminReissueInvite(id: Int): String? {
+        val (body, code) = execute(
+            requestBuilder("api/invites/$id/reissue").post("{}".toRequestBody(JSON)).build()
+        )
+        if (code !in 200..299) throw ApiException("Réémission impossible", code)
+        return gson.fromJson(body, CreateInviteResponse::class.java)?.url
+    }
+
+    suspend fun adminRevokeInvite(id: Int) {
+        val (_, code) = execute(requestBuilder("api/invites/$id").delete().build())
+        if (code !in 200..299) throw ApiException("Révocation impossible", code)
+    }
+
+    suspend fun adminCleanupPhotos(): String {
+        val (body, code) = execute(
+            requestBuilder("api/admin/photos/cleanup").post("{}".toRequestBody(JSON)).build()
+        )
+        if (code !in 200..299) throw ApiException("Nettoyage impossible", code)
+        val d = gson.fromJson(body, CleanupPhotosResponse::class.java)
+        return d?.message
+            ?: d?.detail
+            ?: (d?.removed?.let { "Supprimé : $it photo(s)" })
+            ?: "Photos nettoyées"
+    }
+
+    suspend fun adminReferentials(): ReferentialsResponse = withContext(Dispatchers.IO) {
+        val (body, code) = execute(requestBuilder("api/admin/referentials").get().build())
+        if (code !in 200..299) return@withContext ReferentialsResponse()
+        gson.fromJson(body, ReferentialsResponse::class.java) ?: ReferentialsResponse()
+    }
+
+    suspend fun adminAddStyle(name: String) {
+        val json = gson.toJson(mapOf("name" to name))
+        val (_, code) = execute(
+            requestBuilder("api/styles").post(json.toRequestBody(JSON)).build()
+        )
+        if (code !in 200..299) throw ApiException("Ajout style impossible", code)
+    }
+
+    suspend fun adminDeleteStyle(name: String) {
+        val enc = java.net.URLEncoder.encode(name, "UTF-8")
+        val (_, code) = execute(requestBuilder("api/styles/$enc").delete().build())
+        if (code !in 200..299) throw ApiException("Suppression style impossible", code)
+    }
+
+    suspend fun adminAddHop(name: String) {
+        val json = gson.toJson(mapOf("name" to name))
+        val (_, code) = execute(
+            requestBuilder("api/hops").post(json.toRequestBody(JSON)).build()
+        )
+        if (code !in 200..299) throw ApiException("Ajout houblon impossible", code)
+    }
+
+    suspend fun adminDeleteHop(name: String) {
+        val enc = java.net.URLEncoder.encode(name, "UTF-8")
+        val (_, code) = execute(requestBuilder("api/hops/$enc").delete().build())
+        if (code !in 200..299) throw ApiException("Suppression houblon impossible", code)
+    }
+
+    suspend fun adminAddFlavor(name: String) {
+        val json = gson.toJson(mapOf("name" to name))
+        val (_, code) = execute(
+            requestBuilder("api/flavors/custom").post(json.toRequestBody(JSON)).build()
+        )
+        if (code !in 200..299) throw ApiException("Ajout goût impossible", code)
+    }
+
+    suspend fun adminDeleteFlavor(name: String) {
+        val enc = java.net.URLEncoder.encode(name, "UTF-8")
+        val (_, code) = execute(requestBuilder("api/flavors/custom/$enc").delete().build())
+        if (code !in 200..299) throw ApiException("Suppression goût impossible", code)
+    }
+
+    // ── Feedback admin + réponses joueur ────────────────────────────────────
+
+    suspend fun adminFeedbackList(
+        limit: Int = 80,
+        unreadOnly: Boolean = false,
+        status: String? = null,
+    ): AdminFeedbackListResponse = withContext(Dispatchers.IO) {
+        var path = "api/admin/feedback?limit=${limit.coerceIn(1, 200)}"
+        if (unreadOnly) path += "&unread=1"
+        if (!status.isNullOrBlank()) path += "&status=${java.net.URLEncoder.encode(status, "UTF-8")}"
+        val (body, code) = execute(requestBuilder(path).get().build())
+        if (code !in 200..299) throw ApiException("Feedback admin indisponible", code)
+        gson.fromJson(body, AdminFeedbackListResponse::class.java)
+            ?: AdminFeedbackListResponse()
+    }
+
+    suspend fun adminFeedbackStats(): AdminFeedbackStats? = try {
+        adminFeedbackList(limit = 1).stats
+    } catch (_: Exception) {
+        null
+    }
+
+    suspend fun adminFeedbackMarkRead(id: Int, read: Boolean = true) {
+        val json = gson.toJson(mapOf("read" to read))
+        val (_, code) = execute(
+            requestBuilder("api/admin/feedback/$id/read").post(json.toRequestBody(JSON)).build()
+        )
+        if (code !in 200..299) throw ApiException("Marquage lu impossible", code)
+    }
+
+    suspend fun adminFeedbackReadAll() {
+        val (_, code) = execute(
+            requestBuilder("api/admin/feedback/read-all").post("{}".toRequestBody(JSON)).build()
+        )
+        if (code !in 200..299) throw ApiException("Lecture globale impossible", code)
+    }
+
+    suspend fun adminFeedbackResolve(id: Int, status: String, reply: String) {
+        val json = gson.toJson(mapOf("status" to status, "reply" to reply))
+        val (_, code) = execute(
+            requestBuilder("api/admin/feedback/$id/resolve").post(json.toRequestBody(JSON)).build()
+        )
+        if (code !in 200..299) throw ApiException("Réponse impossible", code)
+    }
+
+    suspend fun adminFeedbackReopen(id: Int) {
+        val (_, code) = execute(
+            requestBuilder("api/admin/feedback/$id/reopen").post("{}".toRequestBody(JSON)).build()
+        )
+        if (code !in 200..299) throw ApiException("Réouverture impossible", code)
+    }
+
+    suspend fun adminFeedbackDelete(id: Int) {
+        val (_, code) = execute(requestBuilder("api/admin/feedback/$id").delete().build())
+        if (code !in 200..299) throw ApiException("Suppression impossible", code)
+    }
+
+    suspend fun feedbackReplies(unseenOnly: Boolean = true): List<AdminFeedbackItem> =
+        withContext(Dispatchers.IO) {
+            val path = "api/feedback/replies?unseen=${if (unseenOnly) "1" else "0"}&limit=20"
+            val (body, code) = execute(requestBuilder(path).get().build())
+            if (code !in 200..299) return@withContext emptyList()
+            gson.fromJson(body, FeedbackRepliesResponse::class.java)?.items.orEmpty()
+        }
+
+    suspend fun markFeedbackRepliesSeen(ids: List<Int>) {
+        try {
+            val json = gson.toJson(mapOf("ids" to ids))
+            execute(
+                requestBuilder("api/feedback/replies/seen").post(json.toRequestBody(JSON)).build()
+            )
+        } catch (_: Exception) {
+        }
+    }
+
+    // ── RPG admin enrichi ───────────────────────────────────────────────────
+
+    suspend fun adminRpgPatchPlayer(username: String, payload: Map<String, Any?>): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val enc = java.net.URLEncoder.encode(username, "UTF-8")
+                val json = gson.toJson(payload)
+                val (_, code) = execute(
+                    requestBuilder("api/admin/rpg/players/$enc")
+                        .patch(json.toRequestBody(JSON))
+                        .build()
+                )
+                code in 200..299
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+    // ── Versions portail ────────────────────────────────────────────────────
+
+    suspend fun fetchMobileVersions(): MobileVersionsManifest? = withContext(Dispatchers.IO) {
+        try {
+            val url = ServerSettings.versionsURL
+            val req = Request.Builder().url(url).get().build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext null
+                val body = resp.body?.string().orEmpty()
+                gson.fromJson(body, MobileVersionsManifest::class.java)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
 }
