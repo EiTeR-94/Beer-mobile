@@ -551,15 +551,26 @@ struct BeerquestAdminSheetView: View {
                 if p.isInvite == true { adminPill("invité", .invite) }
                 if p.orphan == true { adminPill("orphelin", .off) }
                 if p.allowed == false { adminPill("RPG bloqué", .off) }
-                else { adminPill("RPG OK", .on) }
                 if p.hasProfile == false { adminPill("sans profil", .muted) }
                 if p.suspicionFlagged == true || (p.suspicionScore ?? 0) >= 12 {
-                    adminPill("⚠ susp \(p.suspicionScore ?? 0)", .off)
+                    adminPill("⚠ \(p.suspicionScore ?? 0)", .off)
+                }
+                if p.dailySoftCapped == true {
+                    let dx = p.dailyXpToday ?? p.dailyXpTotal ?? 0
+                    let dc = p.dailySoftCap ?? 0
+                    adminPill("cap \(dx)/\(dc)", .softcap)
                 }
             }
             Text(metaLine(p))
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            if let dayLine = daySoftCapLine(p) {
+                Text(dayLine)
+                    .font(.system(size: 11, weight: p.dailySoftCapped == true ? .semibold : .regular))
+                    .foregroundStyle(p.dailySoftCapped == true ? Color.yellow.opacity(0.9) : Theme.accent)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Theme.fieldBg)
@@ -579,7 +590,13 @@ struct BeerquestAdminSheetView: View {
                 startPoint: .topLeading, endPoint: .bottomTrailing
             )
         )
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(master ? Color.yellow.opacity(0.35) : Theme.border))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14).stroke(
+                p.dailySoftCapped == true
+                    ? Color.yellow.opacity(0.45)
+                    : (master ? Color.yellow.opacity(0.35) : Theme.border)
+            )
+        )
         .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
@@ -594,7 +611,23 @@ struct BeerquestAdminSheetView: View {
         return bits.joined(separator: " · ")
     }
 
-    private enum PillKind { case on, off, invite, muted }
+    /// XP du jour / soft-cap + check-ins RPG du jour (libellé clair, pas « 5 ck »).
+    private func daySoftCapLine(_ p: RpgAdminPlayer) -> String? {
+        let cap = p.dailySoftCap ?? 0
+        guard cap > 0 else { return nil }
+        let xp = p.dailyXpToday ?? p.dailyXpTotal ?? 0
+        let ck = p.dailyCheckinsToday ?? p.dailyXpCount ?? 0
+        let ckLabel = ck == 1 ? "1 check-in RPG" : "\(ck) check-ins RPG"
+        if p.dailySoftCapped == true {
+            return "⛔ \(xp)/\(cap) XP jour · \(ckLabel) · plafond"
+        }
+        if xp > 0 || ck > 0 {
+            return "⚡ \(xp)/\(cap) XP jour · \(ckLabel)"
+        }
+        return nil
+    }
+
+    private enum PillKind { case on, off, invite, muted, softcap }
 
     private func adminPill(_ text: String, _ kind: PillKind) -> some View {
         let fg: Color
@@ -607,6 +640,10 @@ struct BeerquestAdminSheetView: View {
             fg = Color(red: 0.38, green: 0.65, blue: 0.98)
             bg = fg.opacity(0.12); border = fg.opacity(0.4)
         case .muted: fg = Theme.muted; bg = Theme.fieldBg; border = Theme.border
+        case .softcap:
+            fg = Color.yellow.opacity(0.95)
+            bg = Color.yellow.opacity(0.12)
+            border = Color.yellow.opacity(0.4)
         }
         return Text(text)
             .font(.system(size: 9, weight: .bold))

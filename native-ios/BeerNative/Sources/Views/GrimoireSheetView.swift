@@ -156,7 +156,11 @@ struct GrimoireSheetView: View {
                     xpHeroBar(p)
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 8) {
                         statTile("🔥", "\(p.streakDays ?? 0)", "Streak")
-                        statTile("⚡", "\(p.dailyXp ?? 0)/\(p.dailySoftCap ?? 100)", "XP du jour")
+                        statTile(
+                            p.dailySoftCapped == true ? "⛔" : "⚡",
+                            "\(p.dailyXp ?? 0)/\(p.dailySoftCap ?? 100)",
+                            p.dailySoftCapped == true ? "Soft cap" : "XP du jour"
+                        )
                         statTile("🍺", "\(st.atlas?.totalCheckins ?? 0)", "Check-ins")
                         if master {
                             statTile("👑", "Unique", "Prestige")

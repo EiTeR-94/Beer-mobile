@@ -883,22 +883,32 @@ final class AppModel: ObservableObject {
         if let q = loot.questsCompleted?.first {
             bits.append("📜 \(q.title ?? "Quête")")
         }
+        let softCapped = loot.dailySoftCapped == true
+        if softCapped {
+            let day = loot.dailyXp.map(String.init) ?? "?"
+            let cap = loot.dailySoftCap.map(String.init) ?? "?"
+            bits.append("⛔ soft-cap \(day)/\(cap)")
+        }
         let hasCeleb = loot.levelUp == true || !(loot.badgesEarned ?? []).isEmpty
         let msg: String
         if loot.levelUp == true {
             msg = loot.phraseLevelUp ?? loot.phrase ?? "Niveau \(loot.level ?? 0) !"
+        } else if softCapped, let sc = loot.softCapMessage, !sc.isEmpty {
+            msg = sc
+        } else if softCapped {
+            msg = loot.phrase ?? "Plus d’XP aujourd’hui (soft-cap). Reviens demain."
         } else if (loot.xpGained ?? 0) > 0 {
             msg = loot.phrase ?? "Butin +\(loot.xpGained ?? 0) XP"
         } else {
             msg = loot.phrase ?? "Noté"
         }
-        // Toast court — le détail est dans le résumé butin
+        // Toast — plus long si soft-cap (message important pour le joueur)
         showToast(
             msg,
             variant: hasCeleb ? .success : .info,
             detail: bits.isEmpty ? nil : bits.joined(separator: " · "),
             label: "Beerquest",
-            durationMs: hasCeleb ? 2000 : 3200
+            durationMs: hasCeleb ? 2000 : (softCapped ? 5600 : 3200)
         )
         enqueueCelebrations(from: loot)
         Task { await refreshRpg() }

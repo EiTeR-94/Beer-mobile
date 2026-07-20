@@ -623,9 +623,9 @@ private fun FicheAventurierCard(p: RpgProfile, state: RpgState, nActive: Int) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTileSoft("🔥", "${p.streakDays}", "Streak", Modifier.weight(1f))
             StatTileSoft(
-                "⚡",
+                if (p.dailySoftCapped) "⛔" else "⚡",
                 "${p.dailyXp}/${p.dailySoftCap}",
-                "XP du jour",
+                if (p.dailySoftCapped) "Soft cap" else "XP du jour",
                 Modifier.weight(1f)
             )
             StatTileSoft(
@@ -2110,12 +2110,16 @@ fun RpgAdminSheet(vm: AppViewModel) {
                 Column(Modifier.verticalScroll(scroll).weight(1f, fill = true)) {
                     players.forEach { p ->
                         val name = p.username ?: "—"
+                        val dayCap = p.dailySoftCap
+                        val dayXp = p.dailyXpToday
+                        val dayCk = p.dailyCheckinsToday
+                        val borderC = if (p.dailySoftCapped) Gold.copy(alpha = 0.55f) else BeerColors.border
                         Column(
                             Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = 8.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .border(1.dp, BeerColors.border, RoundedCornerShape(12.dp))
+                                .border(1.dp, borderC, RoundedCornerShape(12.dp))
                                 .background(BeerColors.card)
                                 .clickable {
                                     selected = p
@@ -2124,20 +2128,37 @@ fun RpgAdminSheet(vm: AppViewModel) {
                                 .padding(12.dp)
                         ) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(name, color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Column(Modifier.weight(1f)) {
+                                    Text(name, color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    p.title?.let {
+                                        Text(it, color = BeerColors.muted, fontSize = 11.sp)
+                                    }
+                                }
                                 Text("Nv ${p.level}", color = Gold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
                             Text(
                                 buildString {
-                                    append("${p.xp} XP")
-                                    p.title?.let { append(" · $it") }
-                                    append(" · ${p.badgeCount} badges")
+                                    append("${p.xp} XP · ${p.checkins} check-ins · ${p.badgeCount} badges")
                                     if (p.isInvite) append(" · invité")
                                     if (p.beerMaster) append(" · Master")
                                 },
                                 color = BeerColors.muted,
                                 fontSize = 12.sp
                             )
+                            if (dayCap > 0) {
+                                Text(
+                                    buildString {
+                                        if (p.dailySoftCapped) append("⛔ ") else append("⚡ ")
+                                        append("$dayXp/$dayCap XP jour · $dayCk check-in")
+                                        if (dayCk != 1) append("s")
+                                        append(" RPG")
+                                        if (p.dailySoftCapped) append(" · plafond")
+                                    },
+                                    color = if (p.dailySoftCapped) Gold else QuestBlue,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (p.dailySoftCapped) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
                         }
                     }
                 }

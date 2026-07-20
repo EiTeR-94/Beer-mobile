@@ -37,6 +37,8 @@ struct RpgProfile: Decodable {
     var streakDays: Int?
     var dailyXp: Int?
     var dailySoftCap: Int?
+    var dailySoftCapped: Bool?
+    var dailySoftCapRemaining: Int?
     var classKey: String?
     var classInfo: RpgClassInfo?
     var beerMaster: Bool?
@@ -54,6 +56,8 @@ struct RpgProfile: Decodable {
         case streakDays = "streak_days"
         case dailyXp = "daily_xp"
         case dailySoftCap = "daily_soft_cap"
+        case dailySoftCapped = "daily_soft_capped"
+        case dailySoftCapRemaining = "daily_soft_cap_remaining"
         case classKey = "class"
         case classInfo = "class_info"
         case beerMaster = "beer_master"
@@ -182,6 +186,11 @@ struct RpgLoot: Decodable {
     var questsCompleted: [RpgQuest]?
     var nextBadges: [RpgBadge]?
     var streakDays: Int?
+    var dailyXp: Int?
+    var dailySoftCap: Int?
+    var dailySoftCapped: Bool?
+    var dailySoftCapJustHit: Bool?
+    var softCapMessage: String?
     enum CodingKeys: String, CodingKey {
         case xp, level, title, phrase
         case xpGained = "xp_gained"
@@ -197,6 +206,11 @@ struct RpgLoot: Decodable {
         case questsCompleted = "quests_completed"
         case nextBadges = "next_badges"
         case streakDays = "streak_days"
+        case dailyXp = "daily_xp"
+        case dailySoftCap = "daily_soft_cap"
+        case dailySoftCapped = "daily_soft_capped"
+        case dailySoftCapJustHit = "daily_soft_cap_just_hit"
+        case softCapMessage = "soft_cap_message"
     }
 }
 
@@ -255,6 +269,11 @@ struct RpgAdminPlayer: Decodable, Identifiable {
     var backfilled: Bool?
     var dailyXpTotal: Int?
     var dailyXpCount: Int?
+    var dailySoftCap: Int?
+    var dailyXpToday: Int?
+    var dailyCheckinsToday: Int?
+    var dailySoftCapped: Bool?
+    var dailySoftCapRemaining: Int?
     var lastRpgCheckinAt: String?
     var id: String { username ?? UUID().uuidString }
 
@@ -275,6 +294,11 @@ struct RpgAdminPlayer: Decodable, Identifiable {
         case backfilled
         case dailyXpTotal = "daily_xp_total"
         case dailyXpCount = "daily_xp_count"
+        case dailySoftCap = "daily_soft_cap"
+        case dailyXpToday = "daily_xp_today"
+        case dailyCheckinsToday = "daily_checkins_today"
+        case dailySoftCapped = "daily_soft_capped"
+        case dailySoftCapRemaining = "daily_soft_cap_remaining"
         case lastRpgCheckinAt = "last_rpg_checkin_at"
     }
 }

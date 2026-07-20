@@ -286,6 +286,28 @@ private struct LootSummarySheet: View {
                         }
                     }
 
+                    if loot.dailySoftCapped == true {
+                        let day = loot.dailyXp.map(String.init) ?? "?"
+                        let cap = loot.dailySoftCap.map(String.init) ?? "?"
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("⛔ Soft-cap journalier · \(day)/\(cap) XP")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(Color.yellow.opacity(0.95))
+                            Text(
+                                loot.softCapMessage
+                                    ?? "Plus d’XP aujourd’hui. Reviens demain — check-ins et badges restent ouverts."
+                            )
+                            .font(.caption)
+                            .foregroundStyle(Theme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.yellow.opacity(0.1))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.yellow.opacity(0.35)))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+
                     if let badges = loot.badgesEarned, !badges.isEmpty {
                         Text("Badges obtenus")
                             .font(.subheadline.weight(.bold))

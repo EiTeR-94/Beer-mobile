@@ -390,9 +390,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (loot.xpGained != 0) bits.add("+${loot.xpGained} XP")
         loot.badgesEarned.firstOrNull()?.let { bits.add("${it.icon ?: "🏅"} ${it.name}") }
         loot.questsCompleted.firstOrNull()?.let { bits.add("📜 ${it.title}") }
+        if (loot.dailySoftCapped) {
+            val cap = loot.dailySoftCap ?: "?"
+            val day = loot.dailyXp ?: cap
+            bits.add("⛔ soft-cap $day/$cap")
+        }
         val hasCeleb = loot.levelUp || loot.badgesEarned.isNotEmpty()
         val msg = when {
             loot.levelUp -> loot.phraseLevelUp ?: loot.phrase ?: "Niveau ${loot.level} !"
+            loot.dailySoftCapped && !loot.softCapMessage.isNullOrBlank() -> loot.softCapMessage!!
+            loot.dailySoftCapped -> loot.phrase
+                ?: "Plus d’XP aujourd’hui (soft-cap). Reviens demain."
             loot.xpGained > 0 -> loot.phrase ?: "Butin +${loot.xpGained} XP"
             else -> loot.phrase ?: "Noté"
         }
@@ -401,7 +409,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (hasCeleb) ToastPayload.Variant.SUCCESS else ToastPayload.Variant.INFO,
             detail = bits.joinToString(" · ").ifBlank { null },
             label = "Beerquest",
-            durationMs = if (hasCeleb) 2200 else 3800
+            durationMs = when {
+                hasCeleb -> 2200
+                loot.dailySoftCapped -> 5600
+                else -> 3800
+            }
         )
         enqueueCelebrations(loot)
         refreshRpg()

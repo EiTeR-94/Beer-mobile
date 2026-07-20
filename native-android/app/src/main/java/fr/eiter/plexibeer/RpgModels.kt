@@ -31,6 +31,8 @@ data class RpgProfile(
     @SerializedName("streak_days") val streakDays: Int = 0,
     @SerializedName("daily_xp") val dailyXp: Int = 0,
     @SerializedName("daily_soft_cap") val dailySoftCap: Int = 100,
+    @SerializedName("daily_soft_capped") val dailySoftCapped: Boolean = false,
+    @SerializedName("daily_soft_cap_remaining") val dailySoftCapRemaining: Int? = null,
     @SerializedName("class") val classKey: String? = null,
     @SerializedName("class_info") val classInfo: RpgClassInfo? = null,
     @SerializedName("beer_master") val beerMaster: Boolean = false,
@@ -122,6 +124,11 @@ data class RpgLoot(
     @SerializedName("quests_completed") val questsCompleted: List<RpgQuest> = emptyList(),
     @SerializedName("next_badges") val nextBadges: List<RpgBadge> = emptyList(),
     @SerializedName("streak_days") val streakDays: Int? = null,
+    @SerializedName("daily_xp") val dailyXp: Int? = null,
+    @SerializedName("daily_soft_cap") val dailySoftCap: Int? = null,
+    @SerializedName("daily_soft_capped") val dailySoftCapped: Boolean = false,
+    @SerializedName("daily_soft_cap_just_hit") val dailySoftCapJustHit: Boolean = false,
+    @SerializedName("soft_cap_message") val softCapMessage: String? = null,
     /** breakdown items may be heterogeneous — keep as JsonElement list if needed */
     val breakdown: List<Map<String, JsonElement>>? = null
 )
@@ -151,7 +158,12 @@ data class RpgAdminPlayer(
     val checkins: Int = 0,
     @SerializedName("badge_count") val badgeCount: Int = 0,
     val allowed: Boolean = true,
-    @SerializedName("has_profile") val hasProfile: Boolean = false
+    @SerializedName("has_profile") val hasProfile: Boolean = false,
+    @SerializedName("daily_soft_cap") val dailySoftCap: Int = 0,
+    @SerializedName("daily_xp_today") val dailyXpToday: Int = 0,
+    @SerializedName("daily_checkins_today") val dailyCheckinsToday: Int = 0,
+    @SerializedName("daily_soft_capped") val dailySoftCapped: Boolean = false,
+    @SerializedName("daily_soft_cap_remaining") val dailySoftCapRemaining: Int? = null
 )
 
 fun RpgProfile.displayIcon(): String {
