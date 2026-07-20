@@ -20,26 +20,47 @@
       padding: 1.25rem;
     }
     .shell { width: 100%; max-width: 420px; }
-    .brand { text-align: center; margin-bottom: 1.1rem; }
+    .brand { text-align: center; margin-bottom: 1rem; }
     .brand .ico { font-size: 2.5rem; line-height: 1; margin-bottom: .35rem; }
     .brand h1 { margin: 0; font-size: 1.45rem; font-weight: 800; letter-spacing: -.02em; }
     .brand p { margin: .35rem 0 0; color: var(--muted); font-size: .88rem; line-height: 1.4; }
+    .notice {
+      background: color-mix(in srgb, var(--accent) 10%, var(--card));
+      border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+      border-radius: 12px;
+      padding: .7rem .85rem;
+      margin-bottom: .9rem;
+      font-size: .78rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .notice strong { color: var(--text); }
     .versions {
       display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .45rem;
-      margin-bottom: .9rem;
+      margin-bottom: .85rem;
     }
     .vchip {
       background: var(--card); border: 1px solid var(--border);
-      border-radius: 12px; padding: .55rem .45rem; text-align: center;
+      border-radius: 12px; padding: .55rem .4rem; text-align: center;
     }
-    .vchip .k { display: block; font-size: .65rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+    .vchip.ios { border-color: color-mix(in srgb, var(--ios) 40%, var(--border)); }
+    .vchip.and { border-color: color-mix(in srgb, var(--android) 40%, var(--border)); }
+    .vchip .k { display: block; font-size: .62rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
     .vchip .v { display: block; margin-top: .2rem; font-size: .82rem; font-weight: 800; color: var(--text); }
-    .vchip .b { display: block; margin-top: .1rem; font-size: .65rem; color: var(--muted); }
+    .vchip .b { display: block; margin-top: .12rem; font-size: .62rem; color: var(--muted); }
+    .vchip .d { display: block; margin-top: .2rem; font-size: .6rem; color: var(--accent); font-weight: 600; line-height: 1.25; }
     .card {
       background: var(--card); border: 1px solid var(--border);
       border-radius: 16px; padding: 1rem; margin-bottom: .75rem;
     }
-    .card h2 { margin: 0 0 .35rem; font-size: 1rem; font-weight: 700; }
+    .card h2 { margin: 0 0 .25rem; font-size: 1rem; font-weight: 700; }
+    .card .verline {
+      margin: 0 0 .55rem;
+      font-size: .78rem;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .card .verline strong { color: var(--text); }
     .card .meta { margin: 0 0 .85rem; color: var(--muted); font-size: .78rem; line-height: 1.35; }
     .btn {
       display: flex; align-items: center; justify-content: center; gap: .45rem;
@@ -53,7 +74,6 @@
     .hint { margin-top: .55rem; font-size: .72rem; color: var(--muted); line-height: 1.35; }
     .foot { text-align: center; margin-top: 1rem; font-size: .72rem; color: var(--muted); }
     .foot a { color: var(--accent); }
-    .updated { text-align: center; font-size: .68rem; color: var(--muted); margin-bottom: .75rem; }
   </style>
 </head>
 <body>
@@ -64,43 +84,82 @@
       <p>Choisis ta plateforme pour télécharger l’app native.</p>
     </div>
 
-    <div class="versions" id="versions" aria-live="polite">
-      <div class="vchip"><span class="k">IPA</span><span class="v" id="v-ios">…</span><span class="b" id="b-ios"></span></div>
-      <div class="vchip"><span class="k">APK</span><span class="v" id="v-and">…</span><span class="b" id="b-and"></span></div>
-      <div class="vchip"><span class="k">Webapp</span><span class="v" id="v-web">…</span><span class="b" id="b-web"></span></div>
+    <div class="notice" id="notice">
+      <strong>IPA et APK ont des mises à jour séparées.</strong>
+      L’iPhone est souvent mis à jour plus souvent qu’Android — regarde la version
+      de <em>ta</em> plateforme ci-dessous.
     </div>
-    <p class="updated" id="updated"></p>
+
+    <div class="versions" id="versions" aria-live="polite">
+      <div class="vchip ios">
+        <span class="k">iOS · IPA</span>
+        <span class="v" id="v-ios">…</span>
+        <span class="b" id="b-ios"></span>
+        <span class="d" id="d-ios"></span>
+      </div>
+      <div class="vchip and">
+        <span class="k">Android · APK</span>
+        <span class="v" id="v-and">…</span>
+        <span class="b" id="b-and"></span>
+        <span class="d" id="d-and"></span>
+      </div>
+      <div class="vchip">
+        <span class="k">Webapp</span>
+        <span class="v" id="v-web">…</span>
+        <span class="b" id="b-web"></span>
+        <span class="d" id="d-web"></span>
+      </div>
+    </div>
 
     <section class="card">
       <h2>🍎 iPhone · iPad</h2>
+      <p class="verline" id="line-ios">Version : …</p>
       <p class="meta">Fichier <strong>BeerOff.ipa</strong> — installation sideload (AltStore, Sideloadly…).</p>
       <a class="btn btn-ios" href="/mobile/beer/beeroff.ipa" download="BeerOff.ipa">Télécharger l’IPA</a>
       <p class="hint">Après install : Wi‑Fi maison / VPN pour les comptes, ou lien d’invitation pour les invités 4G/5G.</p>
     </section>
+
     <section class="card">
       <h2>🤖 Android</h2>
+      <p class="verline" id="line-and">Version : …</p>
       <p class="meta">Fichier <strong>BeerOff.apk</strong> — autorise « sources inconnues » si demandé.</p>
       <a class="btn btn-android" href="/mobile/beer/beeroff.apk" download="BeerOff.apk">Télécharger l’APK</a>
-      <p class="hint">Même compte / même serveur que l’app iOS et la webapp.</p>
+      <p class="hint">Cycle de maj indépendant de l’IPA. Compare avec la version affichée dans l’app Android.</p>
     </section>
+
     <p class="foot">Plexi · <a href="/beer/">webapp Beer Quest</a></p>
   </main>
   <script>
+    function setText(id, t) {
+      var el = document.getElementById(id);
+      if (el) el.textContent = t || "";
+    }
+    function line(ver, build, when) {
+      var s = "Version <strong>" + (ver || "?") + "</strong>";
+      if (build) s += " · build " + build;
+      if (when) s += "<br>Dernière maj : <strong>" + when + "</strong>";
+      return s;
+    }
     fetch("/mobile/beer/versions.json?_=" + Date.now(), { cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (v) {
         if (!v) return;
-        document.getElementById("v-ios").textContent = v.ios || "?";
-        document.getElementById("b-ios").textContent = v.ios_build ? "build " + v.ios_build : "";
-        document.getElementById("v-and").textContent = v.android || "?";
-        document.getElementById("b-and").textContent = v.android_build ? "build " + v.android_build : "";
-        document.getElementById("v-web").textContent = v.webapp || "?";
-        document.getElementById("b-web").textContent = "serveur";
-        if (v.updated_at) {
-          // déjà en dd-MM-YYYY HH:mm (Europe/Paris) côté serveur
-          document.getElementById("updated").textContent =
-            "Dernière mise à jour du portail : " + v.updated_at;
-        }
+        setText("v-ios", v.ios || "?");
+        setText("b-ios", v.ios_build ? "build " + v.ios_build : "");
+        setText("d-ios", v.ios_updated_at ? "maj " + v.ios_updated_at : "");
+
+        setText("v-and", v.android || "?");
+        setText("b-and", v.android_build ? "build " + v.android_build : "");
+        setText("d-and", v.android_updated_at ? "maj " + v.android_updated_at : "");
+
+        setText("v-web", v.webapp || "?");
+        setText("b-web", "serveur");
+        setText("d-web", v.webapp_updated_at ? "maj " + v.webapp_updated_at : "");
+
+        var li = document.getElementById("line-ios");
+        if (li) li.innerHTML = line(v.ios, v.ios_build, v.ios_updated_at);
+        var la = document.getElementById("line-and");
+        if (la) la.innerHTML = line(v.android, v.android_build, v.android_updated_at);
       })
       .catch(function () {});
   </script>
