@@ -17,7 +17,11 @@ native-ios/Config/Build.xcconfig
 
 # Android local build
 native-android/local.properties
+native-android/keystore.properties
 native-android/.gradle/
 native-android/**/build/
 native-android/.idea/
 native-android/*.iml
+*.jks
+*.keystore
+!native-android/keystore.properties.example
