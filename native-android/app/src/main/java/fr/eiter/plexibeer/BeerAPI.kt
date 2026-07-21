@@ -418,6 +418,67 @@ class BeerAPI private constructor(context: Context) {
         }
     }
 
+    /** Liste joueurs + flags RPG (pour les toggles admin). */
+    suspend fun adminRpgPlayersBundle(): RpgAdminPlayersResponse = withContext(Dispatchers.IO) {
+        try {
+            val (body, code) = execute(requestBuilder("api/admin/rpg/players").get().build())
+            if (code !in 200..299) return@withContext RpgAdminPlayersResponse()
+            gson.fromJson(body, RpgAdminPlayersResponse::class.java) ?: RpgAdminPlayersResponse()
+        } catch (_: Exception) {
+            RpgAdminPlayersResponse()
+        }
+    }
+
+    suspend fun adminRpgGetSettings(): RpgAdminFlags? = withContext(Dispatchers.IO) {
+        try {
+            val (body, code) = execute(requestBuilder("api/admin/rpg/settings").get().build())
+            if (code !in 200..299) return@withContext null
+            gson.fromJson(body, RpgAdminSettingsResponse::class.java)?.flags
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    suspend fun adminRpgPatchSettings(payload: Map<String, Any?>): RpgAdminFlags? =
+        withContext(Dispatchers.IO) {
+            try {
+                val json = gson.toJson(payload)
+                val (body, code) = execute(
+                    requestBuilder("api/admin/rpg/settings")
+                        .patch(json.toRequestBody(JSON))
+                        .build()
+                )
+                if (code !in 200..299) return@withContext null
+                gson.fromJson(body, RpgAdminSettingsResponse::class.java)?.flags
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+    /**
+     * @param allowed true=force ON, false=force OFF, null=auto (défaut allowlist/env)
+     */
+    suspend fun adminRpgSetUserAllowed(username: String, allowed: Boolean?): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val enc = java.net.URLEncoder.encode(username, "UTF-8")
+                // null JSON explicite
+                val json = if (allowed == null) {
+                    """{"allowed":null}"""
+                } else {
+                    gson.toJson(mapOf("allowed" to allowed))
+                }
+                val (_, code) = execute(
+                    requestBuilder("api/admin/rpg/settings/users/$enc")
+                        .put(json.toRequestBody(JSON))
+                        .build()
+                )
+                code in 200..299
+            } catch (_: Exception) {
+                false
+            }
+        }
+
     suspend fun adminRpgAdjustXp(username: String, delta: Int): Boolean = withContext(Dispatchers.IO) {
         try {
             val json = gson.toJson(mapOf("delta" to delta))

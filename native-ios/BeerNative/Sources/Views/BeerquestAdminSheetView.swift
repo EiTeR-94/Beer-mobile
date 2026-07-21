@@ -5,6 +5,8 @@ struct BeerquestAdminSheetView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var players: [RpgAdminPlayer] = []
+    @State private var rpgFlags: RpgAdminFlags?
+    @State private var settingsBusy = false
     @State private var loading = true
     @State private var error: String?
     @State private var selectedUser: String?
@@ -60,6 +62,7 @@ struct BeerquestAdminSheetView: View {
                     header
                     tabBar
                     if adminTab == .players {
+                        settingsBar
                         searchBar
                         listBody
                     } else {
@@ -188,6 +191,50 @@ struct BeerquestAdminSheetView: View {
                 .buttonStyle(.plain)
             }
         }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 8)
+    }
+
+    private var settingsBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Accès Beerquest")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Theme.text)
+            Text("LAN/VPN · sans rebuild serveur")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.muted)
+
+            Toggle(isOn: Binding(
+                get: { rpgFlags?.enabled == true },
+                set: { newVal in Task { await patchSetting("enabled", value: newVal) } }
+            )) {
+                Text("RPG global").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text)
+            }
+            .tint(Theme.accent)
+            .disabled(settingsBusy)
+
+            Toggle(isOn: Binding(
+                get: { rpgFlags?.ui == true },
+                set: { newVal in Task { await patchSetting("ui", value: newVal) } }
+            )) {
+                Text("UI joueur").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text)
+            }
+            .tint(Theme.accent)
+            .disabled(settingsBusy || rpgFlags?.enabled != true)
+
+            Toggle(isOn: Binding(
+                get: { rpgFlags?.allowInvites == true },
+                set: { newVal in Task { await patchSetting("allow_invites", value: newVal) } }
+            )) {
+                Text("Invités RPG").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text)
+            }
+            .tint(Theme.accent)
+            .disabled(settingsBusy || rpgFlags?.enabled != true)
+        }
+        .padding(12)
+        .background(Theme.card)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.accent.opacity(0.35)))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal, 14)
         .padding(.bottom, 8)
     }
@@ -501,10 +548,9 @@ struct BeerquestAdminSheetView: View {
             ScrollView {
                 LazyVStack(spacing: 10) {
                     ForEach(filtered) { p in
-                        Button { selectedUser = p.username } label: {
-                            playerCard(p)
-                        }
-                        .buttonStyle(.plain)
+                        playerCard(p)
+                            .contentShape(Rectangle())
+                            .onTapGesture { selectedUser = p.username }
                     }
                 }
                 .padding(.horizontal, 14)
@@ -550,7 +596,10 @@ struct BeerquestAdminSheetView: View {
             HStack(spacing: 4) {
                 if p.isInvite == true { adminPill("invité", .invite) }
                 if p.orphan == true { adminPill("orphelin", .off) }
+                if p.allowed == true { adminPill("RPG OK", .on) }
                 if p.allowed == false { adminPill("RPG bloqué", .off) }
+                if p.allowedOverride == true { adminPill("forcé ON", .on) }
+                if p.allowedOverride == false { adminPill("forcé OFF", .off) }
                 if p.hasProfile == false { adminPill("sans profil", .muted) }
                 if p.suspicionFlagged == true || (p.suspicionScore ?? 0) >= 12 {
                     adminPill("⚠ \(p.suspicionScore ?? 0)", .off)
@@ -570,6 +619,19 @@ struct BeerquestAdminSheetView: View {
                     .font(.system(size: 11, weight: p.dailySoftCapped == true ? .semibold : .regular))
                     .foregroundStyle(p.dailySoftCapped == true ? Color.yellow.opacity(0.9) : Theme.accent)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+            if let uname = p.username, !uname.isEmpty {
+                HStack(spacing: 6) {
+                    accessChip("ON", active: p.allowedOverride == true) {
+                        Task { await setUserAccess(uname, allowed: true) }
+                    }
+                    accessChip("OFF", active: p.allowedOverride == false) {
+                        Task { await setUserAccess(uname, allowed: false) }
+                    }
+                    accessChip("Auto", active: p.allowedOverride == nil) {
+                        Task { await setUserAccess(uname, allowed: nil) }
+                    }
+                }
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -659,21 +721,83 @@ struct BeerquestAdminSheetView: View {
         loading = true
         error = nil
         do {
-            players = try await app.api.adminRpgPlayers()
+            let bundle = try await app.api.adminRpgPlayersBundle()
+            players = bundle.players ?? []
+            rpgFlags = bundle.flags
             // Badge feedback (léger, comme la webapp)
             if let stats = await app.api.adminFeedbackStats() {
                 feedbackStats = stats
             }
             let unread = feedbackStats?.unread ?? 0
+            let rpgLab = (rpgFlags?.enabled == true) ? "RPG on" : "RPG off"
             if unread > 0 {
-                flagsLine = "\(players.count) aventurier(s) · \(unread) feedback non lu(s)"
+                flagsLine = "\(rpgLab) · \(players.count) aventurier(s) · \(unread) feedback non lu(s)"
             } else {
-                flagsLine = "\(players.count) aventurier(s) · grimoire admin"
+                flagsLine = "\(rpgLab) · \(players.count) aventurier(s)"
             }
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription ?? "Erreur chargement"
         }
         loading = false
+    }
+
+    private func patchSetting(_ key: String, value: Bool) async {
+        guard !settingsBusy else { return }
+        settingsBusy = true
+        defer { settingsBusy = false }
+        do {
+            rpgFlags = try await app.api.adminRpgPatchSettings([key: value])
+            app.showToast("Réglages RPG enregistrés", variant: .success, durationMs: 2400)
+            await reload()
+        } catch {
+            app.showToast(
+                (error as? LocalizedError)?.errorDescription ?? "Échec réglages RPG",
+                variant: .error,
+                durationMs: 3200
+            )
+        }
+    }
+
+    private func setUserAccess(_ username: String, allowed: Bool?) async {
+        guard !settingsBusy else { return }
+        settingsBusy = true
+        defer { settingsBusy = false }
+        do {
+            try await app.api.adminRpgSetUserAllowed(username: username, allowed: allowed)
+            let lab: String
+            switch allowed {
+            case true?: lab = "RPG forcé ON"
+            case false?: lab = "RPG forcé OFF"
+            default: lab = "RPG = auto"
+            }
+            app.showToast("\(username) · \(lab)", variant: .success, durationMs: 2400)
+            await reload()
+        } catch {
+            app.showToast(
+                (error as? LocalizedError)?.errorDescription ?? "Échec accès user",
+                variant: .error,
+                durationMs: 3200
+            )
+        }
+    }
+
+    private func accessChip(_ label: String, active: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(active ? Color(red: 0.07, green: 0.07, blue: 0.07) : Theme.text)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    active
+                        ? (label == "OFF" ? Theme.error.opacity(0.85) : Theme.accent)
+                        : Theme.fieldBg
+                )
+                .overlay(Capsule().stroke(Theme.border))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(settingsBusy)
     }
 
     private func loadFeedback() async {

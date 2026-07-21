@@ -142,7 +142,22 @@ sealed class RpgCelebration {
 data class RpgAdminPlayersResponse(
     val players: List<RpgAdminPlayer> = emptyList(),
     val total: Int = 0,
-    @SerializedName("with_profile") val withProfile: Int = 0
+    @SerializedName("with_profile") val withProfile: Int = 0,
+    val flags: RpgAdminFlags? = null,
+)
+
+data class RpgAdminFlags(
+    val enabled: Boolean = false,
+    val ui: Boolean = false,
+    val backfill: Boolean = false,
+    @SerializedName("allow_invites") val allowInvites: Boolean = false,
+    val allowlist: List<String> = emptyList(),
+    val mutable: Boolean = true,
+)
+
+data class RpgAdminSettingsResponse(
+    val ok: Boolean = true,
+    val flags: RpgAdminFlags? = null,
 )
 
 data class RpgAdminPlayer(
@@ -158,6 +173,8 @@ data class RpgAdminPlayer(
     val checkins: Int = 0,
     @SerializedName("badge_count") val badgeCount: Int = 0,
     val allowed: Boolean = true,
+    /** true/false = override admin, null = règles défaut (allowlist/env). Gson: missing → null. */
+    @SerializedName("allowed_override") val allowedOverride: Boolean? = null,
     @SerializedName("has_profile") val hasProfile: Boolean = false,
     @SerializedName("daily_soft_cap") val dailySoftCap: Int = 0,
     @SerializedName("daily_xp_today") val dailyXpToday: Int = 0,

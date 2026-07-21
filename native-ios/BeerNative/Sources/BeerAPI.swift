@@ -527,12 +527,61 @@ final class BeerAPI {
     }
 
     func adminRpgPlayers() async throws -> [RpgAdminPlayer] {
+        let decoded = try await adminRpgPlayersBundle()
+        return decoded.players ?? []
+    }
+
+    func adminRpgPlayersBundle() async throws -> RpgAdminPlayersResponse {
         let (data, http, _) = try await request(path: "/api/admin/rpg/players", method: "GET", body: nil)
         guard http.statusCode >= 200 && http.statusCode < 300 else {
             throw BeerAPIError.server("Admin RPG indisponible")
         }
-        let decoded = try JSONDecoder().decode(RpgAdminPlayersResponse.self, from: data)
-        return decoded.players ?? []
+        return try JSONDecoder().decode(RpgAdminPlayersResponse.self, from: data)
+    }
+
+    func adminRpgGetSettings() async throws -> RpgAdminFlags {
+        let (data, http, _) = try await request(path: "/api/admin/rpg/settings", method: "GET", body: nil)
+        guard http.statusCode >= 200 && http.statusCode < 300 else {
+            throw BeerAPIError.server("Réglages RPG indisponibles")
+        }
+        let decoded = try JSONDecoder().decode(RpgAdminSettingsResponse.self, from: data)
+        return decoded.flags ?? RpgAdminFlags()
+    }
+
+    func adminRpgPatchSettings(_ payload: [String: Any]) async throws -> RpgAdminFlags {
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let (data, http, _) = try await request(
+            path: "/api/admin/rpg/settings",
+            method: "PATCH",
+            body: body,
+            contentType: "application/json"
+        )
+        guard http.statusCode >= 200 && http.statusCode < 300 else {
+            throw BeerAPIError.server("Échec réglages RPG")
+        }
+        let decoded = try JSONDecoder().decode(RpgAdminSettingsResponse.self, from: data)
+        return decoded.flags ?? RpgAdminFlags()
+    }
+
+    /// allowed: true=force ON, false=force OFF, nil=auto (défaut)
+    func adminRpgSetUserAllowed(username: String, allowed: Bool?) async throws {
+        let enc = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
+        let payload: [String: Any]
+        if let allowed {
+            payload = ["allowed": allowed]
+        } else {
+            payload = ["allowed": NSNull()]
+        }
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let (_, http, _) = try await request(
+            path: "/api/admin/rpg/settings/users/\(enc)",
+            method: "PUT",
+            body: body,
+            contentType: "application/json"
+        )
+        guard http.statusCode >= 200 && http.statusCode < 300 else {
+            throw BeerAPIError.server("Échec accès user RPG")
+        }
     }
 
     func adminRpgPlayer(_ username: String) async throws -> RpgAdminPlayerDetail {

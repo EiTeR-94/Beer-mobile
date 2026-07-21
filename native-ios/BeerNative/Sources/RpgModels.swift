@@ -240,10 +240,30 @@ struct RpgAdminPlayersResponse: Decodable {
     var players: [RpgAdminPlayer]?
     var total: Int?
     var withProfile: Int?
+    var flags: RpgAdminFlags?
     enum CodingKeys: String, CodingKey {
-        case players, total
+        case players, total, flags
         case withProfile = "with_profile"
     }
+}
+
+struct RpgAdminFlags: Decodable, Equatable {
+    var enabled: Bool?
+    var ui: Bool?
+    var backfill: Bool?
+    var allowInvites: Bool?
+    var allowlist: [String]?
+    var mutable: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, ui, backfill, allowlist, mutable
+        case allowInvites = "allow_invites"
+    }
+}
+
+struct RpgAdminSettingsResponse: Decodable {
+    var ok: Bool?
+    var flags: RpgAdminFlags?
 }
 
 struct RpgAdminPlayer: Decodable, Identifiable {
@@ -260,6 +280,8 @@ struct RpgAdminPlayer: Decodable, Identifiable {
     var checkins: Int?
     var badgeCount: Int?
     var allowed: Bool?
+    /// true/false = override admin ; nil = règles défaut (allowlist/env)
+    var allowedOverride: Bool?
     var hasProfile: Bool?
     var progressPct: Double?
     var suspicionScore: Int?
@@ -279,6 +301,7 @@ struct RpgAdminPlayer: Decodable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case username, level, xp, title, checkins, allowed, orphan
+        case allowedOverride = "allowed_override"
         case streakDays = "streak_days"
         case classKey = "class"
         case classInfo = "class_info"

@@ -49,6 +49,8 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -64,7 +66,9 @@ import androidx.compose.ui.text.withStyle
 import fr.eiter.plexibeer.AdminFeedbackItem
 import fr.eiter.plexibeer.AdminFeedbackStats
 import fr.eiter.plexibeer.AppViewModel
+import fr.eiter.plexibeer.RpgAdminFlags
 import fr.eiter.plexibeer.RpgAdminPlayer
+import fr.eiter.plexibeer.RpgAdminPlayersResponse
 import fr.eiter.plexibeer.RpgBadge
 import fr.eiter.plexibeer.RpgCelebration
 import fr.eiter.plexibeer.RpgClassInfo
@@ -2004,6 +2008,7 @@ fun RpgBadgeDetailDialog(badge: RpgBadge, onDismiss: () -> Unit) {
 fun RpgAdminSheet(vm: AppViewModel) {
     var tab by remember { mutableIntStateOf(0) } // 0 joueurs, 1 feedback
     var players by remember { mutableStateOf<List<RpgAdminPlayer>>(emptyList()) }
+    var rpgFlags by remember { mutableStateOf<RpgAdminFlags?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<RpgAdminPlayer?>(null) }
@@ -2028,9 +2033,11 @@ fun RpgAdminSheet(vm: AppViewModel) {
     LaunchedEffect(reloadToken) {
         loading = true
         error = null
-        players = withContext(Dispatchers.IO) {
-            try { vm.api.adminRpgPlayers() } catch (_: Exception) { emptyList() }
+        val bundle = withContext(Dispatchers.IO) {
+            try { vm.api.adminRpgPlayersBundle() } catch (_: Exception) { RpgAdminPlayersResponse() }
         }
+        players = bundle.players
+        rpgFlags = bundle.flags
         if (players.isEmpty()) error = "Aucun joueur ou accès refusé."
         loading = false
     }
@@ -2065,9 +2072,14 @@ fun RpgAdminSheet(vm: AppViewModel) {
             Column(Modifier.weight(1f)) {
                 Text("⚔ Admin Beerquest", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 20.sp)
                 val unread = fbStats?.unread ?: 0
+                val f = rpgFlags
+                val status = when {
+                    f == null -> "${players.size} aventurier(s)"
+                    f.enabled -> "RPG on · ${players.size} joueur(s)"
+                    else -> "RPG off · ${players.size} joueur(s)"
+                }
                 Text(
-                    if (unread > 0) "${players.size} joueurs · $unread feedback non lu(s)"
-                    else "${players.size} aventurier(s)",
+                    if (unread > 0) "$status · $unread feedback non lu(s)" else status,
                     color = BeerColors.muted,
                     fontSize = 12.sp
                 )
@@ -2108,6 +2120,77 @@ fun RpgAdminSheet(vm: AppViewModel) {
             tab == 0 -> {
                 val scroll = rememberScrollState()
                 Column(Modifier.verticalScroll(scroll).weight(1f, fill = true)) {
+                    // Toggles globaux (runtime, admin only via API)
+                    val f = rpgFlags
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 10.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(1.dp, Gold.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                            .background(BeerColors.card)
+                            .padding(12.dp)
+                    ) {
+                        Text("Accès Beerquest", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("LAN/VPN · sans rebuild serveur", color = BeerColors.muted, fontSize = 11.sp)
+                        Spacer(Modifier.height(6.dp))
+                        fun patchFlag(key: String, value: Boolean) {
+                            scope.launch {
+                                busy = true
+                                val next = withContext(Dispatchers.IO) {
+                                    vm.api.adminRpgPatchSettings(mapOf(key to value))
+                                }
+                                if (next != null) {
+                                    rpgFlags = next
+                                    vm.showToast("Réglages RPG enregistrés", ToastPayload.Variant.SUCCESS)
+                                    reload()
+                                } else {
+                                    vm.showToast("Échec réglages RPG", ToastPayload.Variant.ERROR)
+                                }
+                                busy = false
+                            }
+                        }
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("RPG global", color = BeerColors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Switch(
+                                checked = f?.enabled == true,
+                                onCheckedChange = { if (!busy) patchFlag("enabled", it) },
+                                enabled = !busy,
+                                colors = SwitchDefaults.colors(checkedTrackColor = Gold.copy(alpha = 0.7f))
+                            )
+                        }
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("UI joueur", color = BeerColors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Switch(
+                                checked = f?.ui == true,
+                                onCheckedChange = { if (!busy) patchFlag("ui", it) },
+                                enabled = !busy && f?.enabled == true,
+                                colors = SwitchDefaults.colors(checkedTrackColor = Gold.copy(alpha = 0.7f))
+                            )
+                        }
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Invités RPG", color = BeerColors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Switch(
+                                checked = f?.allowInvites == true,
+                                onCheckedChange = { if (!busy) patchFlag("allow_invites", it) },
+                                enabled = !busy && f?.enabled == true,
+                                colors = SwitchDefaults.colors(checkedTrackColor = Gold.copy(alpha = 0.7f))
+                            )
+                        }
+                    }
+
                     players.forEach { p ->
                         val name = p.username ?: "—"
                         val dayCap = p.dailySoftCap
@@ -2141,6 +2224,12 @@ fun RpgAdminSheet(vm: AppViewModel) {
                                     append("${p.xp} XP · ${p.checkins} check-ins · ${p.badgeCount} badges")
                                     if (p.isInvite) append(" · invité")
                                     if (p.beerMaster) append(" · Master")
+                                    if (p.allowed) append(" · RPG OK") else append(" · RPG bloqué")
+                                    when (p.allowedOverride) {
+                                        true -> append(" (forcé ON)")
+                                        false -> append(" (forcé OFF)")
+                                        null -> {}
+                                    }
                                 },
                                 color = BeerColors.muted,
                                 fontSize = 12.sp
@@ -2158,6 +2247,56 @@ fun RpgAdminSheet(vm: AppViewModel) {
                                     fontSize = 11.sp,
                                     fontWeight = if (p.dailySoftCapped) FontWeight.Bold else FontWeight.Normal
                                 )
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf<Pair<String, Boolean?>>(
+                                    "ON" to true,
+                                    "OFF" to false,
+                                    "Auto" to null,
+                                ).forEach { (lab, value) ->
+                                    val active = when (value) {
+                                        true -> p.allowedOverride == true
+                                        false -> p.allowedOverride == false
+                                        null -> p.allowedOverride == null
+                                    }
+                                    Text(
+                                        lab,
+                                        color = if (active) Color.Black else BeerColors.text,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(
+                                                when {
+                                                    active && value == true -> Gold
+                                                    active && value == false -> Color(0xFFE57373)
+                                                    active -> BeerColors.accent
+                                                    else -> BeerColors.card.copy(alpha = 0.9f)
+                                                }
+                                            )
+                                            .border(1.dp, BeerColors.border, RoundedCornerShape(8.dp))
+                                            .clickable(enabled = !busy) {
+                                                scope.launch {
+                                                    busy = true
+                                                    val ok = withContext(Dispatchers.IO) {
+                                                        vm.api.adminRpgSetUserAllowed(name, value)
+                                                    }
+                                                    if (ok) {
+                                                        vm.showToast(
+                                                            "$name · RPG ${lab}",
+                                                            ToastPayload.Variant.SUCCESS
+                                                        )
+                                                        reload()
+                                                    } else {
+                                                        vm.showToast("Échec accès user", ToastPayload.Variant.ERROR)
+                                                    }
+                                                    busy = false
+                                                }
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    )
+                                }
                             }
                         }
                     }
