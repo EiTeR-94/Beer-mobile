@@ -2120,73 +2120,68 @@ fun RpgAdminSheet(vm: AppViewModel) {
             tab == 0 -> {
                 val scroll = rememberScrollState()
                 Column(Modifier.verticalScroll(scroll).weight(1f, fill = true)) {
-                    // Toggles globaux (runtime, admin only via API)
+                    // Accès compact : une ligne de chips (parité IPA)
                     val f = rpgFlags
-                    Column(
+                    fun patchFlag(key: String, value: Boolean) {
+                        scope.launch {
+                            busy = true
+                            val next = withContext(Dispatchers.IO) {
+                                vm.api.adminRpgPatchSettings(mapOf(key to value))
+                            }
+                            if (next != null) {
+                                rpgFlags = next
+                                vm.showToast("Réglages RPG enregistrés", ToastPayload.Variant.SUCCESS)
+                                reload()
+                            } else {
+                                vm.showToast("Échec réglages RPG", ToastPayload.Variant.ERROR)
+                            }
+                            busy = false
+                        }
+                    }
+                    Row(
                         Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 10.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .border(1.dp, Gold.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                            .padding(bottom = 8.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .border(1.dp, BeerColors.border, RoundedCornerShape(10.dp))
                             .background(BeerColors.card)
-                            .padding(12.dp)
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text("Accès Beerquest", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        Text("LAN/VPN · sans rebuild serveur", color = BeerColors.muted, fontSize = 11.sp)
-                        Spacer(Modifier.height(6.dp))
-                        fun patchFlag(key: String, value: Boolean) {
-                            scope.launch {
-                                busy = true
-                                val next = withContext(Dispatchers.IO) {
-                                    vm.api.adminRpgPatchSettings(mapOf(key to value))
-                                }
-                                if (next != null) {
-                                    rpgFlags = next
-                                    vm.showToast("Réglages RPG enregistrés", ToastPayload.Variant.SUCCESS)
-                                    reload()
-                                } else {
-                                    vm.showToast("Échec réglages RPG", ToastPayload.Variant.ERROR)
-                                }
-                                busy = false
-                            }
-                        }
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("RPG global", color = BeerColors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            Switch(
-                                checked = f?.enabled == true,
-                                onCheckedChange = { if (!busy) patchFlag("enabled", it) },
-                                enabled = !busy,
-                                colors = SwitchDefaults.colors(checkedTrackColor = Gold.copy(alpha = 0.7f))
-                            )
-                        }
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("UI joueur", color = BeerColors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            Switch(
-                                checked = f?.ui == true,
-                                onCheckedChange = { if (!busy) patchFlag("ui", it) },
-                                enabled = !busy && f?.enabled == true,
-                                colors = SwitchDefaults.colors(checkedTrackColor = Gold.copy(alpha = 0.7f))
-                            )
-                        }
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Invités RPG", color = BeerColors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            Switch(
-                                checked = f?.allowInvites == true,
-                                onCheckedChange = { if (!busy) patchFlag("allow_invites", it) },
-                                enabled = !busy && f?.enabled == true,
-                                colors = SwitchDefaults.colors(checkedTrackColor = Gold.copy(alpha = 0.7f))
+                        Text(
+                            "Accès",
+                            color = BeerColors.muted,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        listOf(
+                            Triple("RPG", f?.enabled == true, "enabled" to (f?.enabled != true)),
+                            Triple("UI", f?.ui == true, "ui" to (f?.ui != true)),
+                            Triple("Invités", f?.allowInvites == true, "allow_invites" to (f?.allowInvites != true)),
+                        ).forEachIndexed { idx, (lab, on, patch) ->
+                            val canToggle = !busy && (idx == 0 || f?.enabled == true)
+                            Text(
+                                lab,
+                                color = if (on) BeerColors.text else BeerColors.muted,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(
+                                        if (on) Gold.copy(alpha = 0.2f)
+                                        else BeerColors.card.copy(alpha = 0.9f)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (on) Gold.copy(alpha = 0.55f) else BeerColors.border,
+                                        RoundedCornerShape(50)
+                                    )
+                                    .alpha(if (canToggle) 1f else 0.4f)
+                                    .clickable(enabled = canToggle) {
+                                        patchFlag(patch.first, patch.second)
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
                             )
                         }
                     }
@@ -2248,56 +2243,7 @@ fun RpgAdminSheet(vm: AppViewModel) {
                                     fontWeight = if (p.dailySoftCapped) FontWeight.Bold else FontWeight.Normal
                                 )
                             }
-                            Spacer(Modifier.height(6.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                listOf<Pair<String, Boolean?>>(
-                                    "ON" to true,
-                                    "OFF" to false,
-                                    "Auto" to null,
-                                ).forEach { (lab, value) ->
-                                    val active = when (value) {
-                                        true -> p.allowedOverride == true
-                                        false -> p.allowedOverride == false
-                                        null -> p.allowedOverride == null
-                                    }
-                                    Text(
-                                        lab,
-                                        color = if (active) Color.Black else BeerColors.text,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(
-                                                when {
-                                                    active && value == true -> Gold
-                                                    active && value == false -> Color(0xFFE57373)
-                                                    active -> BeerColors.accent
-                                                    else -> BeerColors.card.copy(alpha = 0.9f)
-                                                }
-                                            )
-                                            .border(1.dp, BeerColors.border, RoundedCornerShape(8.dp))
-                                            .clickable(enabled = !busy) {
-                                                scope.launch {
-                                                    busy = true
-                                                    val ok = withContext(Dispatchers.IO) {
-                                                        vm.api.adminRpgSetUserAllowed(name, value)
-                                                    }
-                                                    if (ok) {
-                                                        vm.showToast(
-                                                            "$name · RPG ${lab}",
-                                                            ToastPayload.Variant.SUCCESS
-                                                        )
-                                                        reload()
-                                                    } else {
-                                                        vm.showToast("Échec accès user", ToastPayload.Variant.ERROR)
-                                                    }
-                                                    busy = false
-                                                }
-                                            }
-                                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                                    )
-                                }
-                            }
+                            // ON/OFF/Auto : dans le détail joueur (tap carte), pas sur chaque ligne
                         }
                     }
                 }
@@ -2483,6 +2429,56 @@ fun RpgAdminSheet(vm: AppViewModel) {
             text = {
                 Column {
                     Text("Nv ${p.level} · ${p.xp} XP · ${p.badgeCount} badges", color = BeerColors.muted, fontSize = 13.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Accès RPG", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf<Pair<String, Boolean?>>(
+                            "ON" to true,
+                            "OFF" to false,
+                            "Auto" to null,
+                        ).forEach { (lab, value) ->
+                            val active = when (value) {
+                                true -> p.allowedOverride == true
+                                false -> p.allowedOverride == false
+                                null -> p.allowedOverride == null
+                            }
+                            Text(
+                                lab,
+                                color = if (active) Color.Black else BeerColors.text,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        when {
+                                            active && value == true -> Color(0xFF81C784)
+                                            active && value == false -> Color(0xFFE57373)
+                                            active -> Gold
+                                            else -> BeerColors.card
+                                        }
+                                    )
+                                    .border(1.dp, BeerColors.border, RoundedCornerShape(8.dp))
+                                    .clickable(enabled = !busy) {
+                                        scope.launch {
+                                            busy = true
+                                            val ok = withContext(Dispatchers.IO) {
+                                                vm.api.adminRpgSetUserAllowed(name, value)
+                                            }
+                                            if (ok) {
+                                                vm.showToast("$name · RPG $lab", ToastPayload.Variant.SUCCESS)
+                                                selected = null
+                                                reload()
+                                            } else {
+                                                vm.showToast("Échec accès", ToastPayload.Variant.ERROR)
+                                            }
+                                            busy = false
+                                        }
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(10.dp))
                     Text("Niveau (parité iOS)", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     OutlinedTextField(

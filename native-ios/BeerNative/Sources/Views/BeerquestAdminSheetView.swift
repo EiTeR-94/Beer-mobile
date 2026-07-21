@@ -195,48 +195,87 @@ struct BeerquestAdminSheetView: View {
         .padding(.bottom, 8)
     }
 
+    /// Bandeau compact : 3 chips sur une ligne (admin dense, pas de toggles iOS plein largeur).
     private var settingsBar: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Accès Beerquest")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(Theme.text)
-            Text("LAN/VPN · sans rebuild serveur")
-                .font(.system(size: 11))
+        let rpgOn = rpgFlags?.enabled == true
+        let uiOn = rpgFlags?.ui == true
+        let invOn = rpgFlags?.allowInvites == true
+        return HStack(spacing: 6) {
+            Text("Accès")
+                .font(.system(size: 10, weight: .heavy))
                 .foregroundStyle(Theme.muted)
-
-            Toggle(isOn: Binding(
-                get: { rpgFlags?.enabled == true },
-                set: { newVal in Task { await patchSetting("enabled", value: newVal) } }
-            )) {
-                Text("RPG global").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text)
+                .tracking(0.6)
+            flagChip(
+                "RPG",
+                on: rpgOn,
+                enabled: !settingsBusy,
+                hint: rpgOn ? "Moteur ON" : "Moteur OFF"
+            ) {
+                Task { await patchSetting("enabled", value: !rpgOn) }
             }
-            .tint(Theme.accent)
-            .disabled(settingsBusy)
-
-            Toggle(isOn: Binding(
-                get: { rpgFlags?.ui == true },
-                set: { newVal in Task { await patchSetting("ui", value: newVal) } }
-            )) {
-                Text("UI joueur").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text)
+            flagChip(
+                "UI",
+                on: uiOn,
+                enabled: !settingsBusy && rpgOn,
+                hint: "Grimoire joueur"
+            ) {
+                Task { await patchSetting("ui", value: !uiOn) }
             }
-            .tint(Theme.accent)
-            .disabled(settingsBusy || rpgFlags?.enabled != true)
-
-            Toggle(isOn: Binding(
-                get: { rpgFlags?.allowInvites == true },
-                set: { newVal in Task { await patchSetting("allow_invites", value: newVal) } }
-            )) {
-                Text("Invités RPG").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text)
+            flagChip(
+                "Invités",
+                on: invOn,
+                enabled: !settingsBusy && rpgOn,
+                hint: "Comptes invite_*"
+            ) {
+                Task { await patchSetting("allow_invites", value: !invOn) }
             }
-            .tint(Theme.accent)
-            .disabled(settingsBusy || rpgFlags?.enabled != true)
+            Spacer(minLength: 0)
+            if settingsBusy {
+                ProgressView()
+                    .scaleEffect(0.7)
+                    .tint(Theme.muted)
+            }
         }
-        .padding(12)
-        .background(Theme.card)
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.accent.opacity(0.35)))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Theme.card.opacity(0.92))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
         .padding(.horizontal, 14)
-        .padding(.bottom, 8)
+        .padding(.bottom, 6)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Accès Beerquest")
+    }
+
+    private func flagChip(
+        _ label: String,
+        on: Bool,
+        enabled: Bool,
+        hint: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(on ? Color.green : Theme.muted.opacity(0.45))
+                    .frame(width: 6, height: 6)
+                Text(label)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(on ? Theme.text : Theme.muted)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(on ? Theme.accent.opacity(0.18) : Theme.fieldBg)
+            .overlay(
+                Capsule().stroke(on ? Theme.accent.opacity(0.55) : Theme.border, lineWidth: 1)
+            )
+            .clipShape(Capsule())
+            .opacity(enabled ? 1 : 0.4)
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .accessibilityLabel("\(label): \(on ? "activé" : "désactivé"). \(hint)")
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 
     private var searchBar: some View {
@@ -596,10 +635,16 @@ struct BeerquestAdminSheetView: View {
             HStack(spacing: 4) {
                 if p.isInvite == true { adminPill("invité", .invite) }
                 if p.orphan == true { adminPill("orphelin", .off) }
-                if p.allowed == true { adminPill("RPG OK", .on) }
-                if p.allowed == false { adminPill("RPG bloqué", .off) }
-                if p.allowedOverride == true { adminPill("forcé ON", .on) }
-                if p.allowedOverride == false { adminPill("forcé OFF", .off) }
+                // Statut accès compact (détail = ON/OFF/Auto)
+                if p.allowedOverride == true {
+                    adminPill("RPG forcé", .on)
+                } else if p.allowedOverride == false {
+                    adminPill("RPG bloqué", .off)
+                } else if p.allowed == false {
+                    adminPill("RPG off", .off)
+                } else {
+                    adminPill("RPG", .on)
+                }
                 if p.hasProfile == false { adminPill("sans profil", .muted) }
                 if p.suspicionFlagged == true || (p.suspicionScore ?? 0) >= 12 {
                     adminPill("⚠ \(p.suspicionScore ?? 0)", .off)
@@ -613,25 +658,12 @@ struct BeerquestAdminSheetView: View {
             Text(metaLine(p))
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.muted)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(1)
             if let dayLine = daySoftCapLine(p) {
                 Text(dayLine)
                     .font(.system(size: 11, weight: p.dailySoftCapped == true ? .semibold : .regular))
                     .foregroundStyle(p.dailySoftCapped == true ? Color.yellow.opacity(0.9) : Theme.accent)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if let uname = p.username, !uname.isEmpty {
-                HStack(spacing: 6) {
-                    accessChip("ON", active: p.allowedOverride == true) {
-                        Task { await setUserAccess(uname, allowed: true) }
-                    }
-                    accessChip("OFF", active: p.allowedOverride == false) {
-                        Task { await setUserAccess(uname, allowed: false) }
-                    }
-                    accessChip("Auto", active: p.allowedOverride == nil) {
-                        Task { await setUserAccess(uname, allowed: nil) }
-                    }
-                }
+                    .lineLimit(1)
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -756,48 +788,6 @@ struct BeerquestAdminSheetView: View {
                 durationMs: 3200
             )
         }
-    }
-
-    private func setUserAccess(_ username: String, allowed: Bool?) async {
-        guard !settingsBusy else { return }
-        settingsBusy = true
-        defer { settingsBusy = false }
-        do {
-            try await app.api.adminRpgSetUserAllowed(username: username, allowed: allowed)
-            let lab: String
-            switch allowed {
-            case true?: lab = "RPG forcé ON"
-            case false?: lab = "RPG forcé OFF"
-            default: lab = "RPG = auto"
-            }
-            app.showToast("\(username) · \(lab)", variant: .success, durationMs: 2400)
-            await reload()
-        } catch {
-            app.showToast(
-                (error as? LocalizedError)?.errorDescription ?? "Échec accès user",
-                variant: .error,
-                durationMs: 3200
-            )
-        }
-    }
-
-    private func accessChip(_ label: String, active: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(active ? Color(red: 0.07, green: 0.07, blue: 0.07) : Theme.text)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    active
-                        ? (label == "OFF" ? Theme.error.opacity(0.85) : Theme.accent)
-                        : Theme.fieldBg
-                )
-                .overlay(Capsule().stroke(Theme.border))
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .disabled(settingsBusy)
     }
 
     private func loadFeedback() async {
@@ -1108,12 +1098,20 @@ private struct RpgAdminPlayerDetailView: View {
                         } else {
                             chip("bloqué", Theme.error)
                         }
+                        if p?.allowedOverride == true {
+                            chip("forcé ON", Theme.accent)
+                        } else if p?.allowedOverride == false {
+                            chip("forcé OFF", Theme.error)
+                        }
                         if let cls = p?.classInfo?.name ?? p?.classKey, !cls.isEmpty {
                             chip(cls, Theme.muted)
                         }
                     }
                 }
             }
+
+            // Accès RPG compact (détail joueur)
+            accessControlRow(p)
 
             // Stats RPG
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
@@ -1154,6 +1152,82 @@ private struct RpgAdminPlayerDetailView: View {
             .background(c.opacity(0.12))
             .overlay(Capsule().stroke(c.opacity(0.35)))
             .clipShape(Capsule())
+    }
+
+    private func accessControlRow(_ p: RpgAdminPlayer?) -> some View {
+        let ov = p?.allowedOverride
+        return HStack(spacing: 6) {
+            Text("Accès")
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(Theme.muted)
+            accessSeg("ON", active: ov == true, tone: .on) {
+                Task { await setUserAccess(true) }
+            }
+            accessSeg("OFF", active: ov == false, tone: .off) {
+                Task { await setUserAccess(false) }
+            }
+            accessSeg("Auto", active: ov == nil, tone: .auto) {
+                Task { await setUserAccess(nil) }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Theme.fieldBg.opacity(0.55))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border.opacity(0.7)))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    private enum AccessTone { case on, off, auto }
+
+    private func accessSeg(_ label: String, active: Bool, tone: AccessTone, action: @escaping () -> Void) -> some View {
+        let bg: Color = {
+            guard active else { return Theme.card }
+            switch tone {
+            case .on: return Color.green.opacity(0.85)
+            case .off: return Theme.error.opacity(0.85)
+            case .auto: return Theme.accent
+            }
+        }()
+        let fg: Color = active ? Color(red: 0.07, green: 0.07, blue: 0.07) : Theme.muted
+        return Button(action: action) {
+            Text(label)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(fg)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(bg)
+                .overlay(Capsule().stroke(Theme.border.opacity(active ? 0 : 1)))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+    }
+
+    private func setUserAccess(_ allowed: Bool?) async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            try await app.api.adminRpgSetUserAllowed(username: username, allowed: allowed)
+            let lab: String
+            switch allowed {
+            case true?: lab = "RPG forcé ON"
+            case false?: lab = "RPG forcé OFF"
+            default: lab = "RPG = auto"
+            }
+            app.showToast("\(username) · \(lab)", variant: .success, durationMs: 2200)
+            // recharger le détail
+            if let d = try? await app.api.adminRpgPlayer(username) {
+                applyDetail(d)
+            }
+        } catch {
+            app.showToast(
+                (error as? LocalizedError)?.errorDescription ?? "Échec accès user",
+                variant: .error,
+                durationMs: 3200
+            )
+        }
     }
 
     private func statBox(_ ico: String, _ v: String, _ l: String) -> some View {
