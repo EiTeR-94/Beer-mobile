@@ -18,12 +18,12 @@
       "category": "lifestyle",
       "versions": [
         {
-          "version": "4.4.20",
-          "buildVersion": "221",
+          "version": "4.4.21",
+          "buildVersion": "222",
           "date": "2026-07-21T10:26:08Z",
-          "localizedDescription": "Beer Quest iOS 4.4.20 (build 221)",
-          "downloadURL": "https://github.com/EiTeR-94/Beer-mobile/releases/download/ios-build-221/BeerOff.ipa",
-          "size": 2821971,
+          "localizedDescription": "Beer Quest 4.4.21 (222) — test SideStore",
+          "downloadURL": "https://raw.githubusercontent.com/EiTeR-94/Beer-mobile/main/sidestore/eb96c143657bffaa0525017bf1046b52bdb356c4e8b5c3da/BeerOff.ipa",
+          "size": 2823422,
           "minOSVersion": "16.0"
         }
       ],
