@@ -440,13 +440,26 @@ fun BeerPreviewCard(product: BeerProduct) {
         Text(product.beerName, color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(Modifier.height(4.dp))
         Text(
-            listOfNotNull(product.brewery.takeIf { it.isNotBlank() }, product.displayStyle)
-                .joinToString(" · "),
+            listOfNotNull(
+                product.brewery.takeIf { it.isNotBlank() && it != "—" },
+                product.displayStyle.takeIf { it.isNotBlank() },
+                product.abv?.let { String.format("%.1f%%", it) },
+            ).joinToString(" · "),
             color = BeerColors.muted,
             fontSize = 13.sp
         )
         if (product.barcode.isNotBlank()) {
             Text("EAN ${product.barcode}", color = BeerColors.muted, fontSize = 12.sp)
+        }
+        // Parité web + iOS : résumé Untappd (description FR + note) sous la méta
+        if (product.summary.isNotBlank()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                product.summary,
+                color = BeerColors.text,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+            )
         }
     }
 }

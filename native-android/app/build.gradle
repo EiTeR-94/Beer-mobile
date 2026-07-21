@@ -26,8 +26,8 @@ android {
         minSdk 26
         targetSdk 34
         // First APK signed with plexi-beer release keystore (dist). Guests reinstall once.
-        versionCode 234
-        versionName "4.4.25"
+        versionCode 237
+        versionName "4.4.28"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
