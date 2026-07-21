@@ -2,7 +2,7 @@
   "name": "Plexi privé",
   "identifier": "fr.eiter.plexi.sidestore",
   "subtitle": "Source privée Beer Quest (Plexi)",
-  "description": "Source privée SideStore pour Beer Quest / Beer Log (Plexi). JSON + IPA hébergés sur GitHub (TLS fiable pour SideStore). Màj auto après release ios-build-*.",
+  "description": "Source FIXE Plexi. Une seule URL. Version test 4.4.21 (222).",
   "iconURL": "https://cdn.jsdelivr.net/gh/EiTeR-94/Beer-mobile@main/assets/icon-180.png",
   "website": "https://github.com/EiTeR-94/Beer-mobile",
   "tintColor": "#F59E0B",
@@ -12,7 +12,7 @@
       "bundleIdentifier": "fr.eiter.plexibeer",
       "developerName": "eiter / Plexi",
       "subtitle": "Carnet de bières & dégustations (Plexi)",
-      "localizedDescription": "Beer Quest (Beer Log) — app iOS native pour le serveur Plexi. Version catalogue : 4.4.21 (222).",
+      "localizedDescription": "Beer Quest 4.4.21 (222)",
       "iconURL": "https://cdn.jsdelivr.net/gh/EiTeR-94/Beer-mobile@main/assets/icon-180.png",
       "tintColor": "#F59E0B",
       "category": "lifestyle",
@@ -20,8 +20,8 @@
         {
           "version": "4.4.21",
           "buildVersion": "222",
-          "date": "2026-07-21T10:27:53Z",
-          "localizedDescription": "Beer Quest 4.4.21 (222) test",
+          "date": "2026-07-21T10:29:35Z",
+          "localizedDescription": "TEST SideStore 4.4.21 build 222 — source FIXE",
           "downloadURL": "https://cdn.jsdelivr.net/gh/EiTeR-94/Beer-mobile@main/sidestore/eb96c143657bffaa0525017bf1046b52bdb356c4e8b5c3da/BeerOff.ipa",
           "size": 2823422,
           "minOSVersion": "16.0"
