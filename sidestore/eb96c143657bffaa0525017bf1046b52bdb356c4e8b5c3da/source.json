@@ -1,0 +1,44 @@
+{
+  "name": "Plexi privé",
+  "identifier": "fr.eiter.plexi.sidestore",
+  "subtitle": "Source privée Beer Quest (Plexi)",
+  "description": "Source privée SideStore pour Beer Quest / Beer Log (Plexi). JSON + IPA hébergés sur GitHub (TLS fiable pour SideStore). Màj auto après release ios-build-*.",
+  "iconURL": "https://raw.githubusercontent.com/EiTeR-94/Beer-mobile/main/assets/icon-180.png",
+  "website": "https://github.com/EiTeR-94/Beer-mobile",
+  "tintColor": "#F59E0B",
+  "apps": [
+    {
+      "name": "Beer Quest",
+      "bundleIdentifier": "fr.eiter.plexibeer",
+      "developerName": "eiter / Plexi",
+      "subtitle": "Carnet de bières & dégustations (Plexi)",
+      "localizedDescription": "Beer Quest (Beer Log) — app iOS native pour le serveur Plexi. Version catalogue : 4.4.20 (221).",
+      "iconURL": "https://raw.githubusercontent.com/EiTeR-94/Beer-mobile/main/assets/icon-180.png",
+      "tintColor": "#F59E0B",
+      "category": "lifestyle",
+      "versions": [
+        {
+          "version": "4.4.20",
+          "buildVersion": "221",
+          "date": "2026-07-21T10:11:25Z",
+          "localizedDescription": "Beer Quest iOS 4.4.20 (build 221)",
+          "downloadURL": "https://github.com/EiTeR-94/Beer-mobile/releases/download/ios-build-221/BeerOff.ipa",
+          "size": 2821971,
+          "minOSVersion": "16.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [
+          "com.apple.developer.associated-domains"
+        ],
+        "privacy": {
+          "NSCameraUsageDescription": "Scanner les codes-barres et prendre des photos de tes dégustations.",
+          "NSFaceIDUsageDescription": "Sécurise les actions sensibles (suppressions, etc.) avec Face ID.",
+          "NSLocalNetworkUsageDescription": "Connexion au serveur Beer Quest Plexi (eiter.freeboxos.fr).",
+          "NSPhotoLibraryUsageDescription": "Joindre une photo à ta dégustation Beer Quest."
+        }
+      }
+    }
+  ],
+  "news": []
+}
