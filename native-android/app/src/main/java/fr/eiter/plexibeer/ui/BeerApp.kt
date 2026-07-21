@@ -679,9 +679,8 @@ private fun AccountMenuOverlay(
             if (vm.isAdmin) {
                 AccountSection("Admin")
                 AccountMenuItem("⚙️ Administration") { onOpen(BeerSheet.ADMIN) }
-                if (vm.rpgActive) {
-                    AccountMenuItem("⚔ Beerquest") { onOpen(BeerSheet.RPG_ADMIN) }
-                }
+                // Toujours visible admin : même si Beerquest est coupé (pour le rallumer)
+                AccountMenuItem("⚔ Beerquest") { onOpen(BeerSheet.RPG_ADMIN) }
                 AccountMenuItem("📝 Patch notes") { onOpen(BeerSheet.PATCHNOTES) }
             }
 

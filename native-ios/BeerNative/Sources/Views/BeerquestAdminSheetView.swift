@@ -13,8 +13,8 @@ struct BeerquestAdminSheetView: View {
     @State private var filter = ""
     @State private var flagsLine = "Registre des aventuriers"
 
-    /// Parité webapp : Joueurs / Feedback
-    @State private var adminTab: BqAdminTab = .players
+    /// Joueurs / Contrôle (kill-switch) / Feedback
+    @State private var adminTab: BqAdminTab = .control
     @State private var feedbackItems: [AdminFeedbackItem] = []
     @State private var feedbackStats: AdminFeedbackStats?
     @State private var feedbackLoading = false
@@ -24,13 +24,15 @@ struct BeerquestAdminSheetView: View {
     @State private var feedbackToDelete: AdminFeedbackItem?
     @State private var feedbackBusyId: Int?
     @State private var resolveTarget: FeedbackResolveTarget?
+    @State private var didPickInitialTab = false
 
     private enum BqAdminTab: String, CaseIterable, Identifiable {
-        case players, feedback
+        case players, control, feedback
         var id: String { rawValue }
         var label: String {
             switch self {
             case .players: return "Joueurs"
+            case .control: return "Contrôle"
             case .feedback: return "Feedback"
             }
         }
@@ -61,11 +63,13 @@ struct BeerquestAdminSheetView: View {
                 VStack(spacing: 0) {
                     header
                     tabBar
-                    if adminTab == .players {
-                        settingsBar
+                    switch adminTab {
+                    case .players:
                         searchBar
                         listBody
-                    } else {
+                    case .control:
+                        controlBody
+                    case .feedback:
                         feedbackToolbar
                         feedbackBody
                     }
@@ -195,87 +199,101 @@ struct BeerquestAdminSheetView: View {
         .padding(.bottom, 8)
     }
 
-    /// Bandeau compact : 3 chips sur une ligne (admin dense, pas de toggles iOS plein largeur).
-    private var settingsBar: some View {
-        let rpgOn = rpgFlags?.enabled == true
-        let uiOn = rpgFlags?.ui == true
-        let invOn = rpgFlags?.allowInvites == true
-        return HStack(spacing: 6) {
-            Text("Accès")
-                .font(.system(size: 10, weight: .heavy))
-                .foregroundStyle(Theme.muted)
-                .tracking(0.6)
-            flagChip(
-                "RPG",
-                on: rpgOn,
-                enabled: !settingsBusy,
-                hint: rpgOn ? "Moteur ON" : "Moteur OFF"
-            ) {
-                Task { await patchSetting("enabled", value: !rpgOn) }
+    /// Onglet kill-switch : libellés clairs, pas de jargon RPG/UI.
+    private var controlBody: some View {
+        let gameOn = rpgFlags?.enabled == true
+        let invitesOn = rpgFlags?.allowInvites == true
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Interrupteurs serveur")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                Text("Sans rebuild. Réservé admin · Wi‑Fi / VPN maison.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.muted)
+
+                controlSwitchCard(
+                    title: "Beerquest (tout le monde)",
+                    subtitle: gameOn
+                        ? "Le jeu est actif : XP, quêtes, grimoire pour les joueurs autorisés."
+                        : "Le jeu est coupé : plus d’XP ni de grimoire. Le carnet de bières reste.",
+                    isOn: gameOn,
+                    onColor: gameOn ? Color.green : Theme.error,
+                    enabled: !settingsBusy
+                ) { newVal in
+                    Task { await patchSetting("enabled", value: newVal) }
+                }
+
+                controlSwitchCard(
+                    title: "Inclure les invités",
+                    subtitle: invitesOn
+                        ? "Les comptes invite_* peuvent aussi jouer à Beerquest."
+                        : "Les invités n’ont que le carnet (pas de jeu).",
+                    isOn: invitesOn,
+                    onColor: Theme.accent,
+                    enabled: !settingsBusy && gameOn
+                ) { newVal in
+                    Task { await patchSetting("allow_invites", value: newVal) }
+                }
+
+                if !gameOn {
+                    Text("Beerquest est OFF — ouvre cet onglet pour le rallumer. Le menu ⚔ reste toujours dispo pour l’admin.")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.yellow.opacity(0.9))
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.yellow.opacity(0.1))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.yellow.opacity(0.35)))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+
+                Text("Par joueur : onglet Joueurs → fiche → ON / OFF / Auto.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.muted)
+                    .padding(.top, 4)
             }
-            flagChip(
-                "UI",
-                on: uiOn,
-                enabled: !settingsBusy && rpgOn,
-                hint: "Grimoire joueur"
-            ) {
-                Task { await patchSetting("ui", value: !uiOn) }
-            }
-            flagChip(
-                "Invités",
-                on: invOn,
-                enabled: !settingsBusy && rpgOn,
-                hint: "Comptes invite_*"
-            ) {
-                Task { await patchSetting("allow_invites", value: !invOn) }
-            }
-            Spacer(minLength: 0)
-            if settingsBusy {
-                ProgressView()
-                    .scaleEffect(0.7)
-                    .tint(Theme.muted)
-            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 28)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Theme.card.opacity(0.92))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .padding(.horizontal, 14)
-        .padding(.bottom, 6)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Accès Beerquest")
     }
 
-    private func flagChip(
-        _ label: String,
-        on: Bool,
+    private func controlSwitchCard(
+        title: String,
+        subtitle: String,
+        isOn: Bool,
+        onColor: Color,
         enabled: Bool,
-        hint: String,
-        action: @escaping () -> Void
+        onChange: @escaping (Bool) -> Void
     ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(on ? Color.green : Theme.muted.opacity(0.45))
-                    .frame(width: 6, height: 6)
-                Text(label)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(on ? Theme.text : Theme.muted)
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(isOn ? onColor : Theme.muted.opacity(0.5))
+                        .frame(width: 8, height: 8)
+                    Text(title)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                }
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(on ? Theme.accent.opacity(0.18) : Theme.fieldBg)
-            .overlay(
-                Capsule().stroke(on ? Theme.accent.opacity(0.55) : Theme.border, lineWidth: 1)
-            )
-            .clipShape(Capsule())
-            .opacity(enabled ? 1 : 0.4)
+            Spacer(minLength: 8)
+            Toggle("", isOn: Binding(
+                get: { isOn },
+                set: { onChange($0) }
+            ))
+            .labelsHidden()
+            .tint(onColor)
+            .disabled(!enabled)
         }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .accessibilityLabel("\(label): \(on ? "activé" : "désactivé"). \(hint)")
-        .accessibilityAddTraits(on ? .isSelected : [])
+        .padding(12)
+        .background(Theme.card)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(isOn ? onColor.opacity(0.4) : Theme.border))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .opacity(enabled ? 1 : 0.55)
     }
 
     private var searchBar: some View {
@@ -761,11 +779,17 @@ struct BeerquestAdminSheetView: View {
                 feedbackStats = stats
             }
             let unread = feedbackStats?.unread ?? 0
-            let rpgLab = (rpgFlags?.enabled == true) ? "RPG on" : "RPG off"
+            let gameOn = rpgFlags?.enabled == true
+            let lab = gameOn ? "Beerquest ON" : "Beerquest OFF"
             if unread > 0 {
-                flagsLine = "\(rpgLab) · \(players.count) aventurier(s) · \(unread) feedback non lu(s)"
+                flagsLine = "\(lab) · \(players.count) joueur(s) · \(unread) feedback"
             } else {
-                flagsLine = "\(rpgLab) · \(players.count) aventurier(s)"
+                flagsLine = "\(lab) · \(players.count) joueur(s)"
+            }
+            // Si le jeu est coupé, atterrir sur Contrôle (première ouverture)
+            if !didPickInitialTab {
+                didPickInitialTab = true
+                adminTab = gameOn ? .players : .control
             }
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription ?? "Erreur chargement"
@@ -778,12 +802,27 @@ struct BeerquestAdminSheetView: View {
         settingsBusy = true
         defer { settingsBusy = false }
         do {
-            rpgFlags = try await app.api.adminRpgPatchSettings([key: value])
-            app.showToast("Réglages RPG enregistrés", variant: .success, durationMs: 2400)
+            // Allumer Beerquest = moteur + UI joueur (évite le piège « ON mais invisible »)
+            var payload: [String: Any] = [key: value]
+            if key == "enabled", value == true {
+                payload["ui"] = true
+            }
+            rpgFlags = try await app.api.adminRpgPatchSettings(payload)
+            let msg: String
+            if key == "enabled" {
+                msg = value ? "Beerquest allumé" : "Beerquest coupé"
+            } else if key == "allow_invites" {
+                msg = value ? "Invités inclus" : "Invités exclus"
+            } else {
+                msg = "Réglage enregistré"
+            }
+            app.showToast(msg, variant: .success, durationMs: 2400)
+            // Rafraîchir le profil joueur local (HUD) si on allume/éteint
+            Task { await app.refreshRpg() }
             await reload()
         } catch {
             app.showToast(
-                (error as? LocalizedError)?.errorDescription ?? "Échec réglages RPG",
+                (error as? LocalizedError)?.errorDescription ?? "Échec réglages",
                 variant: .error,
                 durationMs: 3200
             )

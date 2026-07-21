@@ -2006,7 +2006,8 @@ fun RpgBadgeDetailDialog(badge: RpgBadge, onDismiss: () -> Unit) {
 
 @Composable
 fun RpgAdminSheet(vm: AppViewModel) {
-    var tab by remember { mutableIntStateOf(0) } // 0 joueurs, 1 feedback
+    // 0 Joueurs · 1 Contrôle · 2 Feedback
+    var tab by remember { mutableIntStateOf(1) }
     var players by remember { mutableStateOf<List<RpgAdminPlayer>>(emptyList()) }
     var rpgFlags by remember { mutableStateOf<RpgAdminFlags?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -2016,6 +2017,7 @@ fun RpgAdminSheet(vm: AppViewModel) {
     var levelText by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     var reloadToken by remember { mutableIntStateOf(0) }
+    var didPickInitialTab by remember { mutableStateOf(false) }
 
     // Feedback admin
     var fbItems by remember { mutableStateOf<List<AdminFeedbackItem>>(emptyList()) }
@@ -2030,6 +2032,33 @@ fun RpgAdminSheet(vm: AppViewModel) {
 
     fun reload() { reloadToken++ }
 
+    fun patchFlag(key: String, value: Boolean) {
+        scope.launch {
+            busy = true
+            val payload = mutableMapOf<String, Any?>(key to value)
+            // Allumer Beerquest = moteur + UI (évite ON invisible)
+            if (key == "enabled" && value) payload["ui"] = true
+            val next = withContext(Dispatchers.IO) {
+                vm.api.adminRpgPatchSettings(payload)
+            }
+            if (next != null) {
+                rpgFlags = next
+                val msg = when {
+                    key == "enabled" && value -> "Beerquest allumé"
+                    key == "enabled" -> "Beerquest coupé"
+                    key == "allow_invites" && value -> "Invités inclus"
+                    key == "allow_invites" -> "Invités exclus"
+                    else -> "Réglage enregistré"
+                }
+                vm.showToast(msg, ToastPayload.Variant.SUCCESS)
+                reload()
+            } else {
+                vm.showToast("Échec réglages", ToastPayload.Variant.ERROR)
+            }
+            busy = false
+        }
+    }
+
     LaunchedEffect(reloadToken) {
         loading = true
         error = null
@@ -2038,12 +2067,16 @@ fun RpgAdminSheet(vm: AppViewModel) {
         }
         players = bundle.players
         rpgFlags = bundle.flags
-        if (players.isEmpty()) error = "Aucun joueur ou accès refusé."
+        if (players.isEmpty() && bundle.flags == null) error = "Aucun joueur ou accès refusé."
+        if (!didPickInitialTab) {
+            didPickInitialTab = true
+            tab = if (bundle.flags?.enabled == true) 0 else 1
+        }
         loading = false
     }
 
     LaunchedEffect(tab, fbUnreadOnly, fbStatus, reloadToken) {
-        if (tab != 1) return@LaunchedEffect
+        if (tab != 2) return@LaunchedEffect
         fbLoading = true
         try {
             val res = withContext(Dispatchers.IO) {
@@ -2074,12 +2107,12 @@ fun RpgAdminSheet(vm: AppViewModel) {
                 val unread = fbStats?.unread ?: 0
                 val f = rpgFlags
                 val status = when {
-                    f == null -> "${players.size} aventurier(s)"
-                    f.enabled -> "RPG on · ${players.size} joueur(s)"
-                    else -> "RPG off · ${players.size} joueur(s)"
+                    f == null -> "${players.size} joueur(s)"
+                    f.enabled -> "Beerquest ON · ${players.size} joueur(s)"
+                    else -> "Beerquest OFF · ${players.size} joueur(s)"
                 }
                 Text(
-                    if (unread > 0) "$status · $unread feedback non lu(s)" else status,
+                    if (unread > 0) "$status · $unread feedback" else status,
                     color = BeerColors.muted,
                     fontSize = 12.sp
                 )
@@ -2090,9 +2123,9 @@ fun RpgAdminSheet(vm: AppViewModel) {
         Spacer(Modifier.height(8.dp))
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("Joueurs", "Feedback").forEachIndexed { i, lab ->
+            listOf("Joueurs", "Contrôle", "Feedback").forEachIndexed { i, lab ->
                 val active = tab == i
-                val badge = if (i == 1 && (fbStats?.unread ?: 0) > 0) " ${(fbStats?.unread)}" else ""
+                val badge = if (i == 2 && (fbStats?.unread ?: 0) > 0) " ${(fbStats?.unread)}" else ""
                 Box(
                     Modifier
                         .weight(1f)
@@ -2107,7 +2140,7 @@ fun RpgAdminSheet(vm: AppViewModel) {
                         lab + badge,
                         color = if (active) BeerColors.text else BeerColors.muted,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
+                        fontSize = 12.sp
                     )
                 }
             }
@@ -2120,72 +2153,6 @@ fun RpgAdminSheet(vm: AppViewModel) {
             tab == 0 -> {
                 val scroll = rememberScrollState()
                 Column(Modifier.verticalScroll(scroll).weight(1f, fill = true)) {
-                    // Accès compact : une ligne de chips (parité IPA)
-                    val f = rpgFlags
-                    fun patchFlag(key: String, value: Boolean) {
-                        scope.launch {
-                            busy = true
-                            val next = withContext(Dispatchers.IO) {
-                                vm.api.adminRpgPatchSettings(mapOf(key to value))
-                            }
-                            if (next != null) {
-                                rpgFlags = next
-                                vm.showToast("Réglages RPG enregistrés", ToastPayload.Variant.SUCCESS)
-                                reload()
-                            } else {
-                                vm.showToast("Échec réglages RPG", ToastPayload.Variant.ERROR)
-                            }
-                            busy = false
-                        }
-                    }
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 8.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .border(1.dp, BeerColors.border, RoundedCornerShape(10.dp))
-                            .background(BeerColors.card)
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            "Accès",
-                            color = BeerColors.muted,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        listOf(
-                            Triple("RPG", f?.enabled == true, "enabled" to (f?.enabled != true)),
-                            Triple("UI", f?.ui == true, "ui" to (f?.ui != true)),
-                            Triple("Invités", f?.allowInvites == true, "allow_invites" to (f?.allowInvites != true)),
-                        ).forEachIndexed { idx, (lab, on, patch) ->
-                            val canToggle = !busy && (idx == 0 || f?.enabled == true)
-                            Text(
-                                lab,
-                                color = if (on) BeerColors.text else BeerColors.muted,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(50))
-                                    .background(
-                                        if (on) Gold.copy(alpha = 0.2f)
-                                        else BeerColors.card.copy(alpha = 0.9f)
-                                    )
-                                    .border(
-                                        1.dp,
-                                        if (on) Gold.copy(alpha = 0.55f) else BeerColors.border,
-                                        RoundedCornerShape(50)
-                                    )
-                                    .alpha(if (canToggle) 1f else 0.4f)
-                                    .clickable(enabled = canToggle) {
-                                        patchFlag(patch.first, patch.second)
-                                    }
-                                    .padding(horizontal = 10.dp, vertical = 5.dp)
-                            )
-                        }
-                    }
-
                     players.forEach { p ->
                         val name = p.username ?: "—"
                         val dayCap = p.dailySoftCap
@@ -2243,12 +2210,126 @@ fun RpgAdminSheet(vm: AppViewModel) {
                                     fontWeight = if (p.dailySoftCapped) FontWeight.Bold else FontWeight.Normal
                                 )
                             }
-                            // ON/OFF/Auto : dans le détail joueur (tap carte), pas sur chaque ligne
+                            // ON/OFF/Auto : dans le détail joueur (tap carte)
                         }
                     }
                 }
             }
             tab == 1 -> {
+                // Kill-switches clairs
+                val f = rpgFlags
+                val gameOn = f?.enabled == true
+                val invOn = f?.allowInvites == true
+                val scroll = rememberScrollState()
+                Column(Modifier.verticalScroll(scroll).weight(1f, fill = true)) {
+                    Text("Interrupteurs serveur", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(
+                        "Sans rebuild · admin · Wi‑Fi / VPN maison",
+                        color = BeerColors.muted,
+                        fontSize = 12.sp
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    // Beerquest global
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(
+                                1.dp,
+                                if (gameOn) Color(0xFF81C784).copy(alpha = 0.5f) else Color(0xFFE57373).copy(alpha = 0.5f),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .background(BeerColors.card)
+                            .padding(12.dp)
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "Beerquest (tout le monde)",
+                                    color = BeerColors.text,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    if (gameOn)
+                                        "Le jeu est actif : XP, quêtes, grimoire pour les joueurs autorisés."
+                                    else
+                                        "Le jeu est coupé : plus d’XP ni de grimoire. Le carnet reste.",
+                                    color = BeerColors.muted,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Switch(
+                                checked = gameOn,
+                                onCheckedChange = { if (!busy) patchFlag("enabled", it) },
+                                enabled = !busy,
+                                colors = SwitchDefaults.colors(
+                                    checkedTrackColor = Color(0xFF81C784).copy(alpha = 0.7f)
+                                )
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(1.dp, BeerColors.border, RoundedCornerShape(12.dp))
+                            .background(BeerColors.card)
+                            .padding(12.dp)
+                            .alpha(if (gameOn) 1f else 0.55f)
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "Inclure les invités",
+                                    color = BeerColors.text,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    if (invOn)
+                                        "Les comptes invite_* peuvent aussi jouer."
+                                    else
+                                        "Les invités n’ont que le carnet (pas de jeu).",
+                                    color = BeerColors.muted,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Switch(
+                                checked = invOn,
+                                onCheckedChange = { if (!busy) patchFlag("allow_invites", it) },
+                                enabled = !busy && gameOn,
+                                colors = SwitchDefaults.colors(checkedTrackColor = Gold.copy(alpha = 0.7f))
+                            )
+                        }
+                    }
+                    if (!gameOn) {
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "Beerquest est OFF — cet onglet sert à le rallumer. Le menu ⚔ reste toujours visible pour l’admin.",
+                            color = Gold,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "Par joueur : onglet Joueurs → fiche → ON / OFF / Auto.",
+                        color = BeerColors.muted,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+            tab == 2 -> {
                 // Feedback toolbar
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = fbUnreadOnly, onCheckedChange = { fbUnreadOnly = it })

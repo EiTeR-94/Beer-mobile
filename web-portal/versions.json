@@ -1,15 +1,15 @@
 {
-  "ios": "4.4.29",
-  "ios_build": "224",
-  "ios_updated_at": "21-07-2026 16:39",
+  "ios": "4.4.31",
+  "ios_build": "225",
+  "ios_updated_at": "21-07-2026 16:50",
   "android": "4.4.31",
   "android_build": "240",
   "android_updated_at": "21-07-2026 16:46",
   "webapp": "1.2.55",
   "webapp_updated_at": "21-07-2026 16:45",
-  "manifest_generated_at": "21-07-2026 16:46",
-  "updated_at": "21-07-2026 16:46",
-  "updated_at_iso": "2026-07-21T14:46:14Z",
+  "manifest_generated_at": "21-07-2026 16:50",
+  "updated_at": "21-07-2026 16:50",
+  "updated_at_iso": "2026-07-21T14:50:03Z",
   "portal_url": "https://eiter.freeboxos.fr/mobile/beer/",
   "note": "L’IPA et l’APK ont des cycles de maj séparés. Compare la version de ta plateforme."
 }

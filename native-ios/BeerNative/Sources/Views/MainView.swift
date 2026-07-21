@@ -531,9 +531,8 @@ private struct AccountMenuOverlay: View {
             if isAdmin {
                 section("Admin")
                 item("⚙️ Administration") { onOpen(.admin) }
-                if rpgActive {
-                    item("⚔ Beerquest") { onOpen(.rpgAdmin) }
-                }
+                // Toujours visible admin : même si Beerquest est coupé (pour le rallumer)
+                item("⚔ Beerquest") { onOpen(.rpgAdmin) }
                 item("📝 Patch notes") { onOpen(.patchnotes) }
             }
 
