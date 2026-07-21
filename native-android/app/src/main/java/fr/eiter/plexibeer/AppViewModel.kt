@@ -88,6 +88,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var latestIosVersion by mutableStateOf<String?>(null)
         private set
 
+    /** versionName APK (ex. 4.4.24) — pas la webapp, pas le versionCode. */
     val appVersion: String
         get() = try {
             val p = getApplication<Application>().packageManager
@@ -103,6 +104,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (appVersion == "?" || latest.isBlank()) return false
             return beerVersionCompare(appVersion, latest) < 0
         }
+
+    /** Check MAJ en cours. */
+    var isRefreshing by mutableStateOf(false)
+        private set
 
     val currentFeedbackReply: AdminFeedbackItem?
         get() = pendingFeedbackReplies.getOrNull(feedbackReplyIndex)
@@ -209,13 +214,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** true si on peut tenter l'API (pas OFFLINE pur). */
     fun isEffectivelyOnline(): Boolean = networkStatus == NetworkStatus.ONLINE
 
-    suspend fun bootstrap() {
-        isLoading = true
+    /**
+     * @param silent si true : pas d’écran de chargement plein (refresh in-app).
+     */
+    suspend fun bootstrap(silent: Boolean = false) {
+        if (!silent) isLoading = true
         try {
             if (!isNetworkAvailable()) {
                 networkStatus = NetworkStatus.OFFLINE
                 restoreOfflineSessionIfNeeded()
-                if (isLoggedIn) {
+                if (isLoggedIn && !silent) {
                     showToast(
                         "Mode hors ligne",
                         ToastPayload.Variant.INFO,
@@ -231,7 +239,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (ep == null) {
                 networkStatus = NetworkStatus.SERVER_UNREACHABLE
                 restoreOfflineSessionIfNeeded()
-                if (isLoggedIn) {
+                if (isLoggedIn && !silent) {
                     showToast(
                         "Serveur injoignable",
                         ToastPayload.Variant.WARN,
@@ -308,7 +316,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
             restoreOfflineSessionIfNeeded()
         } finally {
-            isLoading = false
+            if (!silent) isLoading = false
         }
     }
 
@@ -533,6 +541,73 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Check MAJ : versions portail + sync léger, sans quitter l'app.
+     */
+    fun refreshApp(showToastOnDone: Boolean = true) {
+        if (isRefreshing) return
+        viewModelScope.launch {
+            isRefreshing = true
+            try {
+                bootstrap(silent = true)
+                if (isLoggedIn) {
+                    refreshMobileVersions()
+                    refreshRpg()
+                    checkFeedbackReplies()
+                    syncPending()
+                } else {
+                    refreshMobileVersions()
+                }
+                if (showToastOnDone) {
+                    when {
+                        needsAppUpdate -> showToast(
+                            "MAJ APK disponible",
+                            ToastPayload.Variant.WARN,
+                            detail = "v$appVersion → v${latestAndroidVersion ?: "?"}",
+                            durationMs = 4000
+                        )
+                        networkStatus != NetworkStatus.ONLINE -> showToast(
+                            "Check MAJ (hors ligne / serveur)",
+                            ToastPayload.Variant.INFO,
+                            durationMs = 2500
+                        )
+                        else -> showToast(
+                            "APK à jour",
+                            ToastPayload.Variant.SUCCESS,
+                            detail = "v$appVersion",
+                            durationMs = 2200
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                if (showToastOnDone) {
+                    showToast(
+                        "Check MAJ impossible",
+                        ToastPayload.Variant.ERROR,
+                        detail = e.message?.take(80),
+                        durationMs = 3500
+                    )
+                }
+            } finally {
+                isRefreshing = false
+            }
+        }
+    }
+
+    /** Au retour foreground : check maj + sync léger (sans toast bruyant). */
+    fun onAppResumed() {
+        if (!isLoggedIn || isRefreshing) return
+        viewModelScope.launch {
+            try {
+                refreshMobileVersions()
+                if (networkStatus == NetworkStatus.ONLINE) {
+                    syncPending()
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     fun showToast(
         message: String,
         variant: ToastPayload.Variant = ToastPayload.Variant.INFO,
@@ -679,15 +754,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun sendFeedback(message: String, category: String, onDone: (Boolean) -> Unit = {}) {
         viewModelScope.launch {
-            val ver = serverVersion.ifBlank {
-                try {
-                    getApplication<Application>().packageManager
-                        .getPackageInfo(getApplication<Application>().packageName, 0)
-                        .versionName ?: ""
-                } catch (_: Exception) {
-                    ""
-                }
-            }
+            // Version APK (pas webapp) pour le feedback admin
+            val ver = appVersion.takeIf { it != "?" && it.isNotBlank() } ?: ""
             val (ok, err) = withContext(Dispatchers.IO) {
                 api.sendFeedback(message, category, ver)
             }

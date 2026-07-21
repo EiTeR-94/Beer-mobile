@@ -662,12 +662,12 @@ private fun AdminDashboard(
         Text("Versions", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            VersionPill("Webapp", serverVersion.ifBlank { "—" }, Color(0xFF60A5FA))
             VersionPill(
                 "Cette APK",
                 appVersion,
                 if (needsUpdate) BeerColors.accent else Color(0xFF4ADE80)
             )
+            VersionPill("Webapp", serverVersion.ifBlank { "—" }, Color(0xFF60A5FA))
             latestAndroid?.let { VersionPill("Dernière APK", it, BeerColors.muted) }
         }
         if (needsUpdate) {

@@ -376,6 +376,18 @@ private fun MainScreen(vm: AppViewModel) {
     var showAccountMenu by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
     var showFeedback by remember { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // Check maj APK + sync léger à chaque retour sur l'app
+    DisposableEffect(lifecycleOwner) {
+        val obs = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                vm.onAppResumed()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
 
     LaunchedEffect(vm.requestOpenGrimoire) {
         if (vm.requestOpenGrimoire) {
@@ -395,21 +407,42 @@ private fun MainScreen(vm: AppViewModel) {
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text("Beer Quest", style = MaterialTheme.typography.headlineSmall, color = BeerColors.text)
+                        // APK d’abord (version installée), webapp ensuite — parité iOS
                         Text(
-                            if (vm.serverVersion.isNotBlank()) "v${vm.serverVersion} · scan · photo · note"
-                            else "scan · photo · note",
+                            buildString {
+                                append("APK ${vm.appVersion}")
+                                if (vm.serverVersion.isNotBlank()) {
+                                    append(" · web ${vm.serverVersion}")
+                                }
+                            },
                             color = BeerColors.muted,
                             fontSize = 12.sp
                         )
                     }
-                    OutlinedButton(
-                        onClick = { showAccountMenu = true },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = BeerColors.text),
-                        border = BorderStroke(1.dp, BeerColors.border),
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Text("Mon compte", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(
+                            onClick = { vm.refreshApp() },
+                            enabled = !vm.isRefreshing,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = BeerColors.text),
+                            border = BorderStroke(1.dp, BeerColors.border),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                if (vm.isRefreshing) "…" else "MAJ",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = { showAccountMenu = true },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = BeerColors.text),
+                            border = BorderStroke(1.dp, BeerColors.border),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text("Mon compte", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        }
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -601,6 +634,20 @@ private fun AccountMenuOverlay(
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp
                     )
+                    Text(
+                        buildString {
+                            append("APK ${vm.appVersion}")
+                            if (vm.serverVersion.isNotBlank()) {
+                                append(" · web ${vm.serverVersion}")
+                            }
+                            vm.latestAndroidVersion?.let { latest ->
+                                if (vm.needsAppUpdate) append(" · ⬆️ $latest dispo")
+                            }
+                        },
+                        color = BeerColors.muted,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
                 }
                 Text(
                     "×",
@@ -636,6 +683,29 @@ private fun AccountMenuOverlay(
                     AccountMenuItem("⚔ Beerquest") { onOpen(BeerSheet.RPG_ADMIN) }
                 }
                 AccountMenuItem("📝 Patch notes") { onOpen(BeerSheet.PATCHNOTES) }
+            }
+
+            AccountSection("Application")
+            AccountMenuItem(
+                if (vm.isRefreshing) "Check MAJ…" else "Check MAJ"
+            ) {
+                vm.refreshApp()
+                onDismiss()
+            }
+            if (vm.needsAppUpdate) {
+                val ctx = LocalContext.current
+                AccountMenuItem("⬆️ Installer maj APK ${vm.latestAndroidVersion ?: ""}") {
+                    onDismiss()
+                    try {
+                        ctx.startActivity(
+                            android.content.Intent(
+                                android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse(ServerSettings.portalURL)
+                            )
+                        )
+                    } catch (_: Exception) {
+                    }
+                }
             }
 
             AccountSection("Session")

@@ -3,6 +3,20 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+// Distribution signing: env vars (CI + local via source /etc/plexi/secrets/plexi-beer-release.env)
+// or native-android/keystore.properties (gitignored). Never hardcode passwords.
+def beerKeystoreProps = new Properties()
+def beerKeystorePropsFile = rootProject.file("keystore.properties")
+if (beerKeystorePropsFile.exists()) {
+    beerKeystorePropsFile.withInputStream { beerKeystoreProps.load(it) }
+}
+def beerKsFile = System.getenv("BEER_KEYSTORE_FILE") ?: beerKeystoreProps.getProperty("storeFile")
+def beerKsPass = System.getenv("BEER_KEYSTORE_PASSWORD") ?: beerKeystoreProps.getProperty("storePassword")
+def beerKeyAlias = System.getenv("BEER_KEY_ALIAS") ?: beerKeystoreProps.getProperty("keyAlias")
+def beerKeyPass = System.getenv("BEER_KEY_PASSWORD") ?: beerKeystoreProps.getProperty("keyPassword") ?: beerKsPass
+def beerHasSigning = beerKsFile && beerKsPass && beerKeyAlias &&
+        file(beerKsFile).exists()
+
 android {
     namespace 'fr.eiter.plexibeer'
     compileSdk 34
@@ -11,16 +25,37 @@ android {
         applicationId "fr.eiter.plexibeer"
         minSdk 26
         targetSdk 34
-        versionCode 228
-        versionName "4.4.20"
+        // First APK signed with plexi-beer release keystore (dist). Guests reinstall once.
+        versionCode 234
+        versionName "4.4.25"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (beerHasSigning) {
+            dist {
+                storeFile file(beerKsFile)
+                storePassword beerKsPass
+                keyAlias beerKeyAlias
+                keyPassword beerKeyPass
+            }
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (beerHasSigning) {
+                signingConfig signingConfigs.dist
+            }
+        }
+        // Optional: sign debug with dist key so adb install -r works against release installs
+        debug {
+            if (beerHasSigning && (System.getenv("BEER_SIGN_DEBUG") == "1")) {
+                signingConfig signingConfigs.dist
+            }
         }
     }
     compileOptions {

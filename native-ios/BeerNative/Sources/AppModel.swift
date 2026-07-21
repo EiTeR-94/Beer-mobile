@@ -77,6 +77,8 @@ final class AppModel: ObservableObject {
         guard let latest = latestIosVersion, !latest.isEmpty, appVersion != "?" else { return false }
         return beerVersionCompare(appVersion, latest) < 0
     }
+    /// Check MAJ en cours (bouton header / menu).
+    @Published var isCheckingMaj = false
     var portalURL: URL {
         URL(string: ServerSettings.portalURLString) ?? URL(string: "https://eiter.freeboxos.fr/mobile/beer/")!
     }
@@ -381,14 +383,15 @@ final class AppModel: ObservableObject {
     }
 
     /// Bootstrap = Android AppViewModel.bootstrap()
-    func bootstrap() async {
-        isLoading = true
-        defer { isLoading = false }
+    /// - Parameter silent: pas d’écran de chargement (Check MAJ in-app)
+    func bootstrap(silent: Bool = false) async {
+        if !silent { isLoading = true }
+        defer { if !silent { isLoading = false } }
 
         guard isOnline else {
             networkStatus = .offline
             restoreOfflineSessionIfNeeded()
-            if isLoggedIn {
+            if isLoggedIn && !silent {
                 showToast("Mode hors ligne", variant: .info, detail: "Cache local", durationMs: 3500)
             }
             return
@@ -400,7 +403,7 @@ final class AppModel: ObservableObject {
         if !hasInvite && !hasCookie && BeerSessionStore.restore() == nil {
             api.enableInviteMode(false)
             networkStatus = .online
-            isLoading = false
+            if !silent { isLoading = false }
             // probe en fond, n'affiche rien si hors ligne
             Task { _ = await api.discoverWorkingEndpoint() }
             return
@@ -459,7 +462,7 @@ final class AppModel: ObservableObject {
             // Réseau temporaire : garde le Bearer + session UI (pas de wipe)
             networkStatus = .serverUnreachable
             restoreOfflineSessionIfNeeded()
-            if isLoggedIn || InviteSessionStore.hasInviteSession {
+            if !silent && (isLoggedIn || InviteSessionStore.hasInviteSession) {
                 let detail = (lastErr as? LocalizedError)?.errorDescription ?? "Réessaie dans un instant"
                 showToast("Serveur injoignable", variant: .warn, detail: detail, durationMs: 3500)
             }
@@ -474,7 +477,7 @@ final class AppModel: ObservableObject {
         if ep == nil {
             networkStatus = .serverUnreachable
             restoreOfflineSessionIfNeeded()
-            if isLoggedIn {
+            if isLoggedIn && !silent {
                 showToast("Serveur injoignable", variant: .warn, detail: "Cache local", durationMs: 3500)
             }
             return
@@ -927,6 +930,44 @@ final class AppModel: ObservableObject {
         // Si le manifest a une webapp et qu'on n'a pas encore serverVersion
         if serverVersion.isEmpty, let w = m.webapp, !w.isEmpty {
             serverVersion = w
+        }
+    }
+
+    /// Check MAJ IPA : portail + sync léger, sans quitter l'app.
+    @MainActor
+    func checkMaj(showToastOnDone: Bool = true) async {
+        guard !isCheckingMaj else { return }
+        isCheckingMaj = true
+        defer { isCheckingMaj = false }
+        await bootstrap(silent: true)
+        await refreshMobileVersions()
+        if isLoggedIn {
+            await refreshRpg()
+            await checkFeedbackReplies()
+            await syncPending()
+        }
+        guard showToastOnDone else { return }
+        if needsAppUpdate {
+            showToast(
+                "MAJ IPA disponible",
+                variant: .warn,
+                detail: "v\(appVersion) → v\(latestIosVersion ?? "?")",
+                durationMs: 4000
+            )
+        } else if networkStatus != .online {
+            showToast("Check MAJ (hors ligne / serveur)", variant: .info, durationMs: 2500)
+        } else {
+            showToast("IPA à jour", variant: .success, detail: "v\(appVersion)", durationMs: 2200)
+        }
+    }
+
+    /// Au retour foreground : check maj discret.
+    @MainActor
+    func onAppResumed() async {
+        guard isLoggedIn, !isCheckingMaj else { return }
+        await refreshMobileVersions()
+        if networkStatus == .online {
+            await syncPending()
         }
     }
 

@@ -11,6 +11,7 @@ struct MainView: View {
     @State private var showLogoutConfirm = false
     @State private var showAccountMenu = false
     @State private var showFeedback = false
+    @Environment(\.scenePhase) private var scenePhase
 
     private var logoutWarning: String {
         if app.isInvite || InviteSessionStore.hasInviteSession {
@@ -61,10 +62,15 @@ struct MainView: View {
             if showAccountMenu {
                 AccountMenuOverlay(
                     connectedLabel: connectedLabel,
+                    appVersionLine: accountVersionLine,
+                    needsUpdate: app.needsAppUpdate,
+                    latestIos: app.latestIosVersion,
+                    isCheckingMaj: app.isCheckingMaj,
                     isInvite: app.isInvite,
                     isAdmin: app.isAdmin,
                     rpgActive: app.rpgActive,
                     pendingCount: app.pendingCount,
+                    portalURL: app.portalURL,
                     onDismiss: { showAccountMenu = false },
                     onOpen: { s in
                         showAccountMenu = false
@@ -72,6 +78,10 @@ struct MainView: View {
                             Task { await app.refreshRpg() }
                         }
                         sheet = s
+                    },
+                    onCheckMaj: {
+                        showAccountMenu = false
+                        Task { await app.checkMaj() }
                     },
                     onFeedback: {
                         showAccountMenu = false
@@ -167,9 +177,14 @@ struct MainView: View {
                 sheet = .grimoire
             }
         }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active {
+                Task { await app.onAppResumed() }
+            }
+        }
     }
 
-    /// Titre + bouton Mon compte (parité PWA).
+    /// Titre + Check MAJ + Mon compte (parité Android).
     private var header: some View {
         HStack(alignment: .center, spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
@@ -181,6 +196,17 @@ struct MainView: View {
                     .foregroundStyle(Theme.muted)
             }
             Spacer(minLength: 4)
+            Button {
+                Task { await app.checkMaj() }
+            } label: {
+                Text(app.isCheckingMaj ? "…" : "MAJ")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.btn).stroke(Theme.border))
+            }
+            .disabled(app.isCheckingMaj)
             Button {
                 showAccountMenu = true
             } label: {
@@ -199,11 +225,22 @@ struct MainView: View {
     }
 
     private var headerSubtitle: String {
-        let appV = "app \(app.appVersion)"
+        let appV = "IPA \(app.appVersion)"
         if app.serverVersion.isEmpty {
-            return "\(appV) · scan · photo · note"
+            return appV
         }
         return "\(appV) · web \(app.serverVersion)"
+    }
+
+    private var accountVersionLine: String {
+        var s = "IPA \(app.appVersion)"
+        if !app.serverVersion.isEmpty {
+            s += " · web \(app.serverVersion)"
+        }
+        if app.needsAppUpdate, let latest = app.latestIosVersion {
+            s += " · ⬆️ \(latest) dispo"
+        }
+        return s
     }
 }
 
@@ -382,12 +419,18 @@ private struct LootSummarySheet: View {
 
 private struct AccountMenuOverlay: View {
     let connectedLabel: String
+    let appVersionLine: String
+    let needsUpdate: Bool
+    let latestIos: String?
+    let isCheckingMaj: Bool
     let isInvite: Bool
     let isAdmin: Bool
     let rpgActive: Bool
     let pendingCount: Int
+    let portalURL: URL
     let onDismiss: () -> Void
     let onOpen: (BeerSheet) -> Void
+    let onCheckMaj: () -> Void
     let onFeedback: () -> Void
     let onLogout: () -> Void
 
@@ -429,6 +472,10 @@ private struct AccountMenuOverlay: View {
                     Text(connectedLabel)
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(Theme.text)
+                    Text(appVersionLine)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.muted)
+                        .padding(.top, 1)
                 }
                 Spacer(minLength: 8)
                 Button(action: onDismiss) {
@@ -488,6 +535,15 @@ private struct AccountMenuOverlay: View {
                     item("⚔ Beerquest") { onOpen(.rpgAdmin) }
                 }
                 item("📝 Patch notes") { onOpen(.patchnotes) }
+            }
+
+            section("Application")
+            item(isCheckingMaj ? "Check MAJ…" : "Check MAJ") { onCheckMaj() }
+            if needsUpdate {
+                item("⬆️ Installer maj IPA \(latestIos ?? "")") {
+                    onDismiss()
+                    UIApplication.shared.open(portalURL)
+                }
             }
 
             section("Session")
