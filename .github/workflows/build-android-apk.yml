@@ -1,84 +1,40 @@
-# APK native — build + Release GitHub
-# Le serveur tire l’APK via beer-mobile-sync (même flux que l’IPA, asset BeerOff.apk).
+# APK PlexiBeer — DÉSACTIVÉ pour la distribution.
+#
+# Source de vérité APK = build local sur le serveur plexi (.50) avec keystore dist :
+#   /etc/plexi/secrets/plexi-beer-release.*
+#   beer-mobile/scripts/build-release-apk.sh --publish
+#
+# Raison : pas de secrets GitHub pour le keystore ; une CI debug/autre key
+# cassait les updates invités (« Application non installée »).
+#
+# IPA : toujours via ce repo + beer-mobile-sync (iOS).
+# Doc : native-android/SIGNING.md
 
 name: Build Android APK (PlexiBeer native)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "native-android/**"
-      - ".github/workflows/build-android-apk.yml"
+    inputs:
+      reason:
+        description: "APK dist = serveur local uniquement — ne pas utiliser pour production"
+        required: false
+        default: "local-only"
 
 permissions:
-  contents: write
-
-concurrency:
-  group: android-apk-${{ github.ref }}
-  cancel-in-progress: true
+  contents: read
 
 jobs:
-  build:
+  skip:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Bump versionCode (CI)
+      - name: APK distribution is local-only
         run: |
-          BUILD="${{ github.run_number }}"
-          # versionCode = 200 + run_number (évite collision avec anciennes builds)
-          CODE=$((200 + BUILD))
-          sed -i "s/versionCode [0-9]*/versionCode $CODE/" native-android/app/build.gradle
-          echo "versionCode → $CODE (run $BUILD)"
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: "17"
-          distribution: "temurin"
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          cmdline-tools-version: "latest"
-          packages: "platforms;android-34 build-tools;34.0.0 platform-tools"
-
-      - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses || true
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace -x test
-        working-directory: native-android
-
-      - name: Rename APK (BeerOff.apk)
-        run: |
-          SRC="native-android/app/build/outputs/apk/debug/app-debug.apk"
-          test -f "$SRC"
-          cp -f "$SRC" build-BeerOff.apk
-          ls -la build-BeerOff.apk
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: plexibeer-debug-apk
-          path: build-BeerOff.apk
-          retention-days: 30
-
-      - name: Release GitHub (APK)
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: android-build-${{ github.run_number }}
-          name: Beer Quest Android build ${{ github.run_number }}
-          body: |
-            Build automatique Beer Quest Android.
-
-            Portail (sync serveur ~2–5 min) :
-            https://eiter.freeboxos.fr/mobile/beer/
-          files: |
-            build-BeerOff.apk
-          make_latest: false
+          echo "============================================================"
+          echo "APK BeerOff n'est plus buildée / publiée par GitHub Actions."
+          echo ""
+          echo "Sur le serveur plexi :"
+          echo "  cd ~/beer-mobile && ./scripts/build-release-apk.sh --publish"
+          echo ""
+          echo "Voir native-android/SIGNING.md"
+          echo "============================================================"
+          exit 0
