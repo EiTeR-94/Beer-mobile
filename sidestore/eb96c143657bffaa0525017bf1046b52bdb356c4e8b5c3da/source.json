@@ -2,7 +2,7 @@
   "name": "Plexi privé",
   "identifier": "fr.eiter.plexi.sidestore",
   "subtitle": "Beer Quest & Weeno (Plexi)",
-  "description": "Source privée SideStore Plexi — Beer Quest + Weeno. URL fixe (chemin token). Seul le contenu change. (apps: 2)",
+  "description": "Source privée SideStore Plexi — Beer Quest + Weeno. URL fixe (chemin token). Seul le contenu change.",
   "iconURL": "https://raw.githubusercontent.com/EiTeR-94/Beer-mobile/main/assets/icon-180.png",
   "website": "https://github.com/EiTeR-94/Beer-mobile",
   "tintColor": "#F59E0B",
