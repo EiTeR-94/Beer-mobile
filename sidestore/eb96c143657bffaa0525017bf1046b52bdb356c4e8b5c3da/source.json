@@ -44,18 +44,18 @@
       "bundleIdentifier": "fr.eiter.plexiwine",
       "developerName": "eiter / Plexi",
       "subtitle": "Journal de dégustation vin (Plexi)",
-      "localizedDescription": "Weeno 0.3.8 (18)",
+      "localizedDescription": "Weeno 0.3.10 (20)",
       "iconURL": "https://raw.githubusercontent.com/EiTeR-94/Weemo-mobile/main/assets/icon-180.png",
       "tintColor": "#C45C7A",
       "category": "lifestyle",
       "versions": [
         {
-          "version": "0.3.8",
-          "buildVersion": "18",
-          "date": "2026-07-22T04:22:01Z",
-          "localizedDescription": "Weeno 0.3.8 (build 18)",
+          "version": "0.3.10",
+          "buildVersion": "20",
+          "date": "2026-07-22T05:04:15Z",
+          "localizedDescription": "Weeno 0.3.10 (build 20)",
           "downloadURL": "https://raw.githubusercontent.com/EiTeR-94/Beer-mobile/main/sidestore/eb96c143657bffaa0525017bf1046b52bdb356c4e8b5c3da/WeenoOff.ipa",
-          "size": 2937553,
+          "size": 2961206,
           "minOSVersion": "16.0"
         }
       ],
