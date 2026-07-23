@@ -12,18 +12,18 @@
       "bundleIdentifier": "fr.eiter.plexibeer",
       "developerName": "eiter / Plexi",
       "subtitle": "Carnet de bières & dégustations (Plexi)",
-      "localizedDescription": "Beer Quest 4.4.32 (226)",
+      "localizedDescription": "Beer Quest 4.4.35 (227)",
       "iconURL": "https://raw.githubusercontent.com/EiTeR-94/Beer-mobile/main/assets/icon-180.png",
       "tintColor": "#F59E0B",
       "category": "lifestyle",
       "versions": [
         {
-          "version": "4.4.32",
-          "buildVersion": "226",
-          "date": "2026-07-21T15:03:31Z",
-          "localizedDescription": "Beer Quest 4.4.32 (build 226)",
+          "version": "4.4.35",
+          "buildVersion": "227",
+          "date": "2026-07-23T16:43:06Z",
+          "localizedDescription": "Beer Quest 4.4.35 (build 227)",
           "downloadURL": "https://raw.githubusercontent.com/EiTeR-94/Beer-mobile/main/sidestore/eb96c143657bffaa0525017bf1046b52bdb356c4e8b5c3da/BeerOff.ipa",
-          "size": 2875658,
+          "size": 2882357,
           "minOSVersion": "16.0"
         }
       ],
