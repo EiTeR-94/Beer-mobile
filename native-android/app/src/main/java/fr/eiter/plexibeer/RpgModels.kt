@@ -180,7 +180,52 @@ data class RpgAdminPlayer(
     @SerializedName("daily_xp_today") val dailyXpToday: Int = 0,
     @SerializedName("daily_checkins_today") val dailyCheckinsToday: Int = 0,
     @SerializedName("daily_soft_capped") val dailySoftCapped: Boolean = false,
-    @SerializedName("daily_soft_cap_remaining") val dailySoftCapRemaining: Int? = null
+    @SerializedName("daily_soft_cap_remaining") val dailySoftCapRemaining: Int? = null,
+    @SerializedName("suspicion_score") val suspicionScore: Int? = null,
+    /** Anti-triche (v1.2.57+) — quarantaine auto quand la suspicion dépasse un seuil. */
+    val quarantined: Boolean? = null,
+    @SerializedName("quarantine_at") val quarantineAt: String? = null,
+    @SerializedName("quarantine_reason") val quarantineReason: String? = null,
+    @SerializedName("quarantine_suspicion") val quarantineSuspicion: Int? = null
+)
+
+/** GET/PATCH/xp/reset-daily/unquarantine — détail complet /api/admin/rpg/players/{user} */
+data class RpgAdminPlayerDetail(
+    val player: RpgAdminPlayer? = null,
+    val badges: List<RpgBadge>? = null,
+    val quests: List<RpgAdminQuest>? = null,
+    val events: List<RpgAdminEvent>? = null,
+    val atlas: RpgAtlas? = null,
+    @SerializedName("class_affinity") val classAffinity: Map<String, Int>? = null,
+    val classes: List<RpgClassInfo>? = null,
+    @SerializedName("catalog_badges") val catalogBadges: List<RpgBadge>? = null
+)
+
+data class RpgAdminQuest(
+    /** Colonne SQLite réelle `quest_key` (l'admin_get_player renvoie les lignes SQL brutes ;
+     *  note : le modèle iOS mirror utilise "key" mais le backend ne renomme pas ce champ). */
+    @SerializedName("quest_key") val key: String? = null,
+    val kind: String? = null,
+    val title: String? = null,
+    val status: String? = null,
+    val progress: Int? = null,
+    val target: Int? = null,
+    @SerializedName("reward_xp") val rewardXp: Int? = null,
+    @SerializedName("period_key") val periodKey: String? = null
+)
+
+data class RpgAdminEvent(
+    val kind: String? = null,
+    @SerializedName("created_at") val createdAt: String? = null
+)
+
+/** POST badges (grant) / DELETE badges/{key} (revoke) — `player` = détail complet imbriqué. */
+data class RpgAdminBadgeActionResponse(
+    val ok: Boolean? = null,
+    val granted: Boolean? = null,
+    val removed: Boolean? = null,
+    @SerializedName("badge_key") val badgeKey: String? = null,
+    val player: RpgAdminPlayerDetail? = null
 )
 
 fun RpgProfile.displayIcon(): String {

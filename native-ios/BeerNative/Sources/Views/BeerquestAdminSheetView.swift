@@ -667,6 +667,9 @@ struct BeerquestAdminSheetView: View {
                 if p.suspicionFlagged == true || (p.suspicionScore ?? 0) >= 12 {
                     adminPill("⚠ \(p.suspicionScore ?? 0)", .off)
                 }
+                if p.quarantined == true {
+                    adminPill("⛔ quarantaine", .off)
+                }
                 if p.dailySoftCapped == true {
                     let dx = p.dailyXpToday ?? p.dailyXpTotal ?? 0
                     let dc = p.dailySoftCap ?? 0
@@ -1162,6 +1165,29 @@ private struct RpgAdminPlayerDetailView: View {
                 statBox("⚠", "\(p?.suspicionScore ?? 0)", "Suspicion")
             }
 
+            if p?.quarantined == true {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("⛔ Quarantaine anti-triche active")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Theme.error)
+                    if let reason = p?.quarantineReason, !reason.isEmpty {
+                        Text("Motif : \(reason)")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.muted)
+                    }
+                    if let at = p?.quarantineAt, !at.isEmpty {
+                        Text("Depuis : \(at)")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.muted)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .background(Theme.error.opacity(0.12))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.error.opacity(0.4)))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+
             ProgressView(value: min(1, max(0, (p?.progressPct ?? 0) / 100.0)))
                 .tint(Theme.accent)
             Text("\(Int(p?.progressPct ?? 0))% vers le niveau suivant")
@@ -1380,7 +1406,9 @@ private struct RpgAdminPlayerDetailView: View {
                 actionBtn("+200 XP") { Task { await adjustXp(200) } }
                 actionBtn("−50 XP") { Task { await adjustXp(-50) } }
                 actionBtn("Reset soft-cap") { Task { await resetDaily() } }
-                actionBtn("Clear suspicion") { Task { await clearSuspicion() } }
+                if detail?.player?.quarantined == true {
+                    actionBtn("Lever quarantaine") { Task { await unquarantine() } }
+                }
                 Button { confirmWipe = true } label: {
                     Text("Effacer RPG")
                         .font(.system(size: 13, weight: .bold))
@@ -1679,14 +1707,14 @@ private struct RpgAdminPlayerDetailView: View {
         }
     }
 
-    private func clearSuspicion() async {
+    private func unquarantine() async {
         busy = true
         defer { busy = false }
         do {
-            applyDetail(try await app.api.adminRpgPatchPlayer(username, payload: ["suspicion_score": 0]))
-            app.showToast("Suspicion effacée", variant: .success, label: "Beerquest", durationMs: 2400)
+            applyDetail(try await app.api.adminRpgUnquarantine(username))
+            app.showToast("Quarantaine levée", variant: .success, label: "Beerquest", durationMs: 2400)
         } catch {
-            app.showToast("Échec", variant: .error, durationMs: 2600)
+            app.showToast("Échec levée quarantaine", variant: .error, durationMs: 2600)
         }
     }
 

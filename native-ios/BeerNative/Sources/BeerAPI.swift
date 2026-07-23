@@ -679,6 +679,20 @@ final class BeerAPI {
         return try await adminRpgPlayer(username)
     }
 
+    func adminRpgUnquarantine(_ username: String) async throws -> RpgAdminPlayerDetail {
+        let enc = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
+        let (data, http, _) = try await request(
+            path: "/api/admin/rpg/players/\(enc)/unquarantine",
+            method: "POST",
+            body: Data("{}".utf8),
+            contentType: "application/json"
+        )
+        guard http.statusCode >= 200 && http.statusCode < 300 else {
+            throw BeerAPIError.server("Échec levée quarantaine")
+        }
+        return try JSONDecoder().decode(RpgAdminPlayerDetail.self, from: data)
+    }
+
     func adminRpgWipe(username: String) async throws {
         let enc = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
         let (_, http, _) = try await request(

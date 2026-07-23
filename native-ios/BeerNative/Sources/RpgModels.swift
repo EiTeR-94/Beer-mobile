@@ -286,6 +286,10 @@ struct RpgAdminPlayer: Decodable, Identifiable {
     var progressPct: Double?
     var suspicionScore: Int?
     var suspicionFlagged: Bool?
+    var quarantined: Bool?
+    var quarantineAt: String?
+    var quarantineReason: String?
+    var quarantineSuspicion: Int?
     var orphan: Bool?
     var introSeen: Bool?
     var backfilled: Bool?
@@ -313,6 +317,10 @@ struct RpgAdminPlayer: Decodable, Identifiable {
         case progressPct = "progress_pct"
         case suspicionScore = "suspicion_score"
         case suspicionFlagged = "suspicion_flagged"
+        case quarantined
+        case quarantineAt = "quarantine_at"
+        case quarantineReason = "quarantine_reason"
+        case quarantineSuspicion = "quarantine_suspicion"
         case introSeen = "intro_seen"
         case backfilled
         case dailyXpTotal = "daily_xp_total"
@@ -355,7 +363,8 @@ struct RpgAdminQuest: Decodable, Identifiable {
     var periodKey: String?
     var id: String { "\(key ?? "")-\(periodKey ?? "")-\(title ?? UUID().uuidString)" }
     enum CodingKeys: String, CodingKey {
-        case key, kind, title, status, progress, target
+        case key = "quest_key"
+        case kind, title, status, progress, target
         case rewardXp = "reward_xp"
         case periodKey = "period_key"
     }

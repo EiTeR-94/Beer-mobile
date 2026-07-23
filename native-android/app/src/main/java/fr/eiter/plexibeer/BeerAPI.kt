@@ -457,8 +457,9 @@ class BeerAPI private constructor(context: Context) {
 
     /**
      * @param allowed true=force ON, false=force OFF, null=auto (défaut allowlist/env)
+     * Renvoie le détail complet à jour (le backend lève aussi la quarantaine si ON/Auto).
      */
-    suspend fun adminRpgSetUserAllowed(username: String, allowed: Boolean?): Boolean =
+    suspend fun adminRpgSetUserAllowed(username: String, allowed: Boolean?): RpgAdminPlayerDetail? =
         withContext(Dispatchers.IO) {
             try {
                 val enc = java.net.URLEncoder.encode(username, "UTF-8")
@@ -468,43 +469,130 @@ class BeerAPI private constructor(context: Context) {
                 } else {
                     gson.toJson(mapOf("allowed" to allowed))
                 }
-                val (_, code) = execute(
+                val (body, code) = execute(
                     requestBuilder("api/admin/rpg/settings/users/$enc")
                         .put(json.toRequestBody(JSON))
                         .build()
                 )
-                code in 200..299
+                if (code !in 200..299) return@withContext null
+                gson.fromJson(body, RpgAdminPlayerDetail::class.java)
             } catch (_: Exception) {
-                false
+                null
             }
         }
 
-    suspend fun adminRpgAdjustXp(username: String, delta: Int): Boolean = withContext(Dispatchers.IO) {
+    suspend fun adminRpgAdjustXp(username: String, delta: Int): RpgAdminPlayerDetail? = withContext(Dispatchers.IO) {
         try {
             val json = gson.toJson(mapOf("delta" to delta))
             val enc = java.net.URLEncoder.encode(username, "UTF-8")
-            val (_, code) = execute(
+            val (body, code) = execute(
                 requestBuilder("api/admin/rpg/players/$enc/xp").post(json.toRequestBody(JSON)).build()
             )
-            code in 200..299
+            if (code !in 200..299) return@withContext null
+            gson.fromJson(body, RpgAdminPlayerDetail::class.java)
         } catch (_: Exception) {
-            false
+            null
         }
     }
 
-    suspend fun adminRpgResetDaily(username: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun adminRpgResetDaily(username: String): RpgAdminPlayerDetail? = withContext(Dispatchers.IO) {
         try {
             val enc = java.net.URLEncoder.encode(username, "UTF-8")
-            val (_, code) = execute(
+            val (body, code) = execute(
                 requestBuilder("api/admin/rpg/players/$enc/reset-daily")
                     .post(ByteArray(0).toRequestBody())
                     .build()
             )
+            if (code !in 200..299) return@withContext null
+            gson.fromJson(body, RpgAdminPlayerDetail::class.java)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** GET détail complet d'un joueur (profil, badges, quêtes, événements, atlas…). */
+    suspend fun adminRpgPlayer(username: String): RpgAdminPlayerDetail? = withContext(Dispatchers.IO) {
+        try {
+            val enc = java.net.URLEncoder.encode(username, "UTF-8")
+            val (body, code) = execute(requestBuilder("api/admin/rpg/players/$enc").get().build())
+            if (code !in 200..299) return@withContext null
+            gson.fromJson(body, RpgAdminPlayerDetail::class.java)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    suspend fun adminRpgGrantBadge(username: String, badgeKey: String): RpgAdminBadgeActionResponse? =
+        withContext(Dispatchers.IO) {
+            try {
+                val enc = java.net.URLEncoder.encode(username, "UTF-8")
+                val json = gson.toJson(mapOf("badge_key" to badgeKey))
+                val (body, code) = execute(
+                    requestBuilder("api/admin/rpg/players/$enc/badges").post(json.toRequestBody(JSON)).build()
+                )
+                if (code !in 200..299) return@withContext null
+                gson.fromJson(body, RpgAdminBadgeActionResponse::class.java)
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+    suspend fun adminRpgRevokeBadge(username: String, badgeKey: String): RpgAdminBadgeActionResponse? =
+        withContext(Dispatchers.IO) {
+            try {
+                val encU = java.net.URLEncoder.encode(username, "UTF-8")
+                val encB = java.net.URLEncoder.encode(badgeKey, "UTF-8")
+                val (body, code) = execute(
+                    requestBuilder("api/admin/rpg/players/$encU/badges/$encB").delete().build()
+                )
+                if (code !in 200..299) return@withContext null
+                gson.fromJson(body, RpgAdminBadgeActionResponse::class.java)
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+    /** Efface tout le profil RPG (niveau/XP/badges/quêtes/historique) — garde le carnet de dégustations. */
+    suspend fun adminRpgWipePlayer(username: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val enc = java.net.URLEncoder.encode(username, "UTF-8")
+            val (_, code) = execute(
+                requestBuilder("api/admin/rpg/players/$enc/wipe").post(ByteArray(0).toRequestBody()).build()
+            )
             code in 200..299
         } catch (_: Exception) {
             false
         }
     }
+
+    /** Lève la quarantaine anti-triche (audit + override allowed → auto). */
+    suspend fun adminRpgUnquarantine(username: String): RpgAdminPlayerDetail? = withContext(Dispatchers.IO) {
+        try {
+            val enc = java.net.URLEncoder.encode(username, "UTF-8")
+            val (body, code) = execute(
+                requestBuilder("api/admin/rpg/players/$enc/unquarantine").post(ByteArray(0).toRequestBody()).build()
+            )
+            if (code !in 200..299) return@withContext null
+            gson.fromJson(body, RpgAdminPlayerDetail::class.java)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Dégustations d'un compte invité (lecture seule, admin). */
+    suspend fun adminInviteCheckins(inviteId: Int, limit: Int = 30, offset: Int = 0): List<CheckinItem> =
+        withContext(Dispatchers.IO) {
+            try {
+                val (body, code) = execute(
+                    requestBuilder("api/invites/$inviteId/checkins?limit=$limit&offset=$offset").get().build()
+                )
+                if (code !in 200..299) return@withContext emptyList()
+                val type = object : TypeToken<List<CheckinItem>>() {}.type
+                gson.fromJson<List<CheckinItem>>(body, type) ?: emptyList()
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
 
     suspend fun logout() {
         try {
@@ -1141,19 +1229,20 @@ class BeerAPI private constructor(context: Context) {
 
     // ── RPG admin enrichi ───────────────────────────────────────────────────
 
-    suspend fun adminRpgPatchPlayer(username: String, payload: Map<String, Any?>): Boolean =
+    suspend fun adminRpgPatchPlayer(username: String, payload: Map<String, Any?>): RpgAdminPlayerDetail? =
         withContext(Dispatchers.IO) {
             try {
                 val enc = java.net.URLEncoder.encode(username, "UTF-8")
                 val json = gson.toJson(payload)
-                val (_, code) = execute(
+                val (body, code) = execute(
                     requestBuilder("api/admin/rpg/players/$enc")
                         .patch(json.toRequestBody(JSON))
                         .build()
                 )
-                code in 200..299
+                if (code !in 200..299) return@withContext null
+                gson.fromJson(body, RpgAdminPlayerDetail::class.java)
             } catch (_: Exception) {
-                false
+                null
             }
         }
 

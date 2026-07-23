@@ -17,19 +17,20 @@ Application **Kotlin + Jetpack Compose**, miroir de `native-ios/` + **mode invit
 - Historique + check-ins perso uniquement (pas wishlist / cadeaux / admin)
 - **Pas de bouton Déconnexion** (évite de perdre l’accès device-bound)
 
-## Build local
+## Build local (source de vérité APK)
 
 ```bash
-export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64   # ou 17
-# Android SDK dans local.properties (sdk.dir=...)
-cd native-android
-./gradlew assembleDebug
-# APK : app/build/outputs/apk/debug/app-debug.apk
+# Distribution — même signature que le portail (obligatoire pour updates invités)
+./scripts/build-release-apk.sh            # → dist/BeerOff.apk
+./scripts/build-release-apk.sh --publish  # + /var/www/beer-mobile/
+
+# Debug dev only (signature Android Debug — ne PAS publier aux invités)
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+cd native-android && ./gradlew assembleDebug
 ```
 
-## CI GitHub
-
-Actions → **Build Android APK (PlexiBeer native)** → artifact `plexibeer-debug-apk`.
+Signature dist : **`SIGNING.md`**. Keystore : `/etc/plexi/secrets/plexi-beer-release.*` (hors git).  
+**Pas de CI GitHub pour l’APK** — IPA seule via GitHub + `beer-mobile-sync`.
 
 ## Install
 

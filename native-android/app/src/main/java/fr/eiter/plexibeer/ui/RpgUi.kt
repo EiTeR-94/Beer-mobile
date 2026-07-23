@@ -68,6 +68,7 @@ import fr.eiter.plexibeer.AdminFeedbackStats
 import fr.eiter.plexibeer.AppViewModel
 import fr.eiter.plexibeer.RpgAdminFlags
 import fr.eiter.plexibeer.RpgAdminPlayer
+import fr.eiter.plexibeer.RpgAdminPlayerDetail
 import fr.eiter.plexibeer.RpgAdminPlayersResponse
 import fr.eiter.plexibeer.RpgBadge
 import fr.eiter.plexibeer.RpgCelebration
@@ -2014,7 +2015,6 @@ fun RpgAdminSheet(vm: AppViewModel) {
     var error by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<RpgAdminPlayer?>(null) }
     var busy by remember { mutableStateOf(false) }
-    var levelText by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     var reloadToken by remember { mutableIntStateOf(0) }
     var didPickInitialTab by remember { mutableStateOf(false) }
@@ -2158,7 +2158,11 @@ fun RpgAdminSheet(vm: AppViewModel) {
                         val dayCap = p.dailySoftCap
                         val dayXp = p.dailyXpToday
                         val dayCk = p.dailyCheckinsToday
-                        val borderC = if (p.dailySoftCapped) Gold.copy(alpha = 0.55f) else BeerColors.border
+                        val borderC = when {
+                            p.quarantined == true -> BeerColors.error.copy(alpha = 0.6f)
+                            p.dailySoftCapped -> Gold.copy(alpha = 0.55f)
+                            else -> BeerColors.border
+                        }
                         Column(
                             Modifier
                                 .fillMaxWidth()
@@ -2168,13 +2172,27 @@ fun RpgAdminSheet(vm: AppViewModel) {
                                 .background(BeerColors.card)
                                 .clickable {
                                     selected = p
-                                    levelText = p.level.toString()
                                 }
                                 .padding(12.dp)
                         ) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(name, color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(name, color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        if (p.quarantined == true) {
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(
+                                                "⛔ quarantaine",
+                                                color = BeerColors.error,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(999.dp))
+                                                    .background(BeerColors.error.copy(alpha = 0.16f))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
                                     p.title?.let {
                                         Text(it, color = BeerColors.muted, fontSize = 11.sp)
                                     }
@@ -2503,158 +2521,525 @@ fun RpgAdminSheet(vm: AppViewModel) {
     }
 
     selected?.let { p ->
-        val name = p.username.orEmpty()
-        AlertDialog(
-            onDismissRequest = { selected = null },
-            title = { Text(name, color = BeerColors.text, fontWeight = FontWeight.Bold) },
-            text = {
-                Column {
-                    Text("Nv ${p.level} · ${p.xp} XP · ${p.badgeCount} badges", color = BeerColors.muted, fontSize = 13.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Text("Accès RPG", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        RpgPlayerDetailSheet(
+            vm = vm,
+            username = p.username.orEmpty(),
+            initialLevel = p.level,
+            onClose = { selected = null },
+            onChanged = { reload() }
+        )
+    }
+}
+
+/**
+ * Fiche joueur admin — détail complet (GET /api/admin/rpg/players/{user}) : profil, accès RPG,
+ * quarantaine anti-triche, badges (donner/retirer), quêtes/événements récents, effacement RPG.
+ */
+@Composable
+private fun RpgPlayerDetailSheet(
+    vm: AppViewModel,
+    username: String,
+    initialLevel: Int,
+    onClose: () -> Unit,
+    onChanged: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var detail by remember(username) { mutableStateOf<RpgAdminPlayerDetail?>(null) }
+    var detailLoading by remember(username) { mutableStateOf(true) }
+    var busy by remember { mutableStateOf(false) }
+    var levelText by remember(username) { mutableStateOf(initialLevel.toString()) }
+    var badgeFilter by remember { mutableStateOf("all") }
+    var confirmWipe by remember { mutableStateOf(false) }
+    var confirmRevoke by remember { mutableStateOf<RpgBadge?>(null) }
+
+    suspend fun refresh() {
+        detail = try { vm.api.adminRpgPlayer(username) } catch (_: Exception) { detail }
+    }
+
+    LaunchedEffect(username) {
+        detailLoading = true
+        refresh()
+        detailLoading = false
+    }
+
+    fun applyDetail(d: RpgAdminPlayerDetail?) {
+        if (d != null) detail = d
+        onChanged()
+    }
+
+    val p = detail?.player
+    val name = username
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(BeerColors.bg)
+            .consumeClicks()
+            .padding(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                "⚔ $name",
+                color = BeerColors.text,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                modifier = Modifier.weight(1f)
+            )
+            Text("Fermer ✕", color = BeerColors.muted, modifier = Modifier.clickable { onClose() }.padding(8.dp))
+        }
+        Spacer(Modifier.height(8.dp))
+
+        if (detailLoading && detail == null) {
+            Text("Chargement…", color = BeerColors.muted)
+            return@Column
+        }
+
+        val scroll = rememberScrollState()
+        Column(Modifier.verticalScroll(scroll).weight(1f, fill = true)) {
+            Text(
+                "Nv ${p?.level ?: initialLevel} · ${p?.xp ?: 0} XP · ${detail?.badges?.count { it.earned } ?: 0}/${detail?.badges?.size ?: 0} badges",
+                color = BeerColors.muted,
+                fontSize = 13.sp
+            )
+            p?.title?.let { Text(it, color = BeerColors.muted, fontSize = 12.sp) }
+
+            // ── Quarantaine anti-triche ──
+            if (p?.quarantined == true) {
+                Spacer(Modifier.height(10.dp))
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .border(1.dp, BeerColors.error.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .background(BeerColors.error.copy(alpha = 0.08f))
+                        .padding(10.dp)
+                ) {
+                    Text("⛔ Quarantaine anti-triche", color = BeerColors.error, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     Spacer(Modifier.height(4.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf<Pair<String, Boolean?>>(
-                            "ON" to true,
-                            "OFF" to false,
-                            "Auto" to null,
-                        ).forEach { (lab, value) ->
-                            val active = when (value) {
-                                true -> p.allowedOverride == true
-                                false -> p.allowedOverride == false
-                                null -> p.allowedOverride == null
-                            }
-                            Text(
-                                lab,
-                                color = if (active) Color.Black else BeerColors.text,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(
-                                        when {
-                                            active && value == true -> Color(0xFF81C784)
-                                            active && value == false -> Color(0xFFE57373)
-                                            active -> Gold
-                                            else -> BeerColors.card
-                                        }
-                                    )
-                                    .border(1.dp, BeerColors.border, RoundedCornerShape(8.dp))
-                                    .clickable(enabled = !busy) {
-                                        scope.launch {
-                                            busy = true
-                                            val ok = withContext(Dispatchers.IO) {
-                                                vm.api.adminRpgSetUserAllowed(name, value)
-                                            }
-                                            if (ok) {
-                                                vm.showToast("$name · RPG $lab", ToastPayload.Variant.SUCCESS)
-                                                selected = null
-                                                reload()
-                                            } else {
-                                                vm.showToast("Échec accès", ToastPayload.Variant.ERROR)
-                                            }
-                                            busy = false
-                                        }
-                                    }
-                                    .padding(horizontal = 10.dp, vertical = 5.dp)
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Text("Niveau (parité iOS)", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    OutlinedTextField(
-                        value = levelText,
-                        onValueChange = { levelText = it.filter { c -> c.isDigit() }.take(3) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = BeerColors.text,
-                            unfocusedTextColor = BeerColors.text,
-                            focusedBorderColor = BeerColors.accent,
-                            unfocusedBorderColor = BeerColors.border
-                        )
+                    Text(
+                        p.quarantineReason ?: "Raison non précisée",
+                        color = BeerColors.text,
+                        fontSize = 12.sp
                     )
-                    TextButton(
-                        onClick = {
-                            val lv = levelText.toIntOrNull()
-                            if (lv == null || lv < 1) {
-                                vm.showToast("Niveau invalide", ToastPayload.Variant.ERROR)
-                                return@TextButton
-                            }
-                            busy = true
-                            scope.launch {
-                                val ok = withContext(Dispatchers.IO) {
-                                    vm.api.adminRpgPatchPlayer(name, mapOf("level" to lv))
-                                }
-                                busy = false
-                                if (ok) {
-                                    vm.showToast("Niveau $lv pour $name", ToastPayload.Variant.SUCCESS, label = "Beerquest")
-                                    selected = null
-                                    reload()
-                                } else {
-                                    vm.showToast("Échec niveau", ToastPayload.Variant.ERROR)
-                                }
-                            }
+                    Text(
+                        buildString {
+                            append("Déclenchée le ${formatDate(p.quarantineAt)}")
+                            p.quarantineSuspicion?.let { append(" · suspicion $it/100") }
                         },
-                        enabled = !busy
-                    ) { Text("Appliquer niveau", color = BeerColors.accent) }
-                    Spacer(Modifier.height(8.dp))
-                    Text("Ajuster l’XP", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(-50, -10, 10, 50).forEach { d ->
-                            OutlinedButton(
-                                onClick = {
-                                    busy = true
-                                    scope.launch {
-                                        val ok = withContext(Dispatchers.IO) {
-                                            try { vm.api.adminRpgAdjustXp(name, d) } catch (_: Exception) { false }
-                                        }
-                                        busy = false
-                                        if (ok) {
-                                            vm.showToast("XP ${if (d > 0) "+" else ""}$d pour $name", ToastPayload.Variant.SUCCESS, label = "Beerquest")
-                                            selected = null
-                                            reload()
-                                        } else {
-                                            vm.showToast("Échec XP", ToastPayload.Variant.ERROR)
-                                        }
-                                    }
-                                },
-                                enabled = !busy && name.isNotBlank()
-                            ) {
-                                Text(if (d > 0) "+$d" else "$d", color = BeerColors.text, fontSize = 12.sp)
-                            }
-                        }
-                    }
+                        color = BeerColors.muted,
+                        fontSize = 11.sp
+                    )
                     Spacer(Modifier.height(8.dp))
                     Button(
                         onClick = {
                             busy = true
                             scope.launch {
-                                val ok = withContext(Dispatchers.IO) {
-                                    try { vm.api.adminRpgResetDaily(name) } catch (_: Exception) { false }
+                                val d = withContext(Dispatchers.IO) {
+                                    try { vm.api.adminRpgUnquarantine(name) } catch (_: Exception) { null }
                                 }
                                 busy = false
-                                if (ok) {
-                                    vm.showToast("Reset journalier $name", ToastPayload.Variant.SUCCESS, label = "Beerquest")
-                                    selected = null
-                                    reload()
+                                if (d != null) {
+                                    applyDetail(d)
+                                    vm.showToast("Quarantaine levée pour $name", ToastPayload.Variant.SUCCESS, label = "Beerquest")
                                 } else {
-                                    vm.showToast("Échec reset", ToastPayload.Variant.ERROR)
+                                    vm.showToast("Échec levée quarantaine", ToastPayload.Variant.ERROR)
                                 }
                             }
                         },
-                        enabled = !busy && name.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = BeerColors.accent)
+                        enabled = !busy,
+                        colors = ButtonDefaults.buttonColors(containerColor = BeerColors.error)
                     ) {
-                        Text("Reset XP du jour", color = Color.Black, fontWeight = FontWeight.Bold)
+                        Text("Lever quarantaine", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
-            },
+            } else if ((p?.suspicionScore ?: 0) > 0) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Suspicion anti-triche : ${p?.suspicionScore}/100",
+                    color = Gold,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
+            Text("Accès RPG", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Spacer(Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf<Pair<String, Boolean?>>(
+                    "ON" to true,
+                    "OFF" to false,
+                    "Auto" to null,
+                ).forEach { (lab, value) ->
+                    val active = when (value) {
+                        true -> p?.allowedOverride == true
+                        false -> p?.allowedOverride == false
+                        null -> p?.allowedOverride == null
+                    }
+                    Text(
+                        lab,
+                        color = if (active) Color.Black else BeerColors.text,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                when {
+                                    active && value == true -> Color(0xFF81C784)
+                                    active && value == false -> Color(0xFFE57373)
+                                    active -> Gold
+                                    else -> BeerColors.card
+                                }
+                            )
+                            .border(1.dp, BeerColors.border, RoundedCornerShape(8.dp))
+                            .clickable(enabled = !busy) {
+                                scope.launch {
+                                    busy = true
+                                    val d = withContext(Dispatchers.IO) {
+                                        try { vm.api.adminRpgSetUserAllowed(name, value) } catch (_: Exception) { null }
+                                    }
+                                    if (d != null) {
+                                        vm.showToast("$name · RPG $lab", ToastPayload.Variant.SUCCESS)
+                                        applyDetail(d)
+                                    } else {
+                                        vm.showToast("Échec accès", ToastPayload.Variant.ERROR)
+                                    }
+                                    busy = false
+                                }
+                            }
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            Text("Niveau (parité iOS)", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            OutlinedTextField(
+                value = levelText,
+                onValueChange = { levelText = it.filter { c -> c.isDigit() }.take(3) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = BeerColors.text,
+                    unfocusedTextColor = BeerColors.text,
+                    focusedBorderColor = BeerColors.accent,
+                    unfocusedBorderColor = BeerColors.border
+                )
+            )
+            TextButton(
+                onClick = {
+                    val lv = levelText.toIntOrNull()
+                    if (lv == null || lv < 1) {
+                        vm.showToast("Niveau invalide", ToastPayload.Variant.ERROR)
+                        return@TextButton
+                    }
+                    busy = true
+                    scope.launch {
+                        val d = withContext(Dispatchers.IO) {
+                            try { vm.api.adminRpgPatchPlayer(name, mapOf("level" to lv)) } catch (_: Exception) { null }
+                        }
+                        busy = false
+                        if (d != null) {
+                            vm.showToast("Niveau $lv pour $name", ToastPayload.Variant.SUCCESS, label = "Beerquest")
+                            applyDetail(d)
+                        } else {
+                            vm.showToast("Échec niveau", ToastPayload.Variant.ERROR)
+                        }
+                    }
+                },
+                enabled = !busy
+            ) { Text("Appliquer niveau", color = BeerColors.accent) }
+
+            Spacer(Modifier.height(8.dp))
+            Text("Ajuster l’XP", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(-50, -10, 10, 50).forEach { d0 ->
+                    OutlinedButton(
+                        onClick = {
+                            busy = true
+                            scope.launch {
+                                val d = withContext(Dispatchers.IO) {
+                                    try { vm.api.adminRpgAdjustXp(name, d0) } catch (_: Exception) { null }
+                                }
+                                busy = false
+                                if (d != null) {
+                                    vm.showToast("XP ${if (d0 > 0) "+" else ""}$d0 pour $name", ToastPayload.Variant.SUCCESS, label = "Beerquest")
+                                    applyDetail(d)
+                                } else {
+                                    vm.showToast("Échec XP", ToastPayload.Variant.ERROR)
+                                }
+                            }
+                        },
+                        enabled = !busy && name.isNotBlank()
+                    ) {
+                        Text(if (d0 > 0) "+$d0" else "$d0", color = BeerColors.text, fontSize = 12.sp)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    busy = true
+                    scope.launch {
+                        val d = withContext(Dispatchers.IO) {
+                            try { vm.api.adminRpgResetDaily(name) } catch (_: Exception) { null }
+                        }
+                        busy = false
+                        if (d != null) {
+                            vm.showToast("Reset journalier $name", ToastPayload.Variant.SUCCESS, label = "Beerquest")
+                            applyDetail(d)
+                        } else {
+                            vm.showToast("Échec reset", ToastPayload.Variant.ERROR)
+                        }
+                    }
+                },
+                enabled = !busy && name.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(containerColor = BeerColors.accent)
+            ) {
+                Text("Reset XP du jour", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+
+            // ── Badges : donner / retirer ──
+            Spacer(Modifier.height(14.dp))
+            val badges = detail?.badges.orEmpty()
+            val earnedCount = badges.count { it.earned }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("🏅 Salle des trophées", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("$earnedCount/${badges.size}", color = Gold, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("all" to "Tous", "earned" to "Obtenus", "locked" to "À donner").forEach { (key, lab) ->
+                    val on = badgeFilter == key
+                    Text(
+                        lab,
+                        color = if (on) Color.Black else BeerColors.muted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(if (on) Gold else BeerColors.card)
+                            .border(1.dp, if (on) Gold else BeerColors.border, RoundedCornerShape(999.dp))
+                            .clickable { badgeFilter = key }
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            val shownBadges = when (badgeFilter) {
+                "earned" -> badges.filter { it.earned }
+                "locked" -> badges.filter { !it.earned }
+                else -> badges
+            }
+            if (shownBadges.isEmpty()) {
+                Text("Aucun badge dans ce filtre.", color = BeerColors.muted, fontSize = 12.sp)
+            } else {
+                val rows = shownBadges.chunked(2)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    rows.forEach { row ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            row.forEach { b ->
+                                Box(Modifier.weight(1f)) {
+                                    AdminBadgeTile(
+                                        b = b,
+                                        busy = busy,
+                                        onTap = {
+                                            if (b.earned) {
+                                                confirmRevoke = b
+                                            } else {
+                                                scope.launch {
+                                                    busy = true
+                                                    val res = withContext(Dispatchers.IO) {
+                                                        try { vm.api.adminRpgGrantBadge(name, b.key.orEmpty()) } catch (_: Exception) { null }
+                                                    }
+                                                    busy = false
+                                                    if (res?.granted == true) {
+                                                        vm.showToast("Badge accordé", ToastPayload.Variant.SUCCESS, label = "🏅 ${b.name}")
+                                                        applyDetail(res.player)
+                                                    } else {
+                                                        vm.showToast("Échec badge", ToastPayload.Variant.ERROR)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                            if (row.size < 2) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+
+            // ── Quêtes récentes ──
+            val quests = detail?.quests.orEmpty()
+            if (quests.isNotEmpty()) {
+                Spacer(Modifier.height(14.dp))
+                Text("📜 Quêtes", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Spacer(Modifier.height(6.dp))
+                quests.take(10).forEach { q ->
+                    Text(
+                        "• ${q.title ?: q.key ?: "—"} · ${q.progress ?: 0}/${q.target ?: 1} · ${q.status ?: "?"}",
+                        color = BeerColors.muted,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+
+            // ── Événements récents ──
+            val events = detail?.events.orEmpty()
+            if (events.isNotEmpty()) {
+                Spacer(Modifier.height(14.dp))
+                Text("🕒 Historique", color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Spacer(Modifier.height(6.dp))
+                events.take(10).forEach { e ->
+                    Text(
+                        "• ${e.kind ?: "—"} · ${formatDate(e.createdAt)}",
+                        color = BeerColors.muted,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+
+            // ── Zone dangereuse ──
+            Spacer(Modifier.height(16.dp))
+            Text("Zone dangereuse", color = BeerColors.error, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Spacer(Modifier.height(6.dp))
+            Button(
+                onClick = { confirmWipe = true },
+                enabled = !busy && name.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(containerColor = BeerColors.error)
+            ) {
+                Text("Effacer RPG", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+            Text(
+                "Efface niveau, XP, badges, quêtes et historique RPG — le carnet de dégustations reste intact.",
+                color = BeerColors.muted,
+                fontSize = 10.sp
+            )
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    if (confirmRevoke != null) {
+        val b = confirmRevoke!!
+        AlertDialog(
+            onDismissRequest = { confirmRevoke = null },
+            title = { Text("Retirer « ${b.name ?: b.key} » ?", color = BeerColors.text, fontWeight = FontWeight.Bold) },
+            text = { Text("Ce badge sera retiré du grimoire de $name.", color = BeerColors.muted) },
             confirmButton = {
-                TextButton(onClick = { selected = null }) { Text("Fermer", color = BeerColors.muted) }
+                TextButton(onClick = {
+                    val key = b.key.orEmpty()
+                    confirmRevoke = null
+                    scope.launch {
+                        busy = true
+                        val res = withContext(Dispatchers.IO) {
+                            try { vm.api.adminRpgRevokeBadge(name, key) } catch (_: Exception) { null }
+                        }
+                        busy = false
+                        if (res?.removed == true) {
+                            vm.showToast("Badge retiré", ToastPayload.Variant.INFO, label = "🏅 ${b.name}")
+                            applyDetail(res.player)
+                        } else {
+                            vm.showToast("Échec retrait", ToastPayload.Variant.ERROR)
+                        }
+                    }
+                }) { Text("Retirer", color = BeerColors.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRevoke = null }) { Text("Annuler", color = BeerColors.muted) }
             },
             containerColor = BeerColors.card
+        )
+    }
+
+    if (confirmWipe) {
+        AlertDialog(
+            onDismissRequest = { confirmWipe = false },
+            title = { Text("Effacer tout le RPG de « $name » ?", color = BeerColors.text, fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Irréversible : niveau, XP, badges, quêtes et historique RPG seront supprimés. Le carnet de dégustations n'est pas touché.",
+                    color = BeerColors.muted
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmWipe = false
+                    scope.launch {
+                        busy = true
+                        val ok = withContext(Dispatchers.IO) {
+                            try { vm.api.adminRpgWipePlayer(name) } catch (_: Exception) { false }
+                        }
+                        busy = false
+                        if (ok) {
+                            vm.showToast("RPG effacé pour $name", ToastPayload.Variant.SUCCESS, label = "Beerquest")
+                            onChanged()
+                            onClose()
+                        } else {
+                            vm.showToast("Échec effacement", ToastPayload.Variant.ERROR)
+                        }
+                    }
+                }) { Text("Effacer le RPG", color = BeerColors.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmWipe = false }) { Text("Annuler", color = BeerColors.muted) }
+            },
+            containerColor = BeerColors.card
+        )
+    }
+}
+
+/** Tuile badge admin (parité visuelle avec BadgeTile du Grimoire) — tap pour donner/retirer. */
+@Composable
+private fun AdminBadgeTile(b: RpgBadge, busy: Boolean, onTap: () -> Unit) {
+    val earned = b.earned
+    val rarity = (b.rarity ?: "common").lowercase()
+    val rarityColor = when (rarity) {
+        "legendary" -> LegendAmber
+        "epic" -> BadgePurple
+        "rare" -> RareBlue
+        else -> BeerColors.muted
+    }
+    val borderColor = if (earned) rarityColor.copy(alpha = 0.6f) else BeerColors.border
+    val bg = if (earned) rarityColor.copy(alpha = 0.14f) else BeerColors.card
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+            .background(bg)
+            .padding(horizontal = 6.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(b.icon ?: "🏅", fontSize = 20.sp)
+        Text(
+            b.name ?: "—",
+            color = BeerColors.text,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            lineHeight = 13.sp
+        )
+        Text(rarityLabelFr(b.rarity), color = rarityColor, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            if (earned) "Retirer" else "Donner",
+            color = if (earned) BeerColors.error else Color.Black,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Black,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (earned) BeerColors.error.copy(alpha = 0.12f) else Gold)
+                .border(1.dp, if (earned) BeerColors.error.copy(alpha = 0.4f) else Gold, RoundedCornerShape(8.dp))
+                .clickable(enabled = !busy && !b.key.isNullOrBlank()) { onTap() }
+                .padding(vertical = 6.dp),
+            textAlign = TextAlign.Center
         )
     }
 }

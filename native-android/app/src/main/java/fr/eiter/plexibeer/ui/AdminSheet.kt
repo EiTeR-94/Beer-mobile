@@ -57,6 +57,7 @@ fun AdminSheet(vm: AppViewModel) {
     var invValidity by remember { mutableStateOf("7d") }
     var createdUrl by remember { mutableStateOf<String?>(null) }
     var invBusy by remember { mutableStateOf(false) }
+    var checkinsInvite by remember { mutableStateOf<InviteItem?>(null) }
 
     // referentials
     var refTab by remember { mutableIntStateOf(0) }
@@ -353,6 +354,7 @@ fun AdminSheet(vm: AppViewModel) {
                     invites.forEach { inv ->
                         InviteCard(
                             inv = inv,
+                            onCheckins = { checkinsInvite = inv },
                             onCopy = { url ->
                                 val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                 cm.setPrimaryClip(ClipData.newPlainText("invite", url))
@@ -521,6 +523,10 @@ fun AdminSheet(vm: AppViewModel) {
             }
             Spacer(Modifier.height(24.dp))
         }
+    }
+
+    checkinsInvite?.let { inv ->
+        InviteCheckinsSheet(vm = vm, invite = inv, onClose = { checkinsInvite = null })
     }
 }
 
@@ -728,6 +734,7 @@ private fun DashTile(ico: String, v: String, l: String, modifier: Modifier = Mod
 @Composable
 private fun InviteCard(
     inv: InviteItem,
+    onCheckins: () -> Unit,
     onCopy: (String) -> Unit,
     onExtend: (String) -> Unit,
     onReissue: () -> Unit,
@@ -754,11 +761,23 @@ private fun InviteCard(
                     .padding(horizontal = 8.dp, vertical = 3.dp)
             )
         }
-        Text(
-            "${inv.username ?: "—"} · ${inv.checkins ?: 0} dégustation(s)",
-            color = BeerColors.muted,
-            fontSize = 12.sp
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "${inv.username ?: "—"} · ${inv.checkins ?: 0} dégustation(s)",
+                color = BeerColors.muted,
+                fontSize = 12.sp
+            )
+            if ((inv.checkins ?: 0) > 0) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "Voir",
+                    color = BeerColors.accent,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable { onCheckins() }
+                )
+            }
+        }
         if (inv.redeemedAt != null && inv.linkActive != true) {
             Text(
                 "Lien d'invitation consommé — plus utilisable (session = appareil lié)",
@@ -859,4 +878,100 @@ private fun SmallAction(label: String, danger: Boolean = false, onClick: () -> U
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 6.dp)
     )
+}
+
+/**
+ * Dégustations d'un compte invité — lecture seule (parité iOS InviteCheckinsSheetView).
+ * GET /api/invites/{id}/checkins.
+ */
+@Composable
+private fun InviteCheckinsSheet(vm: AppViewModel, invite: InviteItem, onClose: () -> Unit) {
+    var items by remember(invite.id) { mutableStateOf<List<CheckinItem>>(emptyList()) }
+    var loading by remember(invite.id) { mutableStateOf(true) }
+    var error by remember(invite.id) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(invite.id) {
+        loading = true
+        error = null
+        try {
+            items = withContext(Dispatchers.IO) { vm.api.adminInviteCheckins(invite.id, limit = 50) }
+        } catch (e: Exception) {
+            error = e.message ?: "Erreur chargement"
+        }
+        loading = false
+    }
+
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onClose,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(BeerColors.bg)
+                .padding(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "🍺 Dégustations · ${invite.username ?: invite.label ?: "invité"}",
+                        color = BeerColors.text,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp
+                    )
+                    Text("${items.size} dégustation(s) · lecture seule", color = BeerColors.muted, fontSize = 12.sp)
+                }
+                Text("Fermer ✕", color = BeerColors.muted, modifier = Modifier.clickable { onClose() }.padding(8.dp))
+            }
+            Spacer(Modifier.height(10.dp))
+            when {
+                loading -> Text("Chargement…", color = BeerColors.muted)
+                error != null -> Text(error!!, color = BeerColors.error, fontSize = 13.sp)
+                items.isEmpty() -> Text("Aucune dégustation pour cet invité.", color = BeerColors.muted, fontSize = 13.sp)
+                else -> {
+                    val scroll = rememberScrollState()
+                    Column(Modifier.verticalScroll(scroll).weight(1f, fill = true)) {
+                        items.forEach { item ->
+                            InviteCheckinRow(vm = vm, item = item)
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        Spacer(Modifier.height(16.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InviteCheckinRow(vm: AppViewModel, item: CheckinItem) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, BeerColors.border, RoundedCornerShape(12.dp))
+            .background(BeerColors.card)
+            .padding(12.dp)
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            BeerAuthImage(
+                path = item.photoURL,
+                api = vm.api,
+                modifier = Modifier.size(72.dp).clip(RoundedCornerShape(10.dp))
+            )
+            Column(Modifier.weight(1f)) {
+                Text(item.beerName, color = BeerColors.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("★ ${formatRating(item.rating)}", color = BeerColors.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "${item.brewery ?: "—"} · ${item.style ?: "Inconnu"} · ${formatDate(item.createdAt)}",
+                    color = BeerColors.muted,
+                    fontSize = 11.sp
+                )
+                item.comment?.takeIf { it.isNotBlank() }?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text("« $it »", color = BeerColors.text, fontSize = 12.sp)
+                }
+            }
+        }
+    }
 }
