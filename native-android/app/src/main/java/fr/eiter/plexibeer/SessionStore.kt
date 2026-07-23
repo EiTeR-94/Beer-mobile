@@ -18,8 +18,9 @@ import okhttp3.Response
  * Solution : parser Set-Cookie à la main, stocker le token, l'injecter sur chaque requête.
  */
 class SessionCookieJar(context: Context) : CookieJar {
+    // Chiffré au repos (AES256-GCM/Keystore) — migre depuis l'ancien store en clair au premier accès.
     private val prefs: SharedPreferences =
-        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        SecurePrefs.open(context, PREFS + "_secure", PREFS)
 
     private val lock = Any()
 
@@ -179,9 +180,12 @@ object BeerSessionStore {
         val isInvite: Boolean
     )
 
+    // Chiffré au repos (AES256-GCM/Keystore) — migre depuis l'ancien store en clair au premier accès.
+    private fun prefs(context: Context): SharedPreferences =
+        SecurePrefs.open(context, PREFS + "_secure", PREFS)
+
     fun save(context: Context, user: String, isAdmin: Boolean, isInvite: Boolean = false) {
-        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
+        prefs(context).edit()
             .putString("user", user)
             .putBoolean("is_admin", isAdmin)
             .putBoolean("is_invite", isInvite)
@@ -190,14 +194,13 @@ object BeerSessionStore {
     }
 
     fun restore(context: Context): Identity? {
-        val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val p = prefs(context)
         if (!p.getBoolean("logged_in", false)) return null
         val user = p.getString("user", null) ?: return null
         return Identity(user, p.getBoolean("is_admin", false), p.getBoolean("is_invite", false))
     }
 
     fun clear(context: Context) {
-        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().clear().apply()
+        prefs(context).edit().clear().apply()
     }
 }

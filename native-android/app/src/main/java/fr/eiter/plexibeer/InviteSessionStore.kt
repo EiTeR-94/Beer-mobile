@@ -23,8 +23,9 @@ object InviteSessionStore {
     /** Base API (beer/ ou beer-alpha/) pour rester sur le bon backend après restart. */
     private const val KEY_API_BASE = "api_base"
 
+    // Chiffré au repos (AES256-GCM/Keystore) — migre depuis l'ancien store en clair au premier accès.
     private fun prefs(context: Context): SharedPreferences =
-        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        SecurePrefs.open(context, PREFS + "_secure", PREFS)
 
     /** Identifiant appareil stable (16–64 chars url-safe). */
     fun deviceId(context: Context): String {
