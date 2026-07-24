@@ -398,6 +398,13 @@ private fun MainScreen(vm: AppViewModel) {
         }
     }
 
+    LaunchedEffect(vm.showTutorial) {
+        if (vm.showTutorial) {
+            vm.consumeShowTutorialRequest()
+            vm.openSheet(BeerSheet.TUTORIAL)
+        }
+    }
+
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             // Header compact — actions dans « Mon compte » (parité PWA)
@@ -677,6 +684,24 @@ private fun AccountMenuOverlay(
 
             AccountSection("Aide")
             AccountMenuItem("🎓 Tutoriel") { onOpen(BeerSheet.TUTORIAL) }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Revoir à la prochaine connexion",
+                    color = BeerColors.text,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = !vm.tutorialSeen,
+                    onCheckedChange = { wantReplay -> vm.setTutorialReplay(wantReplay) }
+                )
+            }
 
             AccountSection("Parler à l’admin")
             AccountMenuItem("💬 Un retour") { onFeedback() }

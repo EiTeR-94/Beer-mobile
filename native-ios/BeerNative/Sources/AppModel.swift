@@ -48,6 +48,10 @@ final class AppModel: ObservableObject {
     @Published var rpgCelebration: RpgCelebration?
     /// Intro Beerquest 1ʳᵉ visite.
     @Published var showRpgIntro = false
+    /// Tuto « Comment ça marche » — vu côté serveur (défaut true tant que /api/me pas encore répondu).
+    @Published var tutorialSeen = true
+    /// Demande d’ouvrir le tuto auto (1ʳᵉ connexion ou toggle « revoir »).
+    @Published var showTutorial = false
     /// Demande d’ouvrir le grimoire (depuis célébration badge).
     @Published var requestOpenGrimoire = false
     /// Dernière version iOS publiée (portail versions.json).
@@ -335,6 +339,7 @@ final class AppModel: ObservableObject {
             Task {
                 await refreshRpg()
                 await checkFeedbackReplies()
+                await checkTutorialSeen()
             }
         } else {
             clearRpgUiState()
@@ -354,6 +359,51 @@ final class AppModel: ObservableObject {
             }
         } catch {
             // silencieux — pas bloquant
+        }
+    }
+
+    /// Charge le flag tuto (parité PWA loadSession) et déclenche l'auto-ouverture à la 1ʳᵉ connexion.
+    func checkTutorialSeen() async {
+        guard isLoggedIn else { return }
+        do {
+            let me = try await api.me()
+            let seen = me.tutorialSeen ?? true
+            tutorialSeen = seen
+            guard !seen else { return }
+            // Léger délai : laisse l'intro Beerquest (RPG) s'afficher en priorité si due.
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            guard !Task.isCancelled, isLoggedIn, !tutorialSeen else { return }
+            showTutorial = true
+        } catch {
+            // silencieux — pas bloquant
+        }
+    }
+
+    /// Marque le tuto vu côté serveur (fermeture panneau, 1ʳᵉ connexion ou rejoué via toggle).
+    func markTutorialSeen() async {
+        guard !tutorialSeen else { return }
+        tutorialSeen = true
+        _ = try? await api.tutorialSeen()
+    }
+
+    /// Toggle profil « revoir le tutoriel à la prochaine connexion ».
+    func setTutorialReplay(_ wantReplay: Bool) async {
+        do {
+            if wantReplay {
+                _ = try await api.tutorialReset()
+            } else {
+                _ = try await api.tutorialSeen()
+            }
+            tutorialSeen = !wantReplay
+            showToast(
+                wantReplay
+                    ? "Le tutoriel s’affichera à ta prochaine connexion."
+                    : "Tutoriel marqué comme vu.",
+                variant: .success,
+                label: "Tutoriel"
+            )
+        } catch {
+            showToast("Action impossible, réessaie.", variant: .error, label: "Tutoriel")
         }
     }
 
@@ -612,6 +662,8 @@ final class AppModel: ObservableObject {
         isInvite = false
         inviteLabel = nil
         isLoggedIn = false
+        tutorialSeen = true
+        showTutorial = false
     }
 
     private var shouldRefreshPasskeySession: Bool { false }

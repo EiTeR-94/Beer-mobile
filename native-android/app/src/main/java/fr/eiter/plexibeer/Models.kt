@@ -7,7 +7,8 @@ data class MeResponse(
     val user: String? = null,
     val auth: Boolean = false,
     @SerializedName("is_admin") val isAdmin: Boolean = false,
-    @SerializedName("is_invite") val isInvite: Boolean = false
+    @SerializedName("is_invite") val isInvite: Boolean = false,
+    @SerializedName("tutorial_seen") val tutorialSeen: Boolean? = null
 )
 
 data class LoginResponse(

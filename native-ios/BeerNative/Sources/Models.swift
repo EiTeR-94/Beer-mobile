@@ -5,11 +5,13 @@ struct MeResponse: Decodable {
     let auth: Bool?
     let isAdmin: Bool?
     let isInvite: Bool?
+    let tutorialSeen: Bool?
 
     enum CodingKeys: String, CodingKey {
         case user, auth
         case isAdmin = "is_admin"
         case isInvite = "is_invite"
+        case tutorialSeen = "tutorial_seen"
     }
 }
 

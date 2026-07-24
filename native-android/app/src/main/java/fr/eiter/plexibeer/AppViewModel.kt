@@ -76,6 +76,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var requestOpenGrimoire by mutableStateOf(false)
 
+    /** Tuto « Comment ça marche » — vu côté serveur (défaut true tant que /api/me pas encore répondu). */
+    var tutorialSeen by mutableStateOf(true)
+        private set
+    /** Demande d'ouvrir le tuto auto (1ʳᵉ connexion ou toggle « revoir »). */
+    var showTutorial by mutableStateOf(false)
+        private set
+
     /** Réponses admin feedback non vues (popup login, parité iOS/web). */
     var pendingFeedbackReplies by mutableStateOf<List<AdminFeedbackItem>>(emptyList())
         private set
@@ -376,6 +383,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         requestOpenGrimoire = false
     }
 
+    fun consumeShowTutorialRequest() {
+        showTutorial = false
+    }
+
     fun handleRpgLoot(loot: RpgLoot?) {
         if (loot == null) return
         lastRpgLoot = loot
@@ -501,11 +512,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch {
                 checkFeedbackReplies()
                 refreshMobileVersions()
+                checkTutorialSeen()
             }
         } else {
             clearRpgUiState()
             pendingFeedbackReplies = emptyList()
             feedbackReplyIndex = 0
+            tutorialSeen = true
+            showTutorial = false
         }
     }
 
@@ -516,6 +530,50 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             pendingFeedbackReplies = items
             feedbackReplyIndex = 0
         } catch (_: Exception) {
+        }
+    }
+
+    /** Charge le flag tuto (parité PWA loadSession) et déclenche l'auto-ouverture à la 1ʳᵉ connexion. */
+    suspend fun checkTutorialSeen() {
+        if (!isLoggedIn) return
+        try {
+            val me = withContext(Dispatchers.IO) { api.me() }
+            val seen = me.tutorialSeen ?: true
+            tutorialSeen = seen
+            if (!seen) {
+                // Léger délai : laisse l'intro Beerquest (RPG) s'afficher en priorité si due.
+                delay(1200)
+                if (isLoggedIn && !tutorialSeen) {
+                    showTutorial = true
+                }
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Marque le tuto vu côté serveur (fermeture panneau, 1ʳᵉ connexion ou rejoué via toggle). */
+    fun markTutorialSeen() {
+        if (tutorialSeen) return
+        tutorialSeen = true
+        viewModelScope.launch {
+            try { api.tutorialSeen() } catch (_: Exception) {}
+        }
+    }
+
+    /** Toggle profil « revoir le tutoriel à la prochaine connexion ». */
+    fun setTutorialReplay(wantReplay: Boolean) {
+        viewModelScope.launch {
+            try {
+                if (wantReplay) api.tutorialReset() else api.tutorialSeen()
+                tutorialSeen = !wantReplay
+                showToast(
+                    if (wantReplay) "Le tutoriel s’affichera à ta prochaine connexion." else "Tutoriel marqué comme vu.",
+                    ToastPayload.Variant.SUCCESS,
+                    label = "Tutoriel"
+                )
+            } catch (_: Exception) {
+                showToast("Action impossible, réessaie.", ToastPayload.Variant.ERROR, label = "Tutoriel")
+            }
         }
     }
 
@@ -798,6 +856,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun closeSheet() {
+        if (sheet == BeerSheet.TUTORIAL) markTutorialSeen()
         sheet = null
         selectedCheckin = null
         editingCheckin = null

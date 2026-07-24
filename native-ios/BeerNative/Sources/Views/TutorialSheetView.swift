@@ -52,6 +52,7 @@ let beerTutorialSteps: [TutorialStep] = [
 struct TutorialSheetView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var index = 0
+    var onClose: () -> Void = {}
 
     private var step: TutorialStep { beerTutorialSteps[index] }
     private var isLast: Bool { index == beerTutorialSteps.count - 1 }
@@ -127,5 +128,6 @@ struct TutorialSheetView: View {
         }
         .background(Theme.bg)
         .preferredColorScheme(.dark)
+        .onDisappear { onClose() }
     }
 }
