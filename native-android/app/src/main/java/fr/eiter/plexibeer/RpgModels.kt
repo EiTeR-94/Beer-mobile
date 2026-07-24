@@ -186,7 +186,8 @@ data class RpgAdminPlayer(
     val quarantined: Boolean? = null,
     @SerializedName("quarantine_at") val quarantineAt: String? = null,
     @SerializedName("quarantine_reason") val quarantineReason: String? = null,
-    @SerializedName("quarantine_suspicion") val quarantineSuspicion: Int? = null
+    @SerializedName("quarantine_suspicion") val quarantineSuspicion: Int? = null,
+    @SerializedName("tutorial_seen") val tutorialSeen: Boolean? = null
 )
 
 /** GET/PATCH/xp/reset-daily/unquarantine — détail complet /api/admin/rpg/players/{user} */

@@ -71,7 +71,6 @@ struct MainView: View {
                     rpgActive: app.rpgActive,
                     pendingCount: app.pendingCount,
                     portalURL: app.portalURL,
-                    tutorialSeen: app.tutorialSeen,
                     onDismiss: { showAccountMenu = false },
                     onOpen: { s in
                         showAccountMenu = false
@@ -91,9 +90,6 @@ struct MainView: View {
                     onLogout: {
                         showAccountMenu = false
                         showLogoutConfirm = true
-                    },
-                    onToggleTutorialReplay: { wantReplay in
-                        Task { await app.setTutorialReplay(wantReplay) }
                     }
                 )
             }
@@ -442,13 +438,11 @@ private struct AccountMenuOverlay: View {
     let rpgActive: Bool
     let pendingCount: Int
     let portalURL: URL
-    let tutorialSeen: Bool
     let onDismiss: () -> Void
     let onOpen: (BeerSheet) -> Void
     let onCheckMaj: () -> Void
     let onFeedback: () -> Void
     let onLogout: () -> Void
-    let onToggleTutorialReplay: (Bool) -> Void
 
     var body: some View {
         // ViewThatFits : panneau = hauteur contenu (s’arrête sous Déconnexion).
@@ -543,15 +537,6 @@ private struct AccountMenuOverlay: View {
 
             section("Aide")
             item("🎓 Tutoriel") { onOpen(.tutorial) }
-            Toggle("Revoir à la prochaine connexion", isOn: Binding(
-                get: { !tutorialSeen },
-                set: { onToggleTutorialReplay($0) }
-            ))
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Theme.text)
-            .tint(Theme.accent)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
 
             section("Parler à l’admin")
             item("💬 Un retour") { onFeedback() }

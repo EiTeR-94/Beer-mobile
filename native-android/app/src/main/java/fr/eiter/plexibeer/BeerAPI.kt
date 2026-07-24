@@ -421,19 +421,6 @@ class BeerAPI private constructor(context: Context) {
         }
     }
 
-    suspend fun tutorialReset(): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val (_, code) = execute(
-                requestBuilder("api/tutorial-reset")
-                    .post("{}".toRequestBody(JSON))
-                    .build()
-            )
-            code in 200..299
-        } catch (_: Exception) {
-            false
-        }
-    }
-
     suspend fun adminRpgPlayers(): List<RpgAdminPlayer> = withContext(Dispatchers.IO) {
         try {
             val (body, code) = execute(requestBuilder("api/admin/rpg/players").get().build())

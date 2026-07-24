@@ -386,27 +386,6 @@ final class AppModel: ObservableObject {
         _ = try? await api.tutorialSeen()
     }
 
-    /// Toggle profil « revoir le tutoriel à la prochaine connexion ».
-    func setTutorialReplay(_ wantReplay: Bool) async {
-        do {
-            if wantReplay {
-                _ = try await api.tutorialReset()
-            } else {
-                _ = try await api.tutorialSeen()
-            }
-            tutorialSeen = !wantReplay
-            showToast(
-                wantReplay
-                    ? "Le tutoriel s’affichera à ta prochaine connexion."
-                    : "Tutoriel marqué comme vu.",
-                variant: .success,
-                label: "Tutoriel"
-            )
-        } catch {
-            showToast("Action impossible, réessaie.", variant: .error, label: "Tutoriel")
-        }
-    }
-
     func advanceFeedbackReply() {
         if feedbackReplyIndex + 1 < pendingFeedbackReplies.count {
             feedbackReplyIndex += 1

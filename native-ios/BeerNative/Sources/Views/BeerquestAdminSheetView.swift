@@ -1035,6 +1035,7 @@ private struct RpgAdminPlayerDetailView: View {
     @State private var titleText = ""
     @State private var classKey = "none"
     @State private var introSeen = true
+    @State private var tutorialSeen = true
     @State private var suspicionText = "0"
     @State private var confirmWipe = false
     @State private var badgeFilter = "all" // all | earned | locked
@@ -1328,6 +1329,9 @@ private struct RpgAdminPlayerDetailView: View {
             }
 
             Toggle("Intro vue", isOn: $introSeen)
+                .tint(Theme.accent)
+                .foregroundStyle(Theme.text)
+            Toggle("Tuto revu", isOn: $tutorialSeen)
                 .tint(Theme.accent)
                 .foregroundStyle(Theme.text)
             labeledField("Suspicion (0–100)", text: $suspicionText, keyboard: .numberPad)
@@ -1644,6 +1648,7 @@ private struct RpgAdminPlayerDetailView: View {
         classKey = p?.classKey ?? "none"
         if classKey.isEmpty { classKey = "none" }
         introSeen = p?.introSeen != false
+        tutorialSeen = p?.tutorialSeen != false
         suspicionText = "\(p?.suspicionScore ?? 0)"
     }
 
@@ -1667,6 +1672,7 @@ private struct RpgAdminPlayerDetailView: View {
             "title": titleText,
             "class": classKey,
             "intro_seen": introSeen,
+            "tutorial_seen": tutorialSeen,
             "suspicion_score": Int(suspicionText) ?? 0,
         ]
         let newLevel = max(1, min(31, Int(levelText) ?? initialLevel))

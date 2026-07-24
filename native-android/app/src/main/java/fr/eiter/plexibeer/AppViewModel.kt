@@ -560,23 +560,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Toggle profil « revoir le tutoriel à la prochaine connexion ». */
-    fun setTutorialReplay(wantReplay: Boolean) {
-        viewModelScope.launch {
-            try {
-                if (wantReplay) api.tutorialReset() else api.tutorialSeen()
-                tutorialSeen = !wantReplay
-                showToast(
-                    if (wantReplay) "Le tutoriel s’affichera à ta prochaine connexion." else "Tutoriel marqué comme vu.",
-                    ToastPayload.Variant.SUCCESS,
-                    label = "Tutoriel"
-                )
-            } catch (_: Exception) {
-                showToast("Action impossible, réessaie.", ToastPayload.Variant.ERROR, label = "Tutoriel")
-            }
-        }
-    }
-
     fun advanceFeedbackReply() {
         if (feedbackReplyIndex + 1 < pendingFeedbackReplies.size) {
             feedbackReplyIndex++

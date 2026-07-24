@@ -293,6 +293,7 @@ struct RpgAdminPlayer: Decodable, Identifiable {
     var orphan: Bool?
     var introSeen: Bool?
     var backfilled: Bool?
+    var tutorialSeen: Bool?
     var dailyXpTotal: Int?
     var dailyXpCount: Int?
     var dailySoftCap: Int?
@@ -323,6 +324,7 @@ struct RpgAdminPlayer: Decodable, Identifiable {
         case quarantineSuspicion = "quarantine_suspicion"
         case introSeen = "intro_seen"
         case backfilled
+        case tutorialSeen = "tutorial_seen"
         case dailyXpTotal = "daily_xp_total"
         case dailyXpCount = "daily_xp_count"
         case dailySoftCap = "daily_soft_cap"
