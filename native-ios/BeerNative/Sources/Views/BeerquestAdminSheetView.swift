@@ -1035,7 +1035,6 @@ private struct RpgAdminPlayerDetailView: View {
     @State private var titleText = ""
     @State private var classKey = "none"
     @State private var introSeen = true
-    @State private var tutorialSeen = true
     @State private var suspicionText = "0"
     @State private var confirmWipe = false
     @State private var badgeFilter = "all" // all | earned | locked
@@ -1331,9 +1330,6 @@ private struct RpgAdminPlayerDetailView: View {
             Toggle("Intro vue", isOn: $introSeen)
                 .tint(Theme.accent)
                 .foregroundStyle(Theme.text)
-            Toggle("Tuto revu", isOn: $tutorialSeen)
-                .tint(Theme.accent)
-                .foregroundStyle(Theme.text)
             labeledField("Suspicion (0–100)", text: $suspicionText, keyboard: .numberPad)
 
             if let last = detail?.player?.lastRpgCheckinAt {
@@ -1410,6 +1406,8 @@ private struct RpgAdminPlayerDetailView: View {
                 actionBtn("+200 XP") { Task { await adjustXp(200) } }
                 actionBtn("−50 XP") { Task { await adjustXp(-50) } }
                 actionBtn("Reset soft-cap") { Task { await resetDaily() } }
+                actionBtn(detail?.player?.tutorialSeen == false ? "🎓 Reverra le tuto" : "🎓 Forcer tuto") { Task { await forceTutorial() } }
+                    .disabled(detail?.player?.tutorialSeen == false)
                 if detail?.player?.quarantined == true {
                     actionBtn("Lever quarantaine") { Task { await unquarantine() } }
                 }
@@ -1648,7 +1646,6 @@ private struct RpgAdminPlayerDetailView: View {
         classKey = p?.classKey ?? "none"
         if classKey.isEmpty { classKey = "none" }
         introSeen = p?.introSeen != false
-        tutorialSeen = p?.tutorialSeen != false
         suspicionText = "\(p?.suspicionScore ?? 0)"
     }
 
@@ -1672,7 +1669,6 @@ private struct RpgAdminPlayerDetailView: View {
             "title": titleText,
             "class": classKey,
             "intro_seen": introSeen,
-            "tutorial_seen": tutorialSeen,
             "suspicion_score": Int(suspicionText) ?? 0,
         ]
         let newLevel = max(1, min(31, Int(levelText) ?? initialLevel))
@@ -1710,6 +1706,17 @@ private struct RpgAdminPlayerDetailView: View {
             app.showToast("Soft-cap du jour remis à 0", variant: .success, label: "Beerquest", durationMs: 2600)
         } catch {
             app.showToast("Échec reset", variant: .error, durationMs: 2600)
+        }
+    }
+
+    private func forceTutorial() async {
+        busy = true
+        defer { busy = false }
+        do {
+            applyDetail(try await app.api.adminRpgPatchPlayer(username, payload: ["tutorial_seen": false]))
+            app.showToast("\(username) reverra le tutoriel à sa prochaine connexion.", variant: .success, label: "Beerquest", durationMs: 2800)
+        } catch {
+            app.showToast("Échec tuto", variant: .error, durationMs: 2600)
         }
     }
 

@@ -2801,37 +2801,30 @@ private fun RpgPlayerDetailSheet(
                 Text("Reset XP du jour", color = Color.Black, fontWeight = FontWeight.Bold)
             }
 
-            Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Tuto revu",
-                    color = BeerColors.text,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    modifier = Modifier.weight(1f)
-                )
-                Switch(
-                    checked = p?.tutorialSeen != false,
-                    onCheckedChange = { checked ->
-                        busy = true
-                        scope.launch {
-                            val d = withContext(Dispatchers.IO) {
-                                try { vm.api.adminRpgPatchPlayer(name, mapOf("tutorial_seen" to checked)) } catch (_: Exception) { null }
-                            }
-                            busy = false
-                            if (d != null) {
-                                vm.showToast(
-                                    if (checked) "Tuto marqué vu pour $name" else "$name reverra le tuto à la prochaine connexion",
-                                    ToastPayload.Variant.SUCCESS,
-                                    label = "Beerquest"
-                                )
-                                applyDetail(d)
-                            } else {
-                                vm.showToast("Échec tuto", ToastPayload.Variant.ERROR)
-                            }
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    busy = true
+                    scope.launch {
+                        val d = withContext(Dispatchers.IO) {
+                            try { vm.api.adminRpgPatchPlayer(name, mapOf("tutorial_seen" to false)) } catch (_: Exception) { null }
                         }
-                    },
-                    enabled = !busy
+                        busy = false
+                        if (d != null) {
+                            vm.showToast("$name reverra le tutoriel à sa prochaine connexion.", ToastPayload.Variant.SUCCESS, label = "Beerquest")
+                            applyDetail(d)
+                        } else {
+                            vm.showToast("Échec tuto", ToastPayload.Variant.ERROR)
+                        }
+                    }
+                },
+                enabled = !busy && name.isNotBlank() && p?.tutorialSeen != false,
+                colors = ButtonDefaults.buttonColors(containerColor = BeerColors.accent)
+            ) {
+                Text(
+                    if (p?.tutorialSeen == false) "🎓 Reverra le tuto" else "🎓 Forcer à revoir le tuto",
+                    color = Color.Black,
+                    fontWeight = FontWeight.Bold
                 )
             }
 
