@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum BeerSheet: String, Identifiable {
-    case history, gallery, wishlist, gifts, admin, patchnotes, pending, grimoire, rpgAdmin
+    case history, gallery, wishlist, gifts, admin, patchnotes, pending, grimoire, rpgAdmin, tutorial
     var id: String { rawValue }
 }
 
@@ -143,6 +143,8 @@ struct MainView: View {
                 AdminSheetView()
             case .patchnotes:
                 PatchnotesSheetView()
+            case .tutorial:
+                TutorialSheetView()
             case .pending:
                 PendingSheetView()
                     .environmentObject(app)
@@ -524,6 +526,9 @@ private struct AccountMenuOverlay: View {
             if pendingCount > 0 {
                 item("⏳ En attente (\(pendingCount))") { onOpen(.pending) }
             }
+
+            section("Aide")
+            item("🎓 Tutoriel") { onOpen(.tutorial) }
 
             section("Parler à l’admin")
             item("💬 Un retour") { onFeedback() }
