@@ -2192,6 +2192,19 @@ fun RpgAdminSheet(vm: AppViewModel) {
                                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                                             )
                                         }
+                                        if (p.tutorialSeen == false) {
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(
+                                                "🎓 reverra le tuto",
+                                                color = Gold,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(999.dp))
+                                                    .background(Gold.copy(alpha = 0.16f))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
                                     }
                                     p.title?.let {
                                         Text(it, color = BeerColors.muted, fontSize = 11.sp)

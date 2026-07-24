@@ -675,6 +675,9 @@ struct BeerquestAdminSheetView: View {
                     let dc = p.dailySoftCap ?? 0
                     adminPill("cap \(dx)/\(dc)", .softcap)
                 }
+                if p.tutorialSeen == false {
+                    adminPill("🎓 reverra le tuto", .softcap)
+                }
             }
             Text(metaLine(p))
                 .font(.system(size: 11))
