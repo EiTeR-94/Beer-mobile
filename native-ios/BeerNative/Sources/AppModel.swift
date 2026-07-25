@@ -56,6 +56,7 @@ final class AppModel: ObservableObject {
     @Published var requestOpenGrimoire = false
     /// Dernière version iOS publiée (portail versions.json).
     @Published var latestIosVersion: String?
+    @Published var latestIosBuild: String?
     @Published var latestAndroidVersion: String?
     @Published var versionsUpdatedAt: String?
     /// Réponses admin aux feedbacks non encore vues (popup au login).
@@ -77,9 +78,16 @@ final class AppModel: ObservableObject {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
     }
     /// True si une version iOS plus récente est publiée sur le portail.
+    /// Compare d'abord la version marketing, puis le build number si elle est identique
+    /// (un rebuild CI peut publier un nouveau build sans bump de MARKETING_VERSION).
     var needsAppUpdate: Bool {
         guard let latest = latestIosVersion, !latest.isEmpty, appVersion != "?" else { return false }
-        return beerVersionCompare(appVersion, latest) < 0
+        let cmp = beerVersionCompare(appVersion, latest)
+        if cmp != 0 { return cmp < 0 }
+        guard let latestBuild = latestIosBuild, let latestN = Int(latestBuild), let curN = Int(appBuild) else {
+            return false
+        }
+        return curN < latestN
     }
     /// Check MAJ en cours (bouton header / menu).
     @Published var isCheckingMaj = false
@@ -956,6 +964,7 @@ final class AppModel: ObservableObject {
     func refreshMobileVersions() async {
         guard let m = await api.fetchMobileVersions() else { return }
         latestIosVersion = m.ios
+        latestIosBuild = m.iosBuild
         latestAndroidVersion = m.android
         versionsUpdatedAt = m.updatedAt
         // Si le manifest a une webapp et qu'on n'a pas encore serverVersion
