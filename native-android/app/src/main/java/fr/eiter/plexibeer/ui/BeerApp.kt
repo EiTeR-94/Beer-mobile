@@ -2020,6 +2020,8 @@ private fun HistorySheet(vm: AppViewModel) {
                                             try {
                                                 api.deleteCheckin(item.id)
                                                 vm.listCache.invalidateHistory()
+                                                // XP Beerquest révoquée côté serveur → rafraîchir le profil
+                                                vm.refreshRpg()
                                                 vm.showToast("Supprimé", ToastPayload.Variant.SUCCESS)
                                             } catch (e: Exception) {
                                                 if (e is java.io.IOException) {

@@ -17,6 +17,7 @@ struct HistorySheetView: View {
     @State private var error: String?
     @State private var selected: CheckinItem?
     @State private var editing: CheckinItem?
+    @State private var pendingDelete: CheckinItem?
 
     private let pageSize = 10
 
@@ -101,6 +102,29 @@ struct HistorySheetView: View {
         .sheet(item: $editing) { item in
             CheckinEditView(item: item) { Task { await reload() } }
                 .beerSheetChrome()
+        }
+        // Confirmation simple (pas de Face ID — suppression = action courante)
+        .confirmationDialog(
+            "Supprimer cette dégustation ?",
+            isPresented: Binding(
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Supprimer", role: .destructive) {
+                if let item = pendingDelete {
+                    Task { await delete(item) }
+                }
+                pendingDelete = nil
+            }
+            Button("Annuler", role: .cancel) {
+                pendingDelete = nil
+            }
+        } message: {
+            if let item = pendingDelete {
+                Text("« \(item.beerName) » sera retirée de l’historique. L’XP Beerquest associée sera aussi retirée.")
+            }
         }
     }
 
@@ -219,11 +243,7 @@ struct HistorySheetView: View {
                 }
                 BeerCompactButton(title: "Modifier") { editing = item }
                 BeerCompactButton(title: "Supprimer", destructive: true) {
-                    app.authenticateWithBiometrics(reason: "Confirmer la suppression de la dégustation") { success in
-                        if success {
-                            Task { await delete(item) }
-                        }
-                    }
+                    pendingDelete = item
                 }
             }
         }
@@ -322,6 +342,8 @@ struct HistorySheetView: View {
             // Theme 5: invalidate relevant cache entries
             app.cache.remove(name: CacheKey.historyCheckins)
             app.cache.prune()
+            // XP Beerquest révoquée côté serveur → rafraîchir le profil
+            await app.refreshRpg()
             app.showToast("Dégustation supprimée", variant: .success)
             app.hapticSuccess()
         } catch let err {

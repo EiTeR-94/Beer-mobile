@@ -7,72 +7,239 @@
   <title>Beer Quest — téléchargement</title>
   <style>
     :root {
-      --bg: #0f1419; --card: #1a222c; --text: #f1f5f9; --muted: #94a3b8;
-      --accent: #f59e0b; --border: #2d3a4a; --ios: #60a5fa; --android: #34d399;
+      --bg: #0f1419;
+      --card: #1a222c;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #f59e0b;
+      --border: #2d3a4a;
+      --ios: #60a5fa;
+      --android: #34d399;
+      --ok: #4ade80;
     }
     * { box-sizing: border-box; }
     body {
-      margin: 0; min-height: 100vh;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(245,158,11,.14), transparent), var(--bg);
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(245, 158, 11, 0.14), transparent),
+        var(--bg);
       color: var(--text);
-      display: flex; align-items: center; justify-content: center;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
       padding: 1.25rem;
+      padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
     }
     .shell { width: 100%; max-width: 420px; }
     .brand { text-align: center; margin-bottom: 1rem; }
-    .brand .ico { font-size: 2.5rem; line-height: 1; margin-bottom: .35rem; }
-    .brand h1 { margin: 0; font-size: 1.45rem; font-weight: 800; letter-spacing: -.02em; }
-    .brand p { margin: .35rem 0 0; color: var(--muted); font-size: .88rem; line-height: 1.4; }
+    .brand .ico { font-size: 2.5rem; line-height: 1; margin-bottom: 0.35rem; }
+    .brand h1 {
+      margin: 0;
+      font-size: 1.45rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    .brand p {
+      margin: 0.35rem 0 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.4;
+    }
     .notice {
       background: color-mix(in srgb, var(--accent) 10%, var(--card));
       border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
       border-radius: 12px;
-      padding: .7rem .85rem;
-      margin-bottom: .9rem;
-      font-size: .78rem;
+      padding: 0.7rem 0.85rem;
+      margin-bottom: 0.9rem;
+      font-size: 0.78rem;
       color: var(--muted);
       line-height: 1.4;
     }
     .notice strong { color: var(--text); }
     .versions {
-      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .45rem;
-      margin-bottom: .85rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 0.45rem;
+      margin-bottom: 0.85rem;
     }
     .vchip {
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 12px; padding: .55rem .4rem; text-align: center;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.55rem 0.4rem;
+      text-align: center;
     }
     .vchip.ios { border-color: color-mix(in srgb, var(--ios) 40%, var(--border)); }
     .vchip.and { border-color: color-mix(in srgb, var(--android) 40%, var(--border)); }
-    .vchip .k { display: block; font-size: .62rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
-    .vchip .v { display: block; margin-top: .2rem; font-size: .82rem; font-weight: 800; color: var(--text); }
-    .vchip .b { display: block; margin-top: .12rem; font-size: .62rem; color: var(--muted); }
-    .vchip .d { display: block; margin-top: .2rem; font-size: .6rem; color: var(--accent); font-weight: 600; line-height: 1.25; }
-    .card {
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 16px; padding: 1rem; margin-bottom: .75rem;
+    .vchip .k {
+      display: block;
+      font-size: 0.62rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
     }
-    .card h2 { margin: 0 0 .25rem; font-size: 1rem; font-weight: 700; }
+    .vchip .v {
+      display: block;
+      margin-top: 0.2rem;
+      font-size: 0.82rem;
+      font-weight: 800;
+      color: var(--text);
+    }
+    .vchip .b {
+      display: block;
+      margin-top: 0.12rem;
+      font-size: 0.62rem;
+      color: var(--muted);
+    }
+    .vchip .d {
+      display: block;
+      margin-top: 0.2rem;
+      font-size: 0.6rem;
+      color: var(--accent);
+      font-weight: 600;
+      line-height: 1.25;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1rem;
+      margin-bottom: 0.75rem;
+    }
+    .card h2 {
+      margin: 0 0 0.25rem;
+      font-size: 1rem;
+      font-weight: 700;
+    }
     .card .verline {
-      margin: 0 0 .55rem;
-      font-size: .78rem;
+      margin: 0 0 0.55rem;
+      font-size: 0.78rem;
       color: var(--muted);
       line-height: 1.35;
     }
     .card .verline strong { color: var(--text); }
-    .card .meta { margin: 0 0 .85rem; color: var(--muted); font-size: .78rem; line-height: 1.35; }
-    .btn {
-      display: flex; align-items: center; justify-content: center; gap: .45rem;
-      width: 100%; padding: .85rem 1rem; border-radius: 12px; border: none;
-      font: inherit; font-weight: 700; font-size: .95rem; text-decoration: none;
-      cursor: pointer; color: #111;
+    .card .meta {
+      margin: 0 0 0.85rem;
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.35;
     }
-    .btn:active { transform: scale(.98); }
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      width: 100%;
+      padding: 0.85rem 1rem;
+      border-radius: 12px;
+      border: none;
+      font: inherit;
+      font-weight: 700;
+      font-size: 0.95rem;
+      text-decoration: none;
+      cursor: pointer;
+      color: #111;
+    }
+    .btn:active { transform: scale(0.98); }
     .btn-ios { background: linear-gradient(180deg, #93c5fd, var(--ios)); }
     .btn-android { background: linear-gradient(180deg, #6ee7b7, var(--android)); }
-    .hint { margin-top: .55rem; font-size: .72rem; color: var(--muted); line-height: 1.35; }
-    .foot { text-align: center; margin-top: 1rem; font-size: .72rem; color: var(--muted); }
+    .btn-ghost {
+      margin-top: 0.55rem;
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+      font-size: 0.84rem;
+      font-weight: 650;
+      padding: 0.65rem 0.85rem;
+    }
+    .btn-ghost[aria-expanded="true"] {
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+      color: var(--accent);
+    }
+    .btn-ghost .chev {
+      margin-left: 0.25rem;
+      opacity: 0.75;
+      transition: transform 0.15s ease;
+      display: inline-block;
+    }
+    .btn-ghost[aria-expanded="true"] .chev {
+      transform: rotate(180deg);
+    }
+    .hint {
+      margin-top: 0.55rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    /* Mini-tuto (même page) */
+    .tuto {
+      display: none;
+      margin-top: 0.75rem;
+      padding: 0.75rem 0.8rem;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: color-mix(in srgb, var(--bg) 55%, var(--card));
+    }
+    .tuto.is-open { display: block; }
+    .tuto-title {
+      margin: 0 0 0.55rem;
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .tuto.ios .tuto-title { color: var(--ios); }
+    .tuto.and .tuto-title { color: var(--android); }
+    .tuto ol {
+      margin: 0;
+      padding: 0 0 0 1.15rem;
+      color: var(--text);
+      font-size: 0.8rem;
+      line-height: 1.45;
+    }
+    .tuto li { margin: 0.35rem 0; padding-left: 0.15rem; }
+    .tuto li strong { color: var(--text); font-weight: 700; }
+    .tuto .note {
+      margin: 0.65rem 0 0;
+      padding: 0.5rem 0.6rem;
+      border-radius: 10px;
+      font-size: 0.74rem;
+      line-height: 1.4;
+      color: var(--muted);
+      border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+      background: color-mix(in srgb, var(--accent) 8%, transparent);
+    }
+    .tuto .note strong { color: var(--accent); }
+    .tuto a {
+      color: var(--ios);
+      font-weight: 600;
+      text-decoration: none;
+      border-bottom: 1px solid color-mix(in srgb, var(--ios) 40%, transparent);
+    }
+    .tuto.and a { color: var(--android); border-bottom-color: color-mix(in srgb, var(--android) 40%, transparent); }
+    .tuto a:hover { color: var(--text); }
+    .tuto-sublinks {
+      display: block;
+      margin-top: 0.25rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+    .tuto-sublinks a {
+      font-weight: 600;
+      color: var(--muted);
+      border-bottom-color: color-mix(in srgb, var(--muted) 35%, transparent);
+    }
+    .tuto-sublinks a:hover { color: var(--ios); }
+    .foot {
+      text-align: center;
+      margin-top: 1rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
     .foot a { color: var(--accent); }
   </style>
 </head>
@@ -81,13 +248,12 @@
     <div class="brand">
       <div class="ico" aria-hidden="true">🍺</div>
       <h1>Beer Quest</h1>
-      <p>Choisis ta plateforme pour télécharger l’app native.</p>
+      <p>Télécharge l’app native, puis suis le mini-guide d’installation.</p>
     </div>
 
     <div class="notice" id="notice">
-      <strong>IPA et APK ont des mises à jour séparées.</strong>
-      L’iPhone est souvent mis à jour plus souvent qu’Android — regarde la version
-      de <em>ta</em> plateforme ci-dessous.
+      <strong>IPA et APK se mettent à jour séparément.</strong>
+      Regarde la version de <em>ta</em> plateforme ci-dessous avant d’installer.
     </div>
 
     <div class="versions" id="versions" aria-live="polite">
@@ -111,20 +277,104 @@
       </div>
     </div>
 
-    <section class="card">
+    <section class="card" id="card-ios">
       <h2>🍎 iPhone · iPad</h2>
       <p class="verline" id="line-ios">Version : …</p>
-      <p class="meta">Fichier <strong>BeerOff.ipa</strong> — installation sideload (AltStore, Sideloadly…).</p>
+      <p class="meta">
+        Fichier <strong>BeerOff.ipa</strong> — pas d’App Store.
+        Installation via <strong>Sideloadly</strong> (PC ou Mac).
+      </p>
       <a class="btn btn-ios" href="/mobile/beer/beeroff.ipa" download="BeerOff.ipa">Télécharger l’IPA</a>
-      <p class="hint">Après install : Wi‑Fi maison / VPN pour les comptes, ou lien d’invitation pour les invités 4G/5G.</p>
+      <button
+        type="button"
+        class="btn btn-ghost"
+        id="btn-tuto-ios"
+        aria-expanded="false"
+        aria-controls="tuto-ios"
+      >
+        Comment installer ? <span class="chev" aria-hidden="true">▾</span>
+      </button>
+      <div class="tuto ios" id="tuto-ios" hidden>
+        <p class="tuto-title">Mini-guide iOS</p>
+        <ol>
+          <li>
+            Sur un <strong>PC Windows ou un Mac</strong>, télécharge et installe
+            <strong>Sideloadly</strong> :
+            <a href="https://sideloadly.io/SideloadlySetup64.exe" target="_blank" rel="noopener noreferrer">Windows (64-bit)</a>,
+            <a href="https://sideloadly.io/SideloadlySetup.dmg" target="_blank" rel="noopener noreferrer">macOS</a>
+            <span class="tuto-sublinks">
+              · <a href="https://sideloadly.io/SideloadlySetup32.exe" target="_blank" rel="noopener noreferrer">Windows 32-bit</a>
+              · <a href="https://sideloadly.io/" target="_blank" rel="noopener noreferrer">site officiel</a>
+            </span>
+          </li>
+          <li>
+            Télécharge l’IPA ci-dessus — fichier <strong>BeerOff.ipa</strong>.
+          </li>
+          <li>
+            Branche l’iPhone en USB, ouvre Sideloadly, glisse l’IPA,
+            connecte-toi avec ton <strong>Apple ID</strong> (compte gratuit OK).
+          </li>
+          <li>
+            Lance l’install. Sur l’iPhone :
+            <strong>Réglages → Général → VPN et gestion de l’appareil</strong>
+            → fais confiance au développeur.
+          </li>
+          <li>
+            Ouvre Beer Quest. Compte maison : Wi‑Fi / VPN.
+            Invité : colle le lien d’invitation dans l’app.
+          </li>
+        </ol>
+        <p class="note">
+          <strong>Important :</strong> sans Sideloadly (ou équivalent), l’IPA
+          ne s’installe pas toute seule. À refaire ~tous les 7 jours avec un
+          Apple ID gratuit (signature temporaire).
+        </p>
+      </div>
+      <p class="hint">Après install : Wi‑Fi maison / VPN, ou lien d’invitation en 4G/5G.</p>
     </section>
 
-    <section class="card">
+    <section class="card" id="card-and">
       <h2>🤖 Android</h2>
       <p class="verline" id="line-and">Version : …</p>
-      <p class="meta">Fichier <strong>BeerOff.apk</strong> — autorise « sources inconnues » si demandé.</p>
+      <p class="meta">
+        Fichier <strong>BeerOff.apk</strong> — autorise les « sources inconnues »
+        si Android le demande.
+      </p>
       <a class="btn btn-android" href="/mobile/beer/beeroff.apk" download="BeerOff.apk">Télécharger l’APK</a>
-      <p class="hint">Cycle de maj indépendant de l’IPA. Compare avec la version affichée dans l’app Android.</p>
+      <button
+        type="button"
+        class="btn btn-ghost"
+        id="btn-tuto-and"
+        aria-expanded="false"
+        aria-controls="tuto-and"
+      >
+        Comment installer ? <span class="chev" aria-hidden="true">▾</span>
+      </button>
+      <div class="tuto and" id="tuto-and" hidden>
+        <p class="tuto-title">Mini-guide Android</p>
+        <ol>
+          <li>
+            Télécharge l’APK ci-dessus — fichier <strong>BeerOff.apk</strong>.
+          </li>
+          <li>
+            Ouvre le fichier téléchargé. Si demandé, autorise
+            <strong>Installer des apps inconnues</strong> pour ton navigateur / Fichiers.
+          </li>
+          <li>
+            Valide l’installation (ou la <strong>mise à jour</strong> si tu as déjà l’app).
+            <strong>Pas besoin de désinstaller</strong> l’ancienne version — les données
+            et le compte sont conservés.
+          </li>
+          <li>
+            Ouvre l’app. Compte maison : Wi‑Fi / VPN. Invité : lien d’invitation.
+          </li>
+        </ol>
+        <p class="note">
+          Les mises à jour se font en téléchargeant la nouvelle APK par-dessus l’ancienne
+          (même signature). Pas de Play Store.
+        </p>
+      </div>
+      <p class="hint">Cycle de maj indépendant de l’iPhone — compare avec la version dans l’app.</p>
     </section>
 
     <p class="foot">Plexi · <a href="/beer/">webapp Beer Quest</a></p>
@@ -140,6 +390,25 @@
       if (when) s += "<br>Dernière maj : <strong>" + when + "</strong>";
       return s;
     }
+
+    function bindTuto(btnId, panelId) {
+      var btn = document.getElementById(btnId);
+      var panel = document.getElementById(panelId);
+      if (!btn || !panel) return;
+      btn.addEventListener("click", function () {
+        var open = panel.classList.toggle("is-open");
+        panel.hidden = !open;
+        btn.setAttribute("aria-expanded", open ? "true" : "false");
+        if (open) {
+          try {
+            panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          } catch (e) {}
+        }
+      });
+    }
+    bindTuto("btn-tuto-ios", "tuto-ios");
+    bindTuto("btn-tuto-and", "tuto-and");
+
     fetch("/mobile/beer/versions.json?_=" + Date.now(), { cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (v) {
