@@ -799,8 +799,8 @@ final class AppModel: ObservableObject {
             force: force,
             photoJPEGBase64: photoJPEG?.base64EncodedString(),
             location: loc.isEmpty ? nil : loc,
-            locationLat: locationLat.map(String.init),
-            locationLon: locationLon.map(String.init),
+            locationLat: locationLat.map { String($0) },
+            locationLon: locationLon.map { String($0) },
             locationOsmId: locationOsmId
         )
 
