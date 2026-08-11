@@ -136,6 +136,10 @@ struct CheckinItem: Identifiable, Codable, Hashable {
     let untappdBid: Int?
     /// Lieu / lien où la bière a été dégustée (optionnel).
     let location: String?
+    /// Coordonnées du lieu si sélectionné via la recherche OSM (optionnel).
+    let locationLat: Double?
+    let locationLon: Double?
+    let locationOsmId: String?
 
     enum CodingKeys: String, CodingKey {
         case id, brewery, style, rating, comment, barcode, flavors, hops, location
@@ -144,6 +148,9 @@ struct CheckinItem: Identifiable, Codable, Hashable {
         case photoURL = "photo_url"
         case hiddenFromPartner = "hidden_from_partner"
         case untappdBid = "untappd_bid"
+        case locationLat = "location_lat"
+        case locationLon = "location_lon"
+        case locationOsmId = "location_osm_id"
     }
 }
 
@@ -380,6 +387,10 @@ struct PendingCheckin: Identifiable, Codable {
     var photoJPEGBase64: String?
     /// Lieu / lien de dégustation (optionnel). Optional for legacy offline queue JSON.
     var location: String? = nil
+    /// Coordonnées du lieu sélectionné via la recherche OSM (optionnel, solidaire de `location`).
+    var locationLat: String? = nil
+    var locationLon: String? = nil
+    var locationOsmId: String? = nil
 }
 
 struct PreviousCheckin: Decodable {
@@ -436,6 +447,25 @@ struct InviteIpEntry: Codable {
         case ip
         case firstSeen = "first_seen"
         case lastSeen = "last_seen"
+    }
+}
+
+struct GeocodeSearchResponse: Decodable {
+    let ok: Bool?
+    let results: [GeocodeHit]?
+}
+
+struct GeocodeHit: Decodable, Identifiable, Equatable {
+    let label: String
+    let lat: Double
+    let lon: Double
+    let osmId: String?
+
+    var id: String { osmId ?? "\(label)|\(lat)|\(lon)" }
+
+    enum CodingKeys: String, CodingKey {
+        case label, lat, lon
+        case osmId = "osm_id"
     }
 }
 

@@ -30,6 +30,15 @@ struct BeerWizardView: View {
     @State private var photoPreview: UIImage?
     /// Lieu / lien où la bière a été dégustée (optionnel) — saisi à l'étape Photo.
     @State private var location = ""
+    /// Coordonnées du lieu si sélectionné via la recherche OSM (nil = saisie libre).
+    @State private var locationLat: Double?
+    @State private var locationLon: Double?
+    @State private var locationOsmId: String?
+    @State private var locationResults: [GeocodeHit] = []
+    @State private var locationSearchTask: Task<Void, Never>?
+    /// Empêche le `.onChange(of: location)` de s'auto-effacer quand on affecte
+    /// `location` par programme (sélection d'une suggestion).
+    @State private var suppressLocationChange = false
 
     @State private var rating = 3.0
     @State private var comment = ""
@@ -89,6 +98,7 @@ struct BeerWizardView: View {
         .onChange(of: app.wizardProduct, perform: { _ in applyPrefillIfNeeded() })
         .onChange(of: step, perform: { newStep in
             app.wizardStep = newStep
+            if newStep == 2 { LocationBiasProvider.shared.requestOnce() }
             if newStep == 3 { Task { await loadNotation() } }
         })
         .alert("Déjà dégustée", isPresented: $showDuplicate) {
@@ -290,10 +300,44 @@ struct BeerWizardView: View {
                     text: $location,
                     placeholder: "ex. Chez nous · Brasserie X · https://maps.app.goo.gl/…"
                 )
-                Text("\(min(location.count, 300))/300")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.muted)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+                .onChange(of: location) { _ in
+                    if suppressLocationChange {
+                        suppressLocationChange = false
+                        return
+                    }
+                    locationLat = nil
+                    locationLon = nil
+                    locationOsmId = nil
+                    LocationBiasProvider.shared.requestOnce()
+                    scheduleLocationSearch()
+                }
+                HStack {
+                    if locationLat != nil {
+                        Text("✓ Lieu vérifié (OpenStreetMap)")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.accent)
+                    }
+                    Spacer()
+                    Text("\(min(location.count, 300))/300")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.muted)
+                }
+                ForEach(locationResults) { hit in
+                    Button {
+                        pickLocation(hit)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("📍").font(.caption)
+                            Text(hit.label).font(.caption).foregroundStyle(Theme.text)
+                            Spacer()
+                        }
+                        .padding(8)
+                        .background(Theme.bg)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .beerCard()
 
@@ -524,6 +568,39 @@ struct BeerWizardView: View {
         }
     }
 
+    /// Recherche de lieu (OSM/Photon) débouncée — annule la recherche en cours à chaque frappe.
+    private func scheduleLocationSearch() {
+        locationSearchTask?.cancel()
+        let query = location
+        guard query.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 else {
+            locationResults = []
+            return
+        }
+        locationSearchTask = Task {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+            let bias = LocationBiasProvider.shared.coordinate
+            do {
+                let res = try await app.api.geocodeSearch(query: query, lat: bias?.latitude, lon: bias?.longitude)
+                guard !Task.isCancelled else { return }
+                locationResults = res.results ?? []
+            } catch {
+                guard !Task.isCancelled else { return }
+                locationResults = []
+            }
+        }
+    }
+
+    private func pickLocation(_ hit: GeocodeHit) {
+        suppressLocationChange = true
+        location = String(hit.label.prefix(300))
+        locationLat = hit.lat
+        locationLon = hit.lon
+        locationOsmId = hit.osmId
+        locationResults = []
+        locationSearchTask?.cancel()
+    }
+
     private func selectUntappd(_ hit: UntappdHit) async {
         busy = true
         defer { busy = false }
@@ -593,7 +670,10 @@ struct BeerWizardView: View {
                 comment: comment,
                 photoJPEG: photoData,
                 force: force,
-                location: location
+                location: location,
+                locationLat: locationLat,
+                locationLon: locationLon,
+                locationOsmId: locationOsmId
             )
             if msg.hasPrefix("duplicate|") {
                 let parts = msg.split(separator: "|").map(String.init)
@@ -657,6 +737,11 @@ struct BeerWizardView: View {
         photoData = nil
         photoPreview = nil
         location = ""
+        locationLat = nil
+        locationLon = nil
+        locationOsmId = nil
+        locationResults = []
+        locationSearchTask?.cancel()
         rating = 3.0
         comment = ""
         flavors = []

@@ -1026,14 +1026,24 @@ final class BeerAPI {
         hops: [String]?,
         comment: String?,
         hiddenFromPartner: Bool?,
-        location: String? = nil
+        location: String? = nil,
+        locationLat: Double? = nil,
+        locationLon: Double? = nil,
+        locationOsmId: String? = nil
     ) async throws {
         var payload: [String: Any] = [:]
         if let rating { payload["rating"] = rating }
         if let flavors { payload["flavors"] = flavors }
         if let hops { payload["hops"] = hops }
         if let comment { payload["comment"] = comment }
-        if let location { payload["location"] = location }
+        if let location {
+            payload["location"] = location
+            // Trio solidaire (cf. backend update_checkin) : le lieu et ses
+            // coordonnées sont toujours envoyés ensemble — omis = pas de lieu réel.
+            if let locationLat { payload["location_lat"] = locationLat }
+            if let locationLon { payload["location_lon"] = locationLon }
+            if let locationOsmId { payload["location_osm_id"] = locationOsmId }
+        }
         if let hiddenFromPartner { payload["hidden_from_partner"] = hiddenFromPartner }
         let body = try JSONSerialization.data(withJSONObject: payload)
         let (data, http, _) = try await request(
@@ -1257,6 +1267,23 @@ final class BeerAPI {
         }
     }
 
+    func geocodeSearch(query: String, lat: Double? = nil, lon: Double? = nil) async throws -> GeocodeSearchResponse {
+        var components = URLComponents(url: try url("/api/geocode/search"), resolvingAgainstBaseURL: true)!
+        var items = [URLQueryItem(name: "q", value: query)]
+        if let lat { items.append(URLQueryItem(name: "lat", value: String(lat))) }
+        if let lon { items.append(URLQueryItem(name: "lon", value: String(lon))) }
+        components.queryItems = items
+        var req = URLRequest(url: components.url!)
+        return try await NetworkManager.shared.withRetry {
+            let (data, http, _) = try await performTransport(req)
+            try throwIfUnauthorized(http.statusCode)
+            guard let decoded = try? JSONDecoder().decode(GeocodeSearchResponse.self, from: data) else {
+                throw BeerAPIError.decode
+            }
+            return decoded
+        }
+    }
+
     func saveProduct(barcode: String, beerName: String, brewery: String, style: String) async throws -> LookupResponse {
         let payload: [String: Any] = [
             "barcode": barcode,
@@ -1446,7 +1473,10 @@ final class BeerAPI {
         untappdBid: String,
         force: Bool,
         photoJPEG: Data? = nil,
-        location: String = ""
+        location: String = "",
+        locationLat: String = "",
+        locationLon: String = "",
+        locationOsmId: String = ""
     ) async throws -> CreateCheckinResult {
         let boundary = "BeerBoundary-\(UUID().uuidString)"
         var req = URLRequest(url: try url("/api/checkins"))
@@ -1469,6 +1499,9 @@ final class BeerAPI {
                 "hops": hopsJSON,
                 "comment": comment,
                 "location": loc,
+                "location_lat": locationLat,
+                "location_lon": locationLon,
+                "location_osm_id": locationOsmId,
                 "untappd_bid": untappdBid,
                 "force": force ? "true" : "false",
             ],

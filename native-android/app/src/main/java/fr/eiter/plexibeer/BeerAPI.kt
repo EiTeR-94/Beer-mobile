@@ -737,14 +737,24 @@ class BeerAPI private constructor(context: Context) {
         hops: List<String>? = null,
         comment: String? = null,
         hiddenFromPartner: Boolean? = null,
-        location: String? = null
+        location: String? = null,
+        locationLat: Double? = null,
+        locationLon: Double? = null,
+        locationOsmId: String? = null
     ) {
         val payload = mutableMapOf<String, Any?>()
         if (rating != null) payload["rating"] = rating
         if (flavors != null) payload["flavors"] = flavors
         if (hops != null) payload["hops"] = hops
         if (comment != null) payload["comment"] = comment
-        if (location != null) payload["location"] = location.take(300)
+        if (location != null) {
+            payload["location"] = location.take(300)
+            // Trio solidaire (cf. backend update_checkin) : le lieu et ses
+            // coordonnées sont toujours envoyés ensemble — omis = pas de lieu réel.
+            if (locationLat != null) payload["location_lat"] = locationLat
+            if (locationLon != null) payload["location_lon"] = locationLon
+            if (locationOsmId != null) payload["location_osm_id"] = locationOsmId
+        }
         if (hiddenFromPartner != null) payload["hidden_from_partner"] = hiddenFromPartner
         val json = gson.toJson(payload)
         val req = requestBuilder("api/checkins/$id")
@@ -779,6 +789,15 @@ class BeerAPI private constructor(context: Context) {
         val q = listOf(brewery, name).filter { it.isNotBlank() }.joinToString(" ").trim()
         return if (q.isBlank()) UntappdSearchResponse(ok = false, error = "Requête vide")
         else searchUntappd(q)
+    }
+
+    suspend fun geocodeSearch(query: String, lat: Double? = null, lon: Double? = null): GeocodeSearchResponse {
+        val q = java.net.URLEncoder.encode(query, "UTF-8")
+        var path = "api/geocode/search?q=$q"
+        if (lat != null) path += "&lat=$lat"
+        if (lon != null) path += "&lon=$lon"
+        val (body, _) = execute(requestBuilder(path).get().build())
+        return gson.fromJson(body, GeocodeSearchResponse::class.java)
     }
 
     suspend fun untappdFetch(
@@ -851,7 +870,10 @@ class BeerAPI private constructor(context: Context) {
         untappdBid: String,
         force: Boolean,
         photoJPEG: ByteArray? = null,
-        location: String = ""
+        location: String = "",
+        locationLat: String = "",
+        locationLon: String = "",
+        locationOsmId: String = ""
     ): CreateCheckinResult = withContext(Dispatchers.IO) {
         val loc = location.trim().take(300)
         val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
@@ -866,6 +888,9 @@ class BeerAPI private constructor(context: Context) {
         builder.addFormDataPart("hops", gson.toJson(hops))
         builder.addFormDataPart("comment", comment.take(300))
         builder.addFormDataPart("location", loc)
+        builder.addFormDataPart("location_lat", locationLat)
+        builder.addFormDataPart("location_lon", locationLon)
+        builder.addFormDataPart("location_osm_id", locationOsmId)
         builder.addFormDataPart("untappd_bid", untappdBid)
         builder.addFormDataPart("force", if (force) "true" else "false")
         if (photoJPEG != null && photoJPEG.isNotEmpty()) {

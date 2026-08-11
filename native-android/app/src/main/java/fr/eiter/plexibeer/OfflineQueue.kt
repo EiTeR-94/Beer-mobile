@@ -134,7 +134,10 @@ class OfflineQueue(context: Context) {
                     untappdBid = item.untappdBid,
                     force = item.force,
                     photoJPEG = photoCompressed,
-                    location = item.location.orEmpty()
+                    location = item.location.orEmpty(),
+                    locationLat = item.locationLat?.toString().orEmpty(),
+                    locationLon = item.locationLon?.toString().orEmpty(),
+                    locationOsmId = item.locationOsmId.orEmpty()
                 )
                 if (result.ok == true || result.id != null || result.duplicate == true) {
                     remove(item.id)

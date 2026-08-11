@@ -109,7 +109,11 @@ data class CheckinItem(
     @SerializedName("hidden_from_partner") val hiddenFromPartner: Boolean? = null,
     @SerializedName("untappd_bid") val untappdBid: Int? = null,
     /** Lieu / lien de dégustation (optionnel). */
-    val location: String? = null
+    val location: String? = null,
+    /** Coordonnées du lieu si sélectionné via la recherche OSM (optionnel). */
+    @SerializedName("location_lat") val locationLat: Double? = null,
+    @SerializedName("location_lon") val locationLon: Double? = null,
+    @SerializedName("location_osm_id") val locationOsmId: String? = null
 )
 
 data class HistoryStats(
@@ -154,6 +158,18 @@ data class CoupleStats(
 ) {
     data class CoupleUser(val username: String = "", val total: Int = 0)
 }
+
+data class GeocodeSearchResponse(
+    val ok: Boolean = false,
+    val results: List<GeocodeHit>? = null
+)
+
+data class GeocodeHit(
+    val label: String = "",
+    val lat: Double = 0.0,
+    val lon: Double = 0.0,
+    @SerializedName("osm_id") val osmId: String? = null
+)
 
 data class UntappdSearchResponse(
     val ok: Boolean = false,
@@ -230,7 +246,11 @@ data class PendingCheckin(
     /** Absolute path to local JPEG, or null */
     val photoPath: String? = null,
     /** Lieu / lien de dégustation (optionnel). */
-    val location: String? = null
+    val location: String? = null,
+    /** Coordonnées du lieu sélectionné via la recherche OSM (optionnel, solidaire de `location`). */
+    val locationLat: Double? = null,
+    val locationLon: Double? = null,
+    val locationOsmId: String? = null
 )
 
 enum class NetworkStatus(val label: String) {

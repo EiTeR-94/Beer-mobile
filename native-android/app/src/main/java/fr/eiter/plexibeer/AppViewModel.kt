@@ -946,7 +946,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         comment: String,
         photoFile: File?,
         force: Boolean,
-        location: String = ""
+        location: String = "",
+        locationLat: Double? = null,
+        locationLon: Double? = null,
+        locationOsmId: String? = null
     ): String {
         val loc = location.trim().take(300)
         val compressedPhoto = photoFile?.takeIf { it.exists() }?.let { f ->
@@ -971,7 +974,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             untappdBid = product.untappdBid?.toString().orEmpty(),
             force = force,
             photoPath = photoPath,
-            location = loc.ifBlank { null }
+            location = loc.ifBlank { null },
+            locationLat = locationLat,
+            locationLon = locationLon,
+            locationOsmId = locationOsmId
         )
 
         val offlineNow = networkStatus != NetworkStatus.ONLINE || !isNetworkAvailable()
@@ -998,7 +1004,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 untappdBid = pending.untappdBid,
                 force = force,
                 photoJPEG = bytes,
-                location = loc
+                location = loc,
+                locationLat = locationLat?.toString().orEmpty(),
+                locationLon = locationLon?.toString().orEmpty(),
+                locationOsmId = locationOsmId.orEmpty()
             )
             if (result.duplicate == true) {
                 val pc = result.previousCheckin

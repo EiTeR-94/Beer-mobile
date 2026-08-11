@@ -11,6 +11,12 @@ struct CheckinEditView: View {
     @State private var rating: Double
     @State private var comment: String
     @State private var location: String
+    @State private var locationLat: Double?
+    @State private var locationLon: Double?
+    @State private var locationOsmId: String?
+    @State private var locationResults: [GeocodeHit] = []
+    @State private var locationSearchTask: Task<Void, Never>?
+    @State private var suppressLocationChange = false
     @State private var flavors = Set<String>()
     @State private var hops = Set<String>()
     @State private var flavorTags: [String] = []
@@ -30,6 +36,9 @@ struct CheckinEditView: View {
         _rating = State(initialValue: item.rating)
         _comment = State(initialValue: item.comment ?? "")
         _location = State(initialValue: item.location ?? "")
+        _locationLat = State(initialValue: item.locationLat)
+        _locationLon = State(initialValue: item.locationLon)
+        _locationOsmId = State(initialValue: item.locationOsmId)
         _flavors = State(initialValue: Set(item.flavors ?? []))
         _hops = State(initialValue: Set(item.hops ?? []))
         _hidden = State(initialValue: item.hiddenFromPartner == true)
@@ -114,6 +123,38 @@ struct CheckinEditView: View {
                     text: $location,
                     placeholder: "ex. Chez nous · https://maps.app.goo.gl/…"
                 )
+                .onChange(of: location) { _ in
+                    if suppressLocationChange {
+                        suppressLocationChange = false
+                        return
+                    }
+                    locationLat = nil
+                    locationLon = nil
+                    locationOsmId = nil
+                    LocationBiasProvider.shared.requestOnce()
+                    scheduleLocationSearch()
+                }
+                if locationLat != nil {
+                    Text("✓ Lieu vérifié (OpenStreetMap)")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.accent)
+                }
+                ForEach(locationResults) { hit in
+                    Button {
+                        pickLocation(hit)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("📍").font(.caption)
+                            Text(hit.label).font(.caption).foregroundStyle(Theme.text)
+                            Spacer()
+                        }
+                        .padding(8)
+                        .background(Theme.bg)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 if let message {
                     Text(message).font(.footnote).foregroundStyle(Theme.error)
@@ -127,6 +168,7 @@ struct CheckinEditView: View {
         }
         .onChange(of: photoItem, perform: { p in Task { await loadPhoto(p) } })
         .task { await loadTags() }
+        .task { LocationBiasProvider.shared.requestOnce() }
     }
 
     private func loadTags() async {
@@ -144,6 +186,39 @@ struct CheckinEditView: View {
         }
     }
 
+    /// Recherche de lieu (OSM/Photon) débouncée — annule la recherche en cours à chaque frappe.
+    private func scheduleLocationSearch() {
+        locationSearchTask?.cancel()
+        let query = location
+        guard query.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 else {
+            locationResults = []
+            return
+        }
+        locationSearchTask = Task {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+            let bias = LocationBiasProvider.shared.coordinate
+            do {
+                let res = try await app.api.geocodeSearch(query: query, lat: bias?.latitude, lon: bias?.longitude)
+                guard !Task.isCancelled else { return }
+                locationResults = res.results ?? []
+            } catch {
+                guard !Task.isCancelled else { return }
+                locationResults = []
+            }
+        }
+    }
+
+    private func pickLocation(_ hit: GeocodeHit) {
+        suppressLocationChange = true
+        location = String(hit.label.prefix(300))
+        locationLat = hit.lat
+        locationLon = hit.lon
+        locationOsmId = hit.osmId
+        locationResults = []
+        locationSearchTask?.cancel()
+    }
+
     private func save() async {
         busy = true
         message = nil
@@ -156,7 +231,10 @@ struct CheckinEditView: View {
                 hops: Array(hops),
                 comment: String(comment.prefix(120)),
                 hiddenFromPartner: app.isAdmin ? hidden : nil,
-                location: String(location.prefix(300))
+                location: String(location.prefix(300)),
+                locationLat: locationLat,
+                locationLon: locationLon,
+                locationOsmId: locationOsmId
             )
             if removePhoto { try await app.api.removeCheckinPhoto(id: item.id) }
             else if let newPhoto { try await app.api.replaceCheckinPhoto(id: item.id, jpeg: newPhoto) }

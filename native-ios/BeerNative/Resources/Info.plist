@@ -41,6 +41,8 @@
 	<string>Scanner les codes-barres et prendre des photos de tes dégustations.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Joindre une photo à ta dégustation Beer Quest.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Retrouver le lieu où tu as dégusté ta bière.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connexion au serveur Beer Quest Plexi (eiter.freeboxos.fr).</string>
 	<!-- PreferIPv4 diale l'A (82.64…) : ATS + cert domaine via HomelabTLS (comme Android) -->

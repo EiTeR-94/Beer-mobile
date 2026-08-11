@@ -119,11 +119,19 @@ struct CheckinDetailView: View {
                 Text("Lieu")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.muted)
-                Text(loc)
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.text)
-                    .multilineTextAlignment(.leading)
-                    .textSelection(.enabled)
+                if let lat = item.locationLat, let lon = item.locationLon,
+                   let url = URL(string: "https://www.openstreetmap.org/?mlat=\(lat)&mlon=\(lon)#map=17/\(lat)/\(lon)") {
+                    Link(loc, destination: url)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Theme.accent)
+                        .multilineTextAlignment(.leading)
+                } else {
+                    Text(loc)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Theme.text)
+                        .multilineTextAlignment(.leading)
+                        .textSelection(.enabled)
+                }
             }
             Spacer(minLength: 0)
         }

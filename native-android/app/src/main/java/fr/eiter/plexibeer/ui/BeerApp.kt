@@ -35,6 +35,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -52,6 +53,7 @@ import coil.compose.AsyncImage
 import fr.eiter.plexibeer.*
 import fr.eiter.plexibeer.ui.theme.BeerColors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -1083,6 +1085,17 @@ private fun BeerWizard(vm: AppViewModel) {
     var photoFile by remember { mutableStateOf<File?>(null) }
     /** Lieu / lien de dégustation (optionnel) — saisi à l'étape Photo, comme iOS. */
     var location by remember { mutableStateOf("") }
+    var locationLat by remember { mutableStateOf<Double?>(null) }
+    var locationLon by remember { mutableStateOf<Double?>(null) }
+    var locationOsmId by remember { mutableStateOf<String?>(null) }
+    var locationResults by remember { mutableStateOf(listOf<GeocodeHit>()) }
+    var locationSearchJob by remember { mutableStateOf<Job?>(null) }
+    var hasLocationPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
     var rating by remember { mutableFloatStateOf(3f) }
     var comment by remember { mutableStateOf("") }
     var flavors by remember { mutableStateOf(setOf<String>()) }
@@ -1135,6 +1148,11 @@ private fun BeerWizard(vm: AppViewModel) {
         scanStatus = "Cadre le code-barres dans le rectangle"
         photoFile = null
         location = ""
+        locationLat = null
+        locationLon = null
+        locationOsmId = null
+        locationResults = emptyList()
+        locationSearchJob?.cancel()
         rating = 3f
         comment = ""
         flavors = emptySet()
@@ -1303,6 +1321,56 @@ private fun BeerWizard(vm: AppViewModel) {
         }
     }
 
+    val locationPerm = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { granted ->
+        val ok = granted[Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
+            granted[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        hasLocationPermission = ok
+        if (ok) LocationBiasProvider.refresh(context)
+    }
+
+    fun ensureLocationBias() {
+        if (hasLocationPermission) {
+            LocationBiasProvider.refresh(context)
+        } else {
+            locationPerm.launch(
+                arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
+            )
+        }
+    }
+
+    // Anticipe la géoloc dès l'étape Photo & lieu (comme iOS/web) — best-effort, jamais bloquant.
+    LaunchedEffect(vm.wizardStep) {
+        if (vm.wizardStep == 2) ensureLocationBias()
+    }
+
+    fun scheduleLocationSearch(query: String) {
+        locationSearchJob?.cancel()
+        if (query.trim().length < 2) {
+            locationResults = emptyList()
+            return
+        }
+        locationSearchJob = scope.launch {
+            delay(300)
+            try {
+                val resp = api.geocodeSearch(query, LocationBiasProvider.lat, LocationBiasProvider.lon)
+                locationResults = resp.results.orEmpty()
+            } catch (e: Exception) {
+                locationResults = emptyList()
+            }
+        }
+    }
+
+    fun pickLocation(hit: GeocodeHit) {
+        location = hit.label.take(300)
+        locationLat = hit.lat
+        locationLon = hit.lon
+        locationOsmId = hit.osmId
+        locationResults = emptyList()
+        locationSearchJob?.cancel()
+    }
+
     suspend fun doSave(force: Boolean) {
         val p = product ?: return
         if (p.beerName.isBlank()) {
@@ -1319,7 +1387,10 @@ private fun BeerWizard(vm: AppViewModel) {
                 comment = comment,
                 photoFile = photoFile,
                 force = force,
-                location = location
+                location = location,
+                locationLat = locationLat,
+                locationLon = locationLon,
+                locationOsmId = locationOsmId
             )
             if (msg.startsWith("duplicate|")) {
                 val parts = msg.split("|")
@@ -1692,15 +1763,48 @@ private fun BeerWizard(vm: AppViewModel) {
                     BeerField(
                         label = "Lieu ou lien",
                         value = location,
-                        onChange = { if (it.length <= 300) location = it },
+                        onChange = {
+                            if (it.length <= 300) location = it
+                            locationLat = null
+                            locationLon = null
+                            locationOsmId = null
+                            ensureLocationBias()
+                            scheduleLocationSearch(it)
+                        },
                         placeholder = "ex. Chez nous · Brasserie X · https://maps…"
                     )
-                    Text(
-                        "${location.length}/300",
-                        color = BeerColors.muted,
-                        fontSize = 11.sp,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        if (locationLat != null) {
+                            Text(
+                                "✓ Lieu vérifié (OpenStreetMap)",
+                                color = BeerColors.accent,
+                                fontSize = 11.sp
+                            )
+                        } else {
+                            Spacer(Modifier)
+                        }
+                        Text(
+                            "${location.length}/300",
+                            color = BeerColors.muted,
+                            fontSize = 11.sp
+                        )
+                    }
+                    locationResults.forEach { hit ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 3.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .border(1.dp, BeerColors.border, RoundedCornerShape(8.dp))
+                                .clickable { pickLocation(hit) }
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("📍", fontSize = 12.sp)
+                            Spacer(Modifier.width(6.dp))
+                            Text(hit.label, color = BeerColors.text, fontSize = 12.sp)
+                        }
+                    }
                 }
 
                 BeerSecondaryButton("← Retour") { vm.wizardStep = 1 }
@@ -2734,12 +2838,24 @@ private fun CheckinDetailSheet(vm: AppViewModel, item: CheckinItem) {
             )
 
             item.location?.trim()?.takeIf { it.isNotEmpty() }?.let { loc ->
+                val uriHandler = LocalUriHandler.current
+                val lat = item.locationLat
+                val lon = item.locationLon
                 Row(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
                         .border(1.dp, BeerColors.border, RoundedCornerShape(14.dp))
                         .background(BeerColors.card)
+                        .let { m ->
+                            if (lat != null && lon != null) {
+                                m.clickable {
+                                    uriHandler.openUri(
+                                        "https://www.openstreetmap.org/?mlat=$lat&mlon=$lon#map=17/$lat/$lon"
+                                    )
+                                }
+                            } else m
+                        }
                         .padding(12.dp),
                     verticalAlignment = Alignment.Top
                 ) {
@@ -2747,7 +2863,11 @@ private fun CheckinDetailSheet(vm: AppViewModel, item: CheckinItem) {
                     Spacer(Modifier.width(8.dp))
                     Column {
                         Text("Lieu", color = BeerColors.muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                        Text(loc, color = BeerColors.text, fontSize = 14.sp)
+                        Text(
+                            loc,
+                            color = if (lat != null && lon != null) BeerColors.accent else BeerColors.text,
+                            fontSize = 14.sp
+                        )
                     }
                 }
             }
@@ -2792,6 +2912,11 @@ private fun CheckinEditSheet(vm: AppViewModel, item: CheckinItem) {
     var rating by remember { mutableFloatStateOf(item.rating.toFloat()) }
     var comment by remember { mutableStateOf(item.comment.orEmpty()) }
     var location by remember { mutableStateOf(item.location.orEmpty()) }
+    var locationLat by remember { mutableStateOf(item.locationLat) }
+    var locationLon by remember { mutableStateOf(item.locationLon) }
+    var locationOsmId by remember { mutableStateOf(item.locationOsmId) }
+    var locationResults by remember { mutableStateOf(listOf<GeocodeHit>()) }
+    var locationSearchJob by remember { mutableStateOf<Job?>(null) }
     var flavors by remember { mutableStateOf(item.flavors.orEmpty().toSet()) }
     var hops by remember { mutableStateOf(item.hops.orEmpty().toSet()) }
     var flavorTags by remember { mutableStateOf(listOf<String>()) }
@@ -2812,6 +2937,35 @@ private fun CheckinEditSheet(vm: AppViewModel, item: CheckinItem) {
             hopTags = (fh.suggestedHops ?: fh.hops).orEmpty()
         } catch (_: Exception) {
         }
+        val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        if (hasPermission) LocationBiasProvider.refresh(context)
+    }
+
+    fun scheduleLocationSearch(query: String) {
+        locationSearchJob?.cancel()
+        if (query.trim().length < 2) {
+            locationResults = emptyList()
+            return
+        }
+        locationSearchJob = scope.launch {
+            delay(300)
+            try {
+                val resp = vm.api.geocodeSearch(query, LocationBiasProvider.lat, LocationBiasProvider.lon)
+                locationResults = resp.results.orEmpty()
+            } catch (e: Exception) {
+                locationResults = emptyList()
+            }
+        }
+    }
+
+    fun pickLocation(hit: GeocodeHit) {
+        location = hit.label.take(300)
+        locationLat = hit.lat
+        locationLon = hit.lon
+        locationOsmId = hit.osmId
+        locationResults = emptyList()
+        locationSearchJob?.cancel()
     }
 
     val takePic = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
@@ -2870,9 +3024,34 @@ private fun CheckinEditSheet(vm: AppViewModel, item: CheckinItem) {
             BeerField(
                 label = "Lieu ou lien",
                 value = location,
-                onChange = { if (it.length <= 300) location = it },
+                onChange = {
+                    if (it.length <= 300) location = it
+                    locationLat = null
+                    locationLon = null
+                    locationOsmId = null
+                    scheduleLocationSearch(it)
+                },
                 placeholder = "ex. Chez nous · https://maps…"
             )
+            if (locationLat != null) {
+                Text("✓ Lieu vérifié (OpenStreetMap)", color = BeerColors.accent, fontSize = 11.sp)
+            }
+            locationResults.forEach { hit ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .border(1.dp, BeerColors.border, RoundedCornerShape(8.dp))
+                        .clickable { pickLocation(hit) }
+                        .padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("📍", fontSize = 12.sp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(hit.label, color = BeerColors.text, fontSize = 12.sp)
+                }
+            }
             if (vm.isAdmin) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Masqué partenaire", color = BeerColors.text, modifier = Modifier.weight(1f))
@@ -2907,7 +3086,10 @@ private fun CheckinEditSheet(vm: AppViewModel, item: CheckinItem) {
                             hops = hops.toList(),
                             comment = comment,
                             hiddenFromPartner = if (vm.isAdmin) hidden else null,
-                            location = location.take(300)
+                            location = location.take(300),
+                            locationLat = locationLat,
+                            locationLon = locationLon,
+                            locationOsmId = locationOsmId
                         )
                         if (removePhoto) {
                             try { vm.api.removeCheckinPhoto(item.id) } catch (_: Exception) {}
