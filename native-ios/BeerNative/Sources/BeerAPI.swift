@@ -106,12 +106,17 @@ final class BeerAPI {
         return URL(string: base + p)!
     }
 
+    private static let appVersion =
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+
     private func applyHeaders(to req: inout URLRequest) {
         req.setValue(Self.nativeClientValue, forHTTPHeaderField: Self.nativeClientHeader)
         req.setValue(
             isInviteMode ? Self.userAgentInvite : Self.userAgentOwner,
             forHTTPHeaderField: "User-Agent"
         )
+        req.setValue(Self.appVersion, forHTTPHeaderField: "X-App-Version")
+        req.setValue("ios", forHTTPHeaderField: "X-App-Platform")
         if let token = InviteSessionStore.accessToken, !token.isEmpty {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             req.setValue(InviteSessionStore.deviceId, forHTTPHeaderField: "X-Beer-Device")

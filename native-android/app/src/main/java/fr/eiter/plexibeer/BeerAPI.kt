@@ -115,6 +115,8 @@ class BeerAPI private constructor(context: Context) {
             "User-Agent",
             if (isInviteMode) USER_AGENT_INVITE else USER_AGENT_OWNER
         )
+        builder.header("X-App-Version", BuildConfig.VERSION_NAME)
+        builder.header("X-App-Platform", "android")
         val inviteToken = InviteSessionStore.accessToken(appContext)
         if (!inviteToken.isNullOrBlank()) {
             builder.header("Authorization", "Bearer $inviteToken")
