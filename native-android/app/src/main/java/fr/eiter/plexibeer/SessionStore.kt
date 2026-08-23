@@ -28,11 +28,11 @@ class SessionCookieJar(context: Context) : CookieJar {
     private var token: String? = null
 
     @Volatile
-    private var cookiePath: String = "/beer"
+    private var cookiePath: String = "/"
 
     init {
         token = prefs.getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() }
-        cookiePath = prefs.getString(KEY_PATH, "/beer") ?: "/beer"
+        cookiePath = prefs.getString(KEY_PATH, "/") ?: "/"
         if (token != null) {
             Log.i(TAG, "session restored from prefs (token len=${token!!.length}, path=$cookiePath)")
         }
@@ -50,7 +50,7 @@ class SessionCookieJar(context: Context) : CookieJar {
     fun clear() {
         synchronized(lock) {
             token = null
-            cookiePath = "/beer"
+            cookiePath = "/"
             prefs.edit().clear().apply()
             Log.i(TAG, "session cleared")
         }
@@ -87,7 +87,7 @@ class SessionCookieJar(context: Context) : CookieJar {
                 token = value
                 val pathMatch = Regex("""(?i);\s*path=([^;]+)""").find(raw)
                 if (pathMatch != null) {
-                    cookiePath = pathMatch.groupValues[1].trim().ifBlank { "/beer" }
+                    cookiePath = pathMatch.groupValues[1].trim().ifBlank { "/" }
                 }
                 prefs.edit()
                     .putString(KEY_TOKEN, value)
@@ -106,7 +106,7 @@ class SessionCookieJar(context: Context) : CookieJar {
     fun saveToken(value: String, path: String = cookiePath) {
         synchronized(lock) {
             token = value
-            cookiePath = path.ifBlank { "/beer" }
+            cookiePath = path.ifBlank { "/" }
             prefs.edit()
                 .putString(KEY_TOKEN, value)
                 .putString(KEY_PATH, cookiePath)
@@ -148,7 +148,7 @@ class SessionCookieJar(context: Context) : CookieJar {
     }
 
     private fun normalizePath(p: String): String {
-        val s = p.trim().ifBlank { "/beer" }
+        val s = p.trim().ifBlank { "/" }
         return if (s.startsWith("/")) s else "/$s"
     }
 
@@ -157,6 +157,7 @@ class SessionCookieJar(context: Context) : CookieJar {
             host == ServerSettings.CANONICAL_HOST ||
             host == ServerSettings.WAN_IPV4 ||
             host.endsWith("freeboxos.fr") ||
+            host.endsWith("eiterlab.com") ||
             ServerSettings.isLanHost(host)
     }
 

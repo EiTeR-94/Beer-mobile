@@ -142,7 +142,7 @@ struct LoginView: View {
                                 BeerField(
                                     label: "Lien d'invitation",
                                     text: $inviteLink,
-                                    placeholder: "https://eiter.freeboxos.fr/beer…/join/…"
+                                    placeholder: "https://beer.eiterlab.com/join/…"
                                 )
                                 .padding(.top, 10)
                             }

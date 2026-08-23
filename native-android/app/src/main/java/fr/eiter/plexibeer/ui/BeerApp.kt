@@ -350,7 +350,7 @@ private fun LoginScreen(vm: AppViewModel) {
                     maxLines = 4,
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = {
-                        Text("https://eiter.freeboxos.fr/beer/join/…", color = BeerColors.muted, fontSize = 12.sp)
+                        Text("https://beer.eiterlab.com/join/…", color = BeerColors.muted, fontSize = 12.sp)
                     },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = BeerColors.text,

@@ -91,7 +91,7 @@ doc = {
     "manifest_generated_at": generated,
     "updated_at": generated,  # rétrocompat affichage
     "updated_at_iso": generated_iso,
-    "portal_url": "https://eiter.freeboxos.fr/mobile/beer/",
+    "portal_url": "https://beer.eiterlab.com/mobile/beer/",
     "note": "L’IPA et l’APK ont des cycles de maj séparés. Compare la version de ta plateforme.",
 }
 with open(path, "w", encoding="utf-8") as f:

@@ -203,7 +203,7 @@ enum HomelabIPv4Transport {
 
         let (data, response) = try await session.data(for: req)
         guard let http = response as? HTTPURLResponse else { throw BeerAPIError.decode }
-        let logical = URL(string: "https://\(tlsHost)\(req.url?.path ?? "/beer/")") ?? response.url ?? ServerSettings.apiBase
+        let logical = URL(string: "https://\(tlsHost)\(req.url?.path ?? "/")") ?? response.url ?? ServerSettings.apiBase
         if let setCookie = http.value(forHTTPHeaderField: "Set-Cookie"), !setCookie.isEmpty {
             storeCookiesForURLSession([setCookie])
         }
@@ -253,7 +253,7 @@ enum HomelabIPv4Transport {
     }
 
     private static func storeCookiesForURLSession(_ lines: [String]) {
-        let storeURL = URL(string: "https://\(tlsHost)/beer/")!
+        let storeURL = URL(string: "https://\(tlsHost)/")!
         for line in lines {
             let cookies = HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": line], for: storeURL)
             for cookie in cookies {

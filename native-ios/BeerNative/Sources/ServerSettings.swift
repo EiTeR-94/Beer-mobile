@@ -2,15 +2,16 @@ import Foundation
 
 /// Miroir exact d'Android `ServerSettings.kt`
 enum ServerSettings {
-    static let canonicalHost = "eiter.freeboxos.fr"
+    static let canonicalHost = "beer.eiterlab.com"
     static let wanIPv4 = "82.64.151.113"
-    static let apiBaseString = "https://\(canonicalHost)/beer/"
+    static let apiBaseString = "https://\(canonicalHost)/"
     /// Portail DL IPA/APK + versions.json
     static let portalURLString = "https://\(canonicalHost)/mobile/beer/"
     static let versionsURLString = "https://\(canonicalHost)/mobile/beer/versions.json"
     /// Fallback 4G si AAAA Freebox casse le TLS (IPv4 + SNI host).
-    static let wanIPv4ApiBaseString = "https://\(wanIPv4)/beer/"
-    static let lanApiBaseString = "https://192.168.1.50:8444/beer/"
+    static let wanIPv4ApiBaseString = "https://\(wanIPv4)/"
+    /// Plus de port LAN dédié : beer.eiterlab.com gère déjà le LAN via allow-list nginx (IPv4 hairpin + IPv6).
+    static let lanApiBaseString = apiBaseString
     /// Beerquest alpha (clone isolé) — invites IPA/APK
     static let alphaApiBaseString = "https://\(canonicalHost)/beer-alpha/"
     static let alphaWanIPv4ApiBaseString = "https://\(wanIPv4)/beer-alpha/"

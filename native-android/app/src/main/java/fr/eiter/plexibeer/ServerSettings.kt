@@ -1,12 +1,13 @@
 package fr.eiter.plexibeer
 
 object ServerSettings {
-    const val CANONICAL_HOST = "eiter.freeboxos.fr"
+    const val CANONICAL_HOST = "beer.eiterlab.com"
     const val WAN_IPV4 = "82.64.151.113"
-    const val API_BASE_STRING = "https://$CANONICAL_HOST/beer/"
+    const val API_BASE_STRING = "https://$CANONICAL_HOST/"
     /** Fallback 4G si AAAA Freebox casse le TLS (IPv4 + SNI host). */
-    const val WAN_IPV4_API_BASE = "https://$WAN_IPV4/beer/"
-    const val LAN_API_BASE = "https://192.168.1.50:8444/beer/"
+    const val WAN_IPV4_API_BASE = "https://$WAN_IPV4/"
+    /** Plus de port LAN dédié : beer.eiterlab.com gère déjà le LAN via allow-list nginx (IPv4 hairpin + IPv6). */
+    const val LAN_API_BASE = API_BASE_STRING
     /** Manifest versions IPA/APK/web (portail public). */
     const val versionsURL = "https://$CANONICAL_HOST/mobile/beer/versions.json"
     const val portalURL = "https://$CANONICAL_HOST/mobile/beer/"
@@ -139,7 +140,6 @@ object ServerSettings {
     fun giftPhotoPath(photoPath: String?): String? {
         if (photoPath.isNullOrBlank()) return null
         val name = photoPath.substringAfterLast('/')
-        val root = if (isAlphaBase(effectiveBase)) "/beer-alpha" else "/beer"
-        return "$root/photos/$name"
+        return "/photos/$name"
     }
 }

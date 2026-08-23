@@ -18,7 +18,7 @@ import javax.net.ssl.X509TrustManager
  */
 object HomelabTls {
     private const val TAG = "HomelabTls"
-    private const val PIN_DOMAIN = "eiter.freeboxos.fr"
+    private const val PIN_DOMAIN = ServerSettings.CANONICAL_HOST
 
     fun systemTrustManager(): X509TrustManager {
         val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
