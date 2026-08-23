@@ -10,6 +10,8 @@ enum ServerSettings {
     static let versionsURLString = "https://\(canonicalHost)/mobile/beer/versions.json"
     /// Fallback 4G si AAAA Freebox casse le TLS (IPv4 + SNI host).
     static let wanIPv4ApiBaseString = "https://\(wanIPv4)/"
+    /// Fallback paritaire ancien domaine (path /beer/)
+    static let legacyApiBaseString = "https://eiter.freeboxos.fr/beer/"
     /// Plus de port LAN dédié : beer.eiterlab.com gère déjà le LAN via allow-list nginx (IPv4 hairpin + IPv6).
     static let lanApiBaseString = apiBaseString
     /// Beerquest alpha (clone isolé) — invites IPA/APK
@@ -43,12 +45,12 @@ enum ServerSettings {
             if isAlphaBase(primary) {
                 return [primary, alphaWanIPv4ApiBaseString]
             }
-            return [primary, wanIPv4ApiBaseString]
+            return [primary, wanIPv4ApiBaseString, legacyApiBaseString]
         }
         if preferWanOnly {
-            return [apiBaseString, wanIPv4ApiBaseString]
+            return [apiBaseString, wanIPv4ApiBaseString, legacyApiBaseString]
         }
-        return [lanApiBaseString, apiBaseString]
+        return [lanApiBaseString, apiBaseString, legacyApiBaseString]
     }
 
     static var inviteCandidateURLs: [String] {
@@ -69,7 +71,7 @@ enum ServerSettings {
         if prefix.contains("/beer-alpha") {
             return [alphaApiBaseString, alphaWanIPv4ApiBaseString]
         }
-        return [apiBaseString, wanIPv4ApiBaseString]
+        return [apiBaseString, wanIPv4ApiBaseString, legacyApiBaseString]
     }
 
     static func isLanEndpoint(_ url: String) -> Bool {

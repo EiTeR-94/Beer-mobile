@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 const base = (
-  process.env.BEER_SERVER_URL || "https://eiter.freeboxos.fr/beer"
+  process.env.BEER_SERVER_URL || "https://beer.eiterlab.com"
 ).trim().replace(/\/$/, "") + "/";
 
 const swift = `// Généré au build CI — NE PAS ÉDITER

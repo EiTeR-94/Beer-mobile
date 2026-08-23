@@ -32,7 +32,7 @@ jobs:
     timeout-minutes: 45
 
     env:
-      BEER_SERVER_URL: https://eiter.freeboxos.fr/beer
+      BEER_SERVER_URL: https://beer.eiterlab.com
       CI: "true"
 
     steps:

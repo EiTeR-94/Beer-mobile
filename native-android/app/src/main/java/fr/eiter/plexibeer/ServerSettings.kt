@@ -6,6 +6,7 @@ object ServerSettings {
     const val API_BASE_STRING = "https://$CANONICAL_HOST/"
     /** Fallback 4G si AAAA Freebox casse le TLS (IPv4 + SNI host). */
     const val WAN_IPV4_API_BASE = "https://$WAN_IPV4/"
+    const val LEGACY_API_BASE = "https://eiter.freeboxos.fr/beer/"
     /** Plus de port LAN dédié : beer.eiterlab.com gère déjà le LAN via allow-list nginx (IPv4 hairpin + IPv6). */
     const val LAN_API_BASE = API_BASE_STRING
     /** Manifest versions IPA/APK/web (portail public). */
@@ -36,11 +37,11 @@ object ServerSettings {
             val alt = if (isAlphaBase(primary)) {
                 listOf(primary, ALPHA_WAN_IPV4_API_BASE)
             } else {
-                listOf(primary, WAN_IPV4_API_BASE)
+                listOf(primary, WAN_IPV4_API_BASE, LEGACY_API_BASE)
             }
             alt.distinct()
         } else {
-            listOf(LAN_API_BASE, API_BASE_STRING)
+            listOf(LAN_API_BASE, API_BASE_STRING, LEGACY_API_BASE)
         }
 
     val inviteCandidateURLs: List<String>
@@ -64,7 +65,7 @@ object ServerSettings {
         return if (isAlpha) {
             listOf(ALPHA_API_BASE_STRING, ALPHA_WAN_IPV4_API_BASE)
         } else {
-            listOf(API_BASE_STRING, WAN_IPV4_API_BASE)
+            listOf(API_BASE_STRING, WAN_IPV4_API_BASE, LEGACY_API_BASE)
         }
     }
 
