@@ -39,6 +39,38 @@
           "NSPhotoLibraryUsageDescription": "Joindre une photo à ta dégustation Beer Quest."
         }
       }
+    },
+    {
+      "name": "Weeno",
+      "bundleIdentifier": "fr.eiter.plexiwine",
+      "developerName": "eiter / Plexi",
+      "subtitle": "Journal de dégustation vin (Plexi)",
+      "localizedDescription": "Weeno 0.6.1 (54)",
+      "iconURL": "https://raw.githubusercontent.com/EiTeR-94/Weemo-mobile/main/assets/icon-180.png",
+      "tintColor": "#C45C7A",
+      "category": "lifestyle",
+      "versions": [
+        {
+          "version": "0.6.1",
+          "buildVersion": "54",
+          "date": "2026-08-23T01:37:39Z",
+          "localizedDescription": "Weeno 0.6.1 (build 54)",
+          "downloadURL": "https://raw.githubusercontent.com/EiTeR-94/Beer-mobile/main/sidestore/eb96c143657bffaa0525017bf1046b52bdb356c4e8b5c3da/WeenoOff.ipa",
+          "size": 2377402,
+          "minOSVersion": "16.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [
+          "com.apple.developer.associated-domains"
+        ],
+        "privacy": {
+          "NSCameraUsageDescription": "Scanner les codes-barres et prendre des photos de tes dégustations.",
+          "NSFaceIDUsageDescription": "Sécurise les actions sensibles (suppressions, etc.) avec Face ID.",
+          "NSLocalNetworkUsageDescription": "Connexion au serveur Weeno Quest Plexi (eiter.freeboxos.fr).",
+          "NSPhotoLibraryUsageDescription": "Joindre une photo à ta dégustation Weeno Quest."
+        }
+      }
     }
   ],
   "news": []
