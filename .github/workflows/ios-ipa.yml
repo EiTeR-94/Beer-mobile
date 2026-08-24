@@ -39,11 +39,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Bump build number (CI)
+      - name: Bump version (CI)
         run: |
           BUILD="${{ github.run_number }}"
           perl -i -pe "s/^(\s*CURRENT_PROJECT_VERSION:\s*).*/\${1}\"$BUILD\"/" native-ios/project.yml
-          echo "Build number → $BUILD"
+          # SideStore compare CFBundleShortVersionString — un build-only ne déclenche PAS la maj.
+          perl -i -pe 's/(MARKETING_VERSION:\s*"\d+\.\d+\.)\d+"/${1}'"$BUILD"'"/' native-ios/project.yml
+          echo "CFBundleVersion → $BUILD"
+          grep -E 'MARKETING_VERSION|CURRENT_PROJECT_VERSION' native-ios/project.yml | head -5
 
       - name: XcodeGen
         run: brew install xcodegen
