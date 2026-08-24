@@ -66,29 +66,24 @@ import java.util.Locale
 import kotlin.coroutines.resume
 
 
+// ───────────────────────── Sheets ─────────────────────────
 
 @Composable
-fun BeerApp(vm: AppViewModel) {
-    val context = LocalContext.current
-    Box(
+fun SheetScaffold(title: String, onClose: () -> Unit, trailing: (@Composable () -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
+    // fillMaxSize + consumeClicks : bloque les taps vers le HUD Grimoire en dessous
+    Column(
         Modifier
             .fillMaxSize()
             .background(BeerColors.bg)
+            .consumeClicks()
+            .padding(12.dp)
     ) {
-        when {
-            vm.isLoading -> {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = BeerColors.accent)
-                }
-            }
-            !vm.isLoggedIn -> LoginScreen(vm)
-            else -> MainScreen(vm)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(title, style = MaterialTheme.typography.headlineSmall, color = BeerColors.text, modifier = Modifier.weight(1f))
+            trailing?.invoke()
+            TextButton(onClick = onClose) { Text("Fermer ✕", color = BeerColors.muted) }
         }
-        // Bannière haut d'écran = iOS (tap ou × pour fermer)
-        ToastOverlay(toast = vm.toast, onDismiss = { vm.hideToast() })
-        // Beerquest intro + célébrations (au-dessus du toast)
-        if (vm.isLoggedIn) {
-            RpgCelebrationOverlay(vm)
-        }
+        Spacer(Modifier.height(8.dp))
+        content()
     }
 }

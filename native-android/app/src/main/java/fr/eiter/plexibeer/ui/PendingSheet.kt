@@ -68,27 +68,56 @@ import kotlin.coroutines.resume
 
 
 @Composable
-fun BeerApp(vm: AppViewModel) {
-    val context = LocalContext.current
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(BeerColors.bg)
-    ) {
-        when {
-            vm.isLoading -> {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = BeerColors.accent)
+fun PendingSheet(vm: AppViewModel) {
+    SheetScaffold("En attente", onClose = { vm.closeSheet() }) {
+        Text(
+            when (vm.networkStatus) {
+                NetworkStatus.ONLINE -> "Réseau OK — tu peux synchroniser."
+                NetworkStatus.OFFLINE -> "Pas de réseau — les notes restent sur l'appareil."
+                NetworkStatus.SERVER_UNREACHABLE -> "Serveur injoignable — file conservée."
+            },
+            color = BeerColors.muted,
+            fontSize = 12.sp
+        )
+        Spacer(Modifier.height(8.dp))
+        BeerPrimaryButton(
+            "Synchroniser maintenant",
+            enabled = vm.networkStatus == NetworkStatus.ONLINE && vm.pendingCount > 0
+        ) {
+            vm.requestSync()
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Créations en attente (${vm.pendingItems.size})", color = BeerColors.text, fontWeight = FontWeight.SemiBold)
+        if (vm.pendingItems.isEmpty()) {
+            Text("Aucune dégustation en attente.", color = BeerColors.muted)
+        } else {
+            vm.pendingItems.forEach { p ->
+                BeerCard {
+                    Text(p.beerName, color = BeerColors.text, fontWeight = FontWeight.Bold)
+                    Text("${p.brewery} · ${p.style} · ★${formatRating(p.rating)}", color = BeerColors.muted, fontSize = 12.sp)
+                    p.location?.takeIf { it.isNotBlank() }?.let {
+                        Text("📍 $it", color = BeerColors.muted, fontSize = 12.sp)
+                    }
+                    TextButton(onClick = { vm.removePending(p.id) }) {
+                        Text("Supprimer", color = BeerColors.error)
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text("Suppressions en attente", color = BeerColors.text, fontWeight = FontWeight.SemiBold)
+        if (vm.pendingDeletes.isEmpty()) {
+            Text("Aucune suppression en attente.", color = BeerColors.muted)
+        } else {
+            vm.pendingDeletes.forEach { id ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Suppression #$id", color = BeerColors.text, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { vm.removePendingDelete(id) }) {
+                        Text("Annuler", color = BeerColors.error)
+                    }
                 }
             }
-            !vm.isLoggedIn -> LoginScreen(vm)
-            else -> MainScreen(vm)
-        }
-        // Bannière haut d'écran = iOS (tap ou × pour fermer)
-        ToastOverlay(toast = vm.toast, onDismiss = { vm.hideToast() })
-        // Beerquest intro + célébrations (au-dessus du toast)
-        if (vm.isLoggedIn) {
-            RpgCelebrationOverlay(vm)
         }
     }
 }

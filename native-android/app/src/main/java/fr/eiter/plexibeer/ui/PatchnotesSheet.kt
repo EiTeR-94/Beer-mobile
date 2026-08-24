@@ -68,27 +68,17 @@ import kotlin.coroutines.resume
 
 
 @Composable
-fun BeerApp(vm: AppViewModel) {
-    val context = LocalContext.current
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(BeerColors.bg)
-    ) {
-        when {
-            vm.isLoading -> {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = BeerColors.accent)
-                }
-            }
-            !vm.isLoggedIn -> LoginScreen(vm)
-            else -> MainScreen(vm)
+fun PatchnotesSheet(vm: AppViewModel) {
+    var text by remember { mutableStateOf("Chargement…") }
+    LaunchedEffect(Unit) {
+        text = try {
+            val p = vm.api.patchnotes()
+            "v${p.version.orEmpty()}\n\n${p.markdown.orEmpty()}"
+        } catch (e: Exception) {
+            e.message ?: "Indisponible"
         }
-        // Bannière haut d'écran = iOS (tap ou × pour fermer)
-        ToastOverlay(toast = vm.toast, onDismiss = { vm.hideToast() })
-        // Beerquest intro + célébrations (au-dessus du toast)
-        if (vm.isLoggedIn) {
-            RpgCelebrationOverlay(vm)
-        }
+    }
+    SheetScaffold("Patch notes", onClose = { vm.closeSheet() }) {
+        Text(text, color = BeerColors.text, fontSize = 13.sp, modifier = Modifier.verticalScroll(rememberScrollState()))
     }
 }
