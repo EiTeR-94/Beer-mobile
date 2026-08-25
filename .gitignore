@@ -25,3 +25,6 @@ native-android/*.iml
 *.jks
 *.keystore
 !native-android/keystore.properties.example
+
+# beer-apk-local-auto.timer runtime state (source hash stamp + build lock)
+.apk-auto/
