@@ -39,18 +39,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Bump build (CI)
+      - name: Bump version (CI)
+        id: bump
         run: |
           BUILD="${{ github.run_number }}"
           perl -i -pe "s/^(\s*CURRENT_PROJECT_VERSION:\s*).*/\${1}\"$BUILD\"/" native-ios/project.yml
-          # MARKETING_VERSION : le patch = numéro de build, à chaque run.
-          # Le major.minor de project.yml reste éditable à la main pour signaler
-          # une vraie version, mais SideStore voit TOUJOURS une version qui change,
-          # sans dépendre d'un bump manuel oublié.
-          BASE="$(grep -m1 'MARKETING_VERSION:' native-ios/project.yml | sed -E 's/.*"([0-9]+\.[0-9]+)\.[0-9]+".*/\1/')"
-          perl -i -pe "s/^(\s*MARKETING_VERSION:\s*).*/\${1}\"$BASE.$BUILD\"/" native-ios/project.yml
-          echo "CFBundleVersion → $BUILD, MARKETING_VERSION → $BASE.$BUILD"
+
+          # MARKETING_VERSION : patch +1 à chaque build réussi, persisté dans
+          # project.yml (commit CI en fin de job). Reste un petit chiffre
+          # lisible (4.5.1, 4.5.2, ...) au lieu du numéro de build brut.
+          CURRENT="$(grep -m1 'MARKETING_VERSION:' native-ios/project.yml | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/')"
+          MAJOR="${CURRENT%%.*}"
+          REST="${CURRENT#*.}"
+          MINOR="${REST%%.*}"
+          PATCH="${REST#*.}"
+          NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+          perl -i -pe "s/^(\s*MARKETING_VERSION:\s*).*/\${1}\"$NEW_VERSION\"/" native-ios/project.yml
+
+          echo "CFBundleVersion → $BUILD, MARKETING_VERSION → $NEW_VERSION"
           grep -E 'MARKETING_VERSION|CURRENT_PROJECT_VERSION' native-ios/project.yml | head -5
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: XcodeGen
         run: brew install xcodegen
@@ -79,6 +87,18 @@ jobs:
           ! find build/Payload -name "index.html" | grep -q .
           # Nom public figé
           cp -f build/BeerQuest.ipa build/BeerOff.ipa 2>/dev/null || cp -f build/PlexiBeer.ipa build/BeerOff.ipa 2>/dev/null || cp -f build/*.ipa build/BeerOff.ipa
+
+      - name: Persister le bump MARKETING_VERSION
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add native-ios/project.yml
+          if git diff --cached --quiet; then
+            echo "Rien à committer"
+          else
+            git commit -m "chore(ios): bump MARKETING_VERSION to ${{ steps.bump.outputs.new_version }}"
+            git push origin HEAD:main
+          fi
 
       - name: Release GitHub (IPA)
         uses: softprops/action-gh-release@v2
