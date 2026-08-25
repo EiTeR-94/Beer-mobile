@@ -43,7 +43,13 @@ jobs:
         run: |
           BUILD="${{ github.run_number }}"
           perl -i -pe "s/^(\s*CURRENT_PROJECT_VERSION:\s*).*/\${1}\"$BUILD\"/" native-ios/project.yml
-          echo "CFBundleVersion → $BUILD (MARKETING_VERSION = project.yml, pas le run GitHub)"
+          # MARKETING_VERSION : le patch = numéro de build, à chaque run.
+          # Le major.minor de project.yml reste éditable à la main pour signaler
+          # une vraie version, mais SideStore voit TOUJOURS une version qui change,
+          # sans dépendre d'un bump manuel oublié.
+          BASE="$(grep -m1 'MARKETING_VERSION:' native-ios/project.yml | sed -E 's/.*"([0-9]+\.[0-9]+)\.[0-9]+".*/\1/')"
+          perl -i -pe "s/^(\s*MARKETING_VERSION:\s*).*/\${1}\"$BASE.$BUILD\"/" native-ios/project.yml
+          echo "CFBundleVersion → $BUILD, MARKETING_VERSION → $BASE.$BUILD"
           grep -E 'MARKETING_VERSION|CURRENT_PROJECT_VERSION' native-ios/project.yml | head -5
 
       - name: XcodeGen
