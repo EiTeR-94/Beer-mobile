@@ -51,12 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import fr.eiter.plexibeer.BeerAPI
-import fr.eiter.plexibeer.BeerProduct
-import fr.eiter.plexibeer.StyleOption
-import fr.eiter.plexibeer.ImageCache
-import fr.eiter.plexibeer.NetworkStatus
-import fr.eiter.plexibeer.ToastPayload
+import fr.eiter.plexibeer.*
 import fr.eiter.plexibeer.ui.theme.BeerColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
