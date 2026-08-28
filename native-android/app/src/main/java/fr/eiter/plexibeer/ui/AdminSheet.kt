@@ -52,11 +52,7 @@ fun AdminSheet(vm: AppViewModel) {
     var newAdmin by remember { mutableStateOf(false) }
 
     // invite
-    var invLabel by remember { mutableStateOf("") }
-    var invEmail by remember { mutableStateOf("") }
-    var invValidity by remember { mutableStateOf("7d") }
     var createdUrl by remember { mutableStateOf<String?>(null) }
-    var invBusy by remember { mutableStateOf(false) }
     var checkinsInvite by remember { mutableStateOf<InviteItem?>(null) }
 
     // referentials
@@ -267,79 +263,11 @@ fun AdminSheet(vm: AppViewModel) {
                     // ── Invités ──
                     Text("Invitations", color = BeerColors.muted, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     Text(
-                        "Lien + email. Lien 24 h si non utilisé. 1 appareil.",
+                        "« Renvoyer l'accès » = nouveau lien valable 10 min.",
                         color = BeerColors.muted,
                         fontSize = 12.sp
                     )
                     Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = invLabel,
-                        onValueChange = { invLabel = it },
-                        label = { Text("Nom") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = adminFieldColors()
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = invEmail,
-                        onValueChange = { invEmail = it },
-                        label = { Text("Email") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = adminFieldColors()
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    // Validité simple
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.horizontalScroll(rememberScrollState())
-                    ) {
-                        listOf(
-                            "24h" to "24 h",
-                            "48h" to "48 h",
-                            "7d" to "7 j",
-                            "14d" to "14 j",
-                            "30d" to "30 j",
-                            "90d" to "90 j",
-                            "permanent" to "Permanent",
-                        ).forEach { (v, lab) ->
-                            val on = invValidity == v
-                            Text(
-                                lab,
-                                color = if (on) Color.Black else BeerColors.text,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (on) BeerColors.accent else BeerColors.card)
-                                    .border(1.dp, if (on) BeerColors.accent else BeerColors.border, RoundedCornerShape(8.dp))
-                                    .clickable { invValidity = v }
-                                    .padding(horizontal = 10.dp, vertical = 7.dp)
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    BeerPrimaryButton(
-                        if (invBusy) "Génération…" else "Créer le lien",
-                        enabled = invLabel.length >= 2 && invEmail.contains("@") && !invBusy
-                    ) {
-                        invBusy = true
-                        scope.launch {
-                            try {
-                                val res = withContext(Dispatchers.IO) {
-                                    vm.api.adminCreateInvite(invLabel.trim(), invEmail.trim(), invValidity)
-                                }
-                                createdUrl = res.url
-                                invLabel = ""; invEmail = ""
-                                toastOk("Lien créé — copie-le")
-                                reload++
-                            } catch (e: Exception) {
-                                toastErr(e.message ?: "Erreur")
-                            }
-                            invBusy = false
-                        }
-                    }
                     createdUrl?.let { url ->
                         Spacer(Modifier.height(8.dp))
                         Text(url, color = BeerColors.text, fontSize = 11.sp)

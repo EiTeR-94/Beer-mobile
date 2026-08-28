@@ -28,19 +28,6 @@ suspend fun BeerAPI.adminInvites(): List<InviteItem> = withContext(Dispatchers.I
     gson.fromJson<List<InviteItem>>(body, type) ?: emptyList()
 }
 
-suspend fun BeerAPI.adminCreateInvite(label: String, email: String, validity: String = "7d"): CreateInviteResponse {
-    val json = gson.toJson(
-        mapOf("label" to label, "email" to email, "validity" to validity)
-    )
-    val (body, code) = execute(
-        requestBuilder("api/invites").post(json.toRequestBody(BeerAPI.JSON)).build()
-    )
-    val decoded = gson.fromJson(body, CreateInviteResponse::class.java)
-        ?: CreateInviteResponse(ok = false, error = "Réponse invalide")
-    if (code !in 200..299) throw ApiException(decoded.error ?: "Création invite impossible", code)
-    return decoded
-}
-
 suspend fun BeerAPI.adminExtendInvite(id: Int, validity: String) {
     val json = gson.toJson(mapOf("validity" to validity))
     val (_, code) = execute(

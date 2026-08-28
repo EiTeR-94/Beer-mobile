@@ -25,21 +25,6 @@ extension BeerAPI {
         }
         return (try? JSONDecoder().decode([CheckinItem].self, from: data)) ?? []
     }
-    func adminCreateInvite(label: String, email: String, validity: String = "7d") async throws -> CreateInviteResponse {
-        let body = try JSONSerialization.data(withJSONObject: [
-            "label": label,
-            "email": email,
-            "validity": validity,
-        ])
-        let (data, http, _) = try await request(path: "/api/invites", method: "POST", body: body, contentType: "application/json")
-        guard let decoded = try? JSONDecoder().decode(CreateInviteResponse.self, from: data) else {
-            throw BeerAPIError.decode
-        }
-        if http.statusCode >= 400 || decoded.ok == false {
-            throw BeerAPIError.server(decoded.error ?? "Opération refusée")
-        }
-        return decoded
-    }
     func adminExtendInvite(id: Int, validity: String) async throws {
         let body = try JSONSerialization.data(withJSONObject: ["validity": validity])
         let (data, http, _) = try await request(

@@ -358,12 +358,6 @@ struct InviteItem: Identifiable, Codable {
     }
 }
 
-struct CreateInviteResponse: Decodable {
-    let ok: Bool?
-    let url: String?
-    let error: String?
-}
-
 struct PatchnotesResponse: Decodable {
     let version: String?
     let markdown: String?
