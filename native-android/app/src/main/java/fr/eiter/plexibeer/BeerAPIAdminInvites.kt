@@ -36,15 +36,3 @@ suspend fun BeerAPI.adminExtendInvite(id: Int, validity: String) {
     if (code !in 200..299) throw ApiException("Prolongation impossible", code)
 }
 
-suspend fun BeerAPI.adminReissueInvite(id: Int): String? {
-    val (body, code) = execute(
-        requestBuilder("api/invites/$id/reissue").post("{}".toRequestBody(BeerAPI.JSON)).build()
-    )
-    if (code !in 200..299) throw ApiException("Réémission impossible", code)
-    return gson.fromJson(body, CreateInviteResponse::class.java)?.url
-}
-
-suspend fun BeerAPI.adminRevokeInvite(id: Int) {
-    val (_, code) = execute(requestBuilder("api/invites/$id").delete().build())
-    if (code !in 200..299) throw ApiException("Révocation impossible", code)
-}

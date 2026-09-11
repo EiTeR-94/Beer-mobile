@@ -17,13 +17,11 @@ struct AdminSheetView: View {
     @State private var newAdmin = false
     @State private var userPasswords: [String: String] = [:]
 
-    @State private var createdInviteURL: String?
     @State private var message: String?
     @State private var errorMessage: String?
     @State private var showIPs = false
     @State private var ipTitle = "IP invités"
     @State private var ipEntries: [InviteIpEntry] = []
-    @State private var inviteToRevoke: InviteItem?
     @State private var inviteCheckinsTarget: InviteItem?
     @State private var showSettings = false
     @State private var feedbackUnread: Int = 0
@@ -85,21 +83,6 @@ struct AdminSheetView: View {
         .fullScreenCover(isPresented: $showRpgAdmin) {
             BeerquestAdminSheetView()
                 .environmentObject(app)
-        }
-        .alert(
-            "Révoquer l'invitation ?",
-            isPresented: Binding(
-                get: { inviteToRevoke != nil },
-                set: { if !$0 { inviteToRevoke = nil } }
-            ),
-            presenting: inviteToRevoke
-        ) { inv in
-            Button("Annuler", role: .cancel) { inviteToRevoke = nil }
-            Button("Révoquer", role: .destructive) {
-                Task { await revokeInvite(inv) }
-            }
-        } message: { inv in
-            Text("Le compte « \(inv.label ?? inv.username ?? "invité") » et ses dégustations seront supprimés.")
         }
     }
 
@@ -182,17 +165,6 @@ struct AdminSheetView: View {
             BeerGhostButton("IP", action: openAllIPs)
         }
 
-        Text("« Renvoyer l'accès » = nouveau lien valable 10 min.")
-            .font(.system(size: 13))
-            .foregroundStyle(Theme.muted)
-
-        if let url = createdInviteURL {
-            InviteLinkResultCard(
-                url: url,
-                onCopy: { copyCreatedInviteLink() },
-                onClose: { createdInviteURL = nil }
-            )
-        }
         ForEach(invites) { inv in inviteCard(inv) }
     }
 
@@ -272,14 +244,6 @@ struct AdminSheetView: View {
                         inviteAction("+7j") { Task { await extend(inv, "7d") } }
                         inviteAction("+30j") { Task { await extend(inv, "30d") } }
                         inviteAction("Perm.") { Task { await extend(inv, "permanent") } }
-                    }
-                    if inv.canReissue == true || inv.reactivationPending == true {
-                        inviteAction("Renvoyer l'accès") { Task { await reissue(inv) } }
-                    }
-                    if inv.revokedAt == nil {
-                        inviteAction("Révoquer", destructive: true) {
-                            inviteToRevoke = inv
-                        }
                     }
                 }
             }
@@ -400,16 +364,8 @@ struct AdminSheetView: View {
         )
     }
 
-    private func copyCreatedInviteLink() {
-        guard let url = createdInviteURL else { return }
-        UIPasteboard.general.string = url
-        createdInviteURL = nil
-        app.showToast("Lien copié", variant: .success, durationMs: 2800)
-    }
-
     private func copyInviteURL(_ url: String) {
         UIPasteboard.general.string = url
-        if createdInviteURL == url { createdInviteURL = nil }
         app.showToast("Lien copié", variant: .success, durationMs: 2800)
     }
 
@@ -605,35 +561,6 @@ struct AdminSheetView: View {
         } catch let err { errorMessage = err.localizedDescription }
     }
 
-    private func revokeInvite(_ inv: InviteItem) async {
-        inviteToRevoke = nil
-        do {
-            try await app.api.adminRevokeInvite(id: inv.id)
-            if createdInviteURL == inv.url { createdInviteURL = nil }
-            await reload()
-            app.showToast("Invitation révoquée", variant: .success, durationMs: 3200)
-        } catch let err {
-            app.showToast(err.localizedDescription, variant: .error, durationMs: 4200)
-        }
-    }
-
-    private func reissue(_ inv: InviteItem) async {
-        do {
-            if let url = try await app.api.adminReissueInvite(id: inv.id) {
-                createdInviteURL = url
-                await reload()
-                app.showToast(
-                    "Lien de réactivation prêt (10 min)",
-                    variant: .success,
-                    label: "Invitation",
-                    durationMs: 4200
-                )
-            }
-        } catch let err {
-            app.showToast(err.localizedDescription, variant: .error, durationMs: 4200)
-        }
-    }
-
     private func addReferential() async {
         let name = refNewName.trimmingCharacters(in: .whitespaces)
         guard name.count >= 2 else { return }
@@ -657,44 +584,6 @@ struct AdminSheetView: View {
             }
             await reload()
         } catch let err { errorMessage = err.localizedDescription }
-    }
-}
-
-private struct InviteLinkResultCard: View {
-    let url: String
-    let onCopy: () -> Void
-    let onClose: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 8) {
-                Text("Lien à envoyer en privé :")
-                    .font(.caption)
-                    .foregroundStyle(Theme.muted)
-                Spacer(minLength: 4)
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Theme.muted)
-                        .frame(width: 26, height: 26)
-                        .background(Theme.bg)
-                        .overlay(Circle().stroke(Theme.border))
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Fermer")
-            }
-            Text(url)
-                .font(.caption2)
-                .foregroundStyle(Theme.text)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            BeerSecondaryButton(title: "Copier le lien", action: onCopy)
-        }
-        .padding(12)
-        .background(Theme.card)
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.accent.opacity(0.35)))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 

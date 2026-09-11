@@ -38,17 +38,4 @@ extension BeerAPI {
             throw BeerAPIError.server(err ?? "Prolongation impossible")
         }
     }
-    func adminReissueInvite(id: Int) async throws -> String? {
-        let (data, http, _) = try await request(path: "/api/invites/\(id)/reissue", method: "POST", body: Data(), contentType: "application/json")
-        struct R: Decodable { let ok: Bool?; let url: String?; let error: String? }
-        let decoded = try? JSONDecoder().decode(R.self, from: data)
-        if http.statusCode >= 400 || decoded?.ok == false {
-            throw BeerAPIError.server(decoded?.error ?? "Réémission impossible")
-        }
-        return decoded?.url
-    }
-    func adminRevokeInvite(id: Int) async throws {
-        let (_, http, _) = try await request(path: "/api/invites/\(id)", method: "DELETE", body: nil)
-        if http.statusCode >= 400 { throw BeerAPIError.server("Révocation impossible") }
-    }
 }

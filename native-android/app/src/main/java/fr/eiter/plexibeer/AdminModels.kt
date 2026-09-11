@@ -45,7 +45,6 @@ data class InviteItem(
     @SerializedName("last_used_at") val lastUsedAt: String? = null,
     @SerializedName("reactivation_pending") val reactivationPending: Boolean? = null,
     @SerializedName("can_extend") val canExtend: Boolean? = null,
-    @SerializedName("can_reissue") val canReissue: Boolean? = null,
     val permanent: Boolean? = null,
     @SerializedName("validity_label") val validityLabel: String? = null,
     val checkins: Int? = null,
@@ -67,12 +66,6 @@ data class InviteItem(
             else -> "En attente"
         }
 }
-
-data class CreateInviteResponse(
-    val ok: Boolean? = null,
-    val url: String? = null,
-    val error: String? = null,
-)
 
 data class ReferentialEntry(
     val name: String = "",
