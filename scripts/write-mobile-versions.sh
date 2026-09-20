@@ -100,7 +100,10 @@ with open(path, "w", encoding="utf-8") as f:
 print(json.dumps(doc, ensure_ascii=False))
 PY
 
-sudo install -m 644 -o www-data -g www-data "$TMP" "$DEST/versions.json"
+STAGE=/tmp/beer-mobile-sync/versions.json
+mkdir -p "$(dirname "$STAGE")"
+cp -f "$TMP" "$STAGE"
+sudo -n /usr/local/sbin/beer-mobile-publish versions
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$ROOT/web-portal"
 cp -f "$TMP" "$ROOT/web-portal/versions.json"

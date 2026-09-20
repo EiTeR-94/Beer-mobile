@@ -1,15 +1,15 @@
 {
-  "ios": "4.5.3",
-  "ios_build": "251",
-  "ios_updated_at": "11-09-2026 10:50",
+  "ios": "4.5.4",
+  "ios_build": "252",
+  "ios_updated_at": "17-09-2026 13:38",
   "android": "4.4.11",
   "android_build": "266",
   "android_updated_at": "11-09-2026 10:48",
-  "webapp": "1.2.95",
-  "webapp_updated_at": "13-09-2026 21:13",
-  "manifest_generated_at": "13-09-2026 22:09",
-  "updated_at": "13-09-2026 22:09",
-  "updated_at_iso": "2026-09-13T20:09:46Z",
+  "webapp": "1.2.97",
+  "webapp_updated_at": "17-09-2026 15:20",
+  "manifest_generated_at": "20-09-2026 22:59",
+  "updated_at": "20-09-2026 22:59",
+  "updated_at_iso": "2026-09-20T20:59:21Z",
   "portal_url": "https://beer.eiterlab.com/mobile/beer/",
   "note": "L’IPA et l’APK ont des cycles de maj séparés. Compare la version de ta plateforme."
 }
